@@ -1,4 +1,4 @@
-package com.vegusa.veg_mv_integration_midd.oauth2_0.entity;
+package com.vegusa.veg_mv_integration_midd.veg_middleware.entity;
 
 import jakarta.persistence.*;
 

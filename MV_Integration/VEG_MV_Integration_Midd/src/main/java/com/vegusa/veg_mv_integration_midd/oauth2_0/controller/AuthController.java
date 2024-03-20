@@ -23,8 +23,6 @@ public class AuthController  implements ApplicationRunner
 {
     private final AuthService authService;
     private int attemptsToeGetRefreshToken = 1;
-
-
     public AuthController(AuthService authService)
     {
         this.authService = authService;
@@ -54,7 +52,6 @@ public class AuthController  implements ApplicationRunner
                 Thread.sleep(AuthUtils.getThreadSleepErrorAccessToken());
                 generateToken(attemptNumber + 1);
             }
-
         }
         else
         {
