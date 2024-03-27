@@ -1,29 +1,32 @@
 package com.vegusa.veg_mv_integration_midd.msb.controller;
 
-import com.vegusa.veg_mv_integration_midd.msb.entity.VendTable;
-import com.vegusa.veg_mv_integration_midd.msb.service.ProductsService;
+import com.vegusa.veg_mv_integration_midd.msb.service.MSBService;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
-import java.util.Collection;
-
-@Controller
+@RestController
 @RequestMapping("msb-mv-integration")
 public class MSBController
 {
-    private final ProductsService productsService;
+    private final MSBService msbService;
 
     @Autowired
-    public MSBController(ProductsService productsService)
+    public MSBController(MSBService msbService){ this.msbService = msbService; }
+
+    @GetMapping(value = "/synchronize-products")
+    public String uploadProducts()
     {
-        this.productsService = productsService;
+        msbService.synchronizeProducts();
+
+        return "It´s ok";
     }
 
-    @GetMapping("/upload-products")
-    public void uploadProducts()
-    {
-        productsService.readDataLakeInfo();
-    }
+
+
+
+
+
+
 }

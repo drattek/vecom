@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.utils.AuthUtils;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -23,6 +24,8 @@ public class AuthController  implements ApplicationRunner
 {
     private final AuthService authService;
     private int attemptsToeGetRefreshToken = 1;
+
+    @Autowired
     public AuthController(AuthService authService)
     {
         this.authService = authService;

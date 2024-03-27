@@ -35,8 +35,11 @@ public class AuthService
     private final TokenInfoParametersRepository tokenInfoParametersRepository;
     private EncryptDecryptInterface encryptDecryptInterface;
 
+
     @Autowired
-    public AuthService(WebClient webClient, TokenInfoRepository tokenInfoRepository, TokenInfoParametersRepository tokenInfoParametersRepository)
+    public AuthService(WebClient webClient,
+                       TokenInfoRepository tokenInfoRepository,
+                       TokenInfoParametersRepository tokenInfoParametersRepository)
     {
         this.webClient = webClient;
         this.tokenInfoRepository = tokenInfoRepository;
