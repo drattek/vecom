@@ -7,6 +7,7 @@ import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfo;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfoParameters;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoParametersRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRepository;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
@@ -125,12 +126,12 @@ public class AuthService
         System.out.println("Token Info saved successfully");
     }
 
-    public static String convertSecretKeyToString(SecretKey secretKey) throws NoSuchAlgorithmException {
+    private static String convertSecretKeyToString(SecretKey secretKey) throws NoSuchAlgorithmException {
         byte[] rawData = secretKey.getEncoded();
         return Base64.getEncoder().encodeToString(rawData);
     }
 
-    public static String convertIvParameterSpecToString(IvParameterSpec ivParameterSpec) throws NoSuchAlgorithmException {
+    private static String convertIvParameterSpecToString(IvParameterSpec ivParameterSpec) throws NoSuchAlgorithmException {
         byte[] rawData = ivParameterSpec.getIV();
         return Base64.getEncoder().encodeToString(rawData);
     }
@@ -143,8 +144,8 @@ public class AuthService
 
         if(tokenInfo != null)
         {
-            SecretKey key = AuthService.convertStringToSecretKey(tokenInfo.getSecretKey());
-            IvParameterSpec ivParameterSpec = AuthService.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
+            SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
+            IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
             String algorithm = "AES/CBC/PKCS5Padding";
             String refreshToken = encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherRefreshToken(), key, ivParameterSpec);
 
@@ -170,16 +171,6 @@ public class AuthService
             return "{ \"error\" : \"Token info to generate the refresh token was not found.\" }";
         }
 
-    }
-
-    public static SecretKey convertStringToSecretKey(String encodedKey) {
-        byte[] decodedKey = Base64.getDecoder().decode(encodedKey);
-        return new SecretKeySpec(decodedKey, 0, decodedKey.length, "AES");
-    }
-
-    public static IvParameterSpec convertStringToIvParameterSpec(String encodedKey) {
-        byte[] decodedKey = Base64.getDecoder().decode(encodedKey);
-        return new IvParameterSpec(decodedKey);
     }
 
 }

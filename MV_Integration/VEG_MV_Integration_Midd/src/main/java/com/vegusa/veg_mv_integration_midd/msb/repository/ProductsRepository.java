@@ -26,7 +26,10 @@ public interface ProductsRepository extends JpaRepository<EcommProducts, Long>
             @QueryHint(name = READ_ONLY, value = "true")
     })
 
-    @Query(value = "select * from EcommProducts", nativeQuery = true)
-    Stream<EcommProducts> getProducts();
+    @Query(value = "select distinct ep.Name, ep.NameAlias, ep.SearchName, ep.Description, ep.ItemId from ecommproducts ep",
+
+   // @Query(value = "select * from ecommproducts ep",
+            nativeQuery = true)
+    Stream<EcommProducts> getProductsToSynchronize();
 
 }

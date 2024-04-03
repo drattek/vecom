@@ -1,4 +1,4 @@
-package com.vegusa.veg_mv_integration_midd.veg_middleware.Config;
+package com.vegusa.veg_mv_integration_midd.veg_middleware.config;
 
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.context.properties.ConfigurationProperties;

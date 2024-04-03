@@ -6,6 +6,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.utils.AuthUtils;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
@@ -59,12 +60,12 @@ public class AuthController  implements ApplicationRunner
         else
         {
             System.out.println("Token Info successfully obtained!");
-            authService.setEncryptDecryptInterface(new AESEncryptDecrypt());
+            authService.setEncryptDecryptInterface(MiddUtils.getEncryptDecryptInterface());
             authService.saveTokenInfo(jsonNode);
         }
     }
 
-    @Scheduled(fixedRate = 600000)
+    @Scheduled(fixedRate = 18000000, initialDelay = 18000000) //se hace el refresh cada 5 horas, hace falta validar
     public void refreshTokenPeriodically()
             throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
             NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException,
