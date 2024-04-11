@@ -10,6 +10,7 @@ import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRep
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvIntegrationEndptsRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -36,25 +37,29 @@ public class AuthService {
     private final TokenInfoParametersRepository tokenInfoParametersRepository;
     private final VegMvIntegrationEndptsRepository endptsRepository;
     private EncryptDecryptInterface encryptDecryptInterface;
+    private final Environment env;
 
     @Autowired
     public AuthService(WebClient webClient,
                        TokenInfoRepository tokenInfoRepository,
                        TokenInfoParametersRepository tokenInfoParametersRepository,
-                       VegMvIntegrationEndptsRepository endptsRepository) {
+                       VegMvIntegrationEndptsRepository endptsRepository,
+                       Environment env) {
         this.webClient = webClient;
         this.tokenInfoRepository = tokenInfoRepository;
         this.tokenInfoParametersRepository = tokenInfoParametersRepository;
         this.endptsRepository = endptsRepository;
+        this.env = env;
     }
 
     public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface) {
         this.encryptDecryptInterface = encryptDecryptInterface;
     }
 
-    private MultiValueMap<String, String>  getTokenInfoParameters(String origin) {
+    private MultiValueMap<String, String> getTokenInfoParameters(String origin) {
         MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
-        TokenInfoParameters tokenInfoParameters = tokenInfoParametersRepository.findById(1).orElse(null);
+        TokenInfoParameters tokenInfoParameters = tokenInfoParametersRepository
+                .getTokenInfoParameters(env.getProperty("integration.company.name"));
 
         if(tokenInfoParameters != null) {
             bodyValues.add("client_id", tokenInfoParameters.getClientId());
@@ -71,9 +76,9 @@ public class AuthService {
                 default:
                     // Default
             }
-
         } else {
-            System.out.println("No parameters were found to obtain the access token with grant type: " + origin);
+            System.out.println("No parameters were found to obtain the access token with grant type: " + origin + " and company name: " +
+                    env.getProperty("integration.company.name"));
         }
         return  bodyValues;
     }
@@ -100,7 +105,9 @@ public class AuthService {
         String cipherRefreshToken = encryptDecryptInterface.encrypt(algorithm, jsonNode.get("refreshToken").asText(), key, ivParameterSpec);
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
 
-        TokenInfo tokenInfo =  tokenInfoRepository.findById(1).orElseGet(TokenInfo::new);
+        TokenInfo auxTokenInfo = tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
+        TokenInfo tokenInfo =  (auxTokenInfo != null) ? auxTokenInfo : new TokenInfo();
+
         tokenInfo.setIdMv(jsonNode.get("_id").asText());
         tokenInfo.setStatus(jsonNode.get("status").asText());
         tokenInfo.setCipherAccessToken(cipherAccessToken);
@@ -111,7 +118,7 @@ public class AuthService {
         tokenInfo.setInitializationVector(AuthService.convertIvParameterSpecToString(ivParameterSpec));
         tokenInfo.setUpdatedAt(formatter.parse(jsonNode.get("updatedAt").asText()));
         tokenInfo.setCreatedAt(formatter.parse(jsonNode.get("createdAt").asText()));
-        tokenInfo.setIntegrationCompany("MULTIVENDE");
+        tokenInfo.setIntegrationCompany(env.getProperty("integration.company.name"));
         tokenInfoRepository.save(tokenInfo);
         System.out.println("Token Info saved successfully.");
     }
@@ -129,7 +136,7 @@ public class AuthService {
     public String refreshAccessToken()
             throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
                     BadPaddingException, InvalidKeyException, JsonProcessingException {
-        TokenInfo tokenInfo =  tokenInfoRepository.findById(1).orElse(null);
+        TokenInfo tokenInfo = tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
         if(tokenInfo != null) {
             SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
             IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());

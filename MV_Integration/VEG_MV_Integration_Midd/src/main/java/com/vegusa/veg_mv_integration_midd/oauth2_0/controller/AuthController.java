@@ -4,7 +4,6 @@ import com.vegusa.veg_mv_integration_midd.oauth2_0.service.AuthService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vegusa.veg_mv_integration_midd.oauth2_0.utils.AuthUtils;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.msb.VegEcommGralParameterRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -32,6 +31,7 @@ public class AuthController  implements ApplicationRunner {
     {
         this.authService = authService;
         this.vegEcommGralParameterRepository = vegEcommGralParameterRepository;
+        this.authService.setEncryptDecryptInterface(MiddUtils.getEncryptDecryptInterface());
     }
 
     @Override
@@ -54,7 +54,6 @@ public class AuthController  implements ApplicationRunner {
                 }
             } else {
                 System.out.println("Token Info successfully obtained!");
-                authService.setEncryptDecryptInterface(MiddUtils.getEncryptDecryptInterface());
                 authService.saveTokenInfo(jsonNode);
             }
         }catch (JsonProcessingException | InterruptedException | InvalidAlgorithmParameterException | NoSuchPaddingException |
@@ -66,7 +65,7 @@ public class AuthController  implements ApplicationRunner {
 
     }
 
-    @Scheduled(fixedRate = 21000000, initialDelay = 21000000)
+    @Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "${fixedDelayRefreshToken.in.milliseconds}")
     public void refreshTokenPeriodically(){
         try{
             ObjectMapper objectMapper = new ObjectMapper();
@@ -86,7 +85,7 @@ public class AuthController  implements ApplicationRunner {
             }
         } catch (InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException | InterruptedException | ParseException e){
-            System.out.println("An error occurred while saving the token.");
+            System.out.println("An error occurred while refreshing the token.");
             System.out.println("StackTrace: ");
             e.printStackTrace();
         }

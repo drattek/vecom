@@ -9,8 +9,8 @@ import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VegMvSynchronize
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvIntegrationEndptsRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvSynchronizedProductRepository;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.msb.VegEcommGralParameterRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
+import org.springframework.core.env.Environment;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -41,6 +41,7 @@ public class MSBProductSyncService {
     private final TokenInfoRepository tokenInfoRepository;
     private final VegMvSynchronizedProductRepository vegMvSynchronizedProductRepository;
     private final WebClient webClient;
+    private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
 
     @Autowired
@@ -48,12 +49,13 @@ public class MSBProductSyncService {
                                  VegMvIntegrationEndptsRepository endptsRepository,
                                  TokenInfoRepository tokenInfoRepository,
                                  VegMvSynchronizedProductRepository vegMvSynchronizedProductRepository,
-                                 WebClient webClient) {
+                                 WebClient webClient, Environment env) {
         this.productsRepository = productsRepository;
         this.endptsRepository = endptsRepository;
         this.tokenInfoRepository = tokenInfoRepository;
         this.vegMvSynchronizedProductRepository = vegMvSynchronizedProductRepository;
         this.webClient = webClient;
+        this.env = env;
     }
 
     public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface) {
@@ -169,7 +171,7 @@ public class MSBProductSyncService {
             VegMvSynchronizedProduct vegMvSynchronizedProduct = (synchronizedProduct == null) ?
                     objMapSyncProducts.readValue(response, VegMvSynchronizedProduct.class) : synchronizedProduct;
             vegMvSynchronizedProduct.setVegBusinessUnit("MSB");
-            vegMvSynchronizedProduct.setIntegrationCompany("MULTIVENDE");
+            vegMvSynchronizedProduct.setIntegrationCompany(env.getProperty("integration.company.name"));
             vegMvSynchronizedProductRepository.save(vegMvSynchronizedProduct);
             System.out.println("Synchronized product: " + vegMvSynchronizedProduct.getInternalCode());
         }

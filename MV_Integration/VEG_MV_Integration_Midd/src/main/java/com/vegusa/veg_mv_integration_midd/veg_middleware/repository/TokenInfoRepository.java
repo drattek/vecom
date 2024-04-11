@@ -8,6 +8,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface TokenInfoRepository extends JpaRepository<TokenInfo, Integer>
 {
-   // @Query(value = "",nativeQuery = true)
-   // String getAccessToken();
+    @Query(value = "select * from veg_ecomm_token_info veti where veti.integration_company = ?1",nativeQuery = true)
+    TokenInfo getTokenInfo(String integrationCompany);
 }
