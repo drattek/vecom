@@ -23,21 +23,17 @@ import javax.sql.DataSource;
         basePackages = {"com.vegusa.veg_mv_integration_midd.msb.repository"}
 )
 
-public class DBMsbDataLakeConfig
-{
+public class DBMsbDataLakeConfig {
     @Bean(name = "dbMsbDataLakeDataSource")
     @ConfigurationProperties(prefix = "spring.msb-data-lake.datasource")
     public DataSource dbMsbDataLakeDataSource(){ return DataSourceBuilder.create().build(); }
 
     @Bean(name = "dbMsbDataLakeEntityManagerFactory")
     public LocalContainerEntityManagerFactoryBean
-    barEntityManagerFactory(
+        barEntityManagerFactory(
             EntityManagerFactoryBuilder builder,
-            @Qualifier("dbMsbDataLakeDataSource") DataSource dataSource)
-    {
-        return
-                builder
-                        .dataSource(dataSource)
+            @Qualifier("dbMsbDataLakeDataSource") DataSource dataSource) {
+        return builder.dataSource(dataSource)
                         .packages("com.vegusa.veg_mv_integration_midd.msb.entity")
                         .persistenceUnit("db2")
                         .build();
@@ -46,8 +42,7 @@ public class DBMsbDataLakeConfig
     @Bean(name = "dbMsbDataLakeTransactionManager")
     public PlatformTransactionManager dbMsbDataLakeTransactionManager(
             @Qualifier("dbMsbDataLakeEntityManagerFactory") EntityManagerFactory
-                    dbMsbDataLakeEntityManagerFactory)
-    {
+                    dbMsbDataLakeEntityManagerFactory) {
         return new JpaTransactionManager(dbMsbDataLakeEntityManagerFactory);
     }
 

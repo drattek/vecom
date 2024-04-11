@@ -1,13 +1,11 @@
 package com.vegusa.veg_mv_integration_midd.msb.repository;
 
-
 import com.vegusa.veg_mv_integration_midd.msb.entity.EcommProducts;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 import org.springframework.data.jpa.repository.QueryHints;
 import jakarta.persistence.QueryHint;
-
 
 import java.util.stream.Stream;
 
@@ -26,10 +24,8 @@ public interface ProductsRepository extends JpaRepository<EcommProducts, Long>
             @QueryHint(name = READ_ONLY, value = "true")
     })
 
-    @Query(value = "select distinct ep.Name, ep.NameAlias, ep.SearchName, ep.Description, ep.ItemId from ecommproducts ep",
-
-   // @Query(value = "select * from ecommproducts ep",
+    @Query(value = "select distinct ep.Name, ep.NameAlias, ep.SearchName, ep.Description, ep.ItemId, ep.InventTable_modifieddatetime from ecommproducts ep order by ep.ItemId",
             nativeQuery = true)
-    Stream<EcommProducts> getProductsToSynchronize();
+    Stream<Object[]> getProductsToSynchronize();
 
 }

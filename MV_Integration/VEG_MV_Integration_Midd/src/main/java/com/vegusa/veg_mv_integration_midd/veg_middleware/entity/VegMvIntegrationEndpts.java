@@ -2,7 +2,7 @@ package com.vegusa.veg_mv_integration_midd.veg_middleware.entity;
 
 import jakarta.persistence.*;
 @Entity
-@Table(name = "veg_mv_integration_endpts")
+@Table(name = "veg_ecomm_integration_endpts")
 public class VegMvIntegrationEndpts {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -17,6 +17,8 @@ public class VegMvIntegrationEndpts {
 
     @Column(name = "description", length = 250)
     private String description;
+    @Column(nullable = false)
+    private String integration_company;
 
     public Long getId() {
         return id;
@@ -49,5 +51,7 @@ public class VegMvIntegrationEndpts {
     public void setDescription(String description) {
         this.description = description;
     }
+    public String getIntegrationCompany(){ return this.integration_company; }
+    public void setIntegrationCompany(String integration_company){ this.integration_company = integration_company; }
 
 }

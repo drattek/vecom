@@ -1,8 +1,8 @@
 package com.vegusa.veg_mv_integration_midd.msb.entity;
 
 import jakarta.persistence.Column;
-import jakarta.persistence.EmbeddedId;
 import jakarta.persistence.Entity;
+import jakarta.persistence.Id;
 import jakarta.persistence.Table;
 import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.Nationalized;
@@ -15,10 +15,11 @@ import java.time.Instant;
  */
 @Entity
 @Immutable
-@Table(name = "EcommProducts")
+@Table(name = "EcommProducts", schema = "dbo")
 public class EcommProducts {
-    @EmbeddedId
-    private EcommProductId id;
+    @Id
+    @Column(name = "InventSum_RECID", nullable = false)
+    private Long inventsumRecid;
 
     @Column(name = "Arrived", precision = 32, scale = 16)
     private BigDecimal arrived;
@@ -126,6 +127,9 @@ public class EcommProducts {
     @Column(name = "InventSum_MODIFIEDDATETIME", nullable = false)
     private Instant inventsumModifieddatetime;
 
+    @Column(name = "InventTable_RECID", nullable = false)
+    private Long inventtableRecid;
+
     @Nationalized
     @Column(name = "BOMUnitId", length = 10)
     private String bOMUnitId;
@@ -173,6 +177,9 @@ public class EcommProducts {
     @Column(name = "InventTable_MODIFIEDDATETIME", nullable = false)
     private Instant inventtableModifieddatetime;
 
+    @Column(name = "EcoResProduct_RECID", nullable = false)
+    private Long ecoresproductRecid;
+
     @Nationalized
     @Column(name = "DisplayProductNumber", nullable = false, length = 240)
     private String displayProductNumber;
@@ -183,6 +190,9 @@ public class EcommProducts {
 
     @Column(name = "PRODUCTMASTER", nullable = false)
     private Long productmaster;
+
+    @Column(name = "EcoResProductTranslation_RECID")
+    private Long ecoresproducttranslationRecid;
 
     @Nationalized
     @Column(name = "Description", length = 1000)
@@ -199,12 +209,8 @@ public class EcommProducts {
     @Column(name = "ItemGroupId", length = 10)
     private String itemGroupId;
 
-    public EcommProductId getId() {
-        return id;
-    }
-
-    public void setId(EcommProductId id) {
-        this.id = id;
+    public Long getInventsumRecid() {
+        return inventsumRecid;
     }
 
     public BigDecimal getArrived() {
@@ -331,6 +337,10 @@ public class EcommProducts {
         return inventsumModifieddatetime;
     }
 
+    public Long getInventtableRecid() {
+        return inventtableRecid;
+    }
+
     public String getBOMUnitId() {
         return bOMUnitId;
     }
@@ -387,6 +397,10 @@ public class EcommProducts {
         return inventtableModifieddatetime;
     }
 
+    public Long getEcoresproductRecid() {
+        return ecoresproductRecid;
+    }
+
     public String getDisplayProductNumber() {
         return displayProductNumber;
     }
@@ -397,6 +411,10 @@ public class EcommProducts {
 
     public Long getProductmaster() {
         return productmaster;
+    }
+
+    public Long getEcoresproducttranslationRecid() {
+        return ecoresproducttranslationRecid;
     }
 
     public String getDescription() {

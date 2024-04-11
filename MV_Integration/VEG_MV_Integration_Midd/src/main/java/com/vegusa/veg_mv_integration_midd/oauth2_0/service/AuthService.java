@@ -7,6 +7,7 @@ import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfo;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfoParameters;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoParametersRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRepository;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvIntegrationEndptsRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -20,7 +21,6 @@ import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
-import javax.crypto.spec.SecretKeySpec;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -29,36 +29,34 @@ import java.text.SimpleDateFormat;
 import java.util.Base64;
 
 @Service
-public class AuthService
-{
+public class AuthService {
     private final WebClient webClient;
+    //Middleware - Repository
     private final TokenInfoRepository tokenInfoRepository;
     private final TokenInfoParametersRepository tokenInfoParametersRepository;
+    private final VegMvIntegrationEndptsRepository endptsRepository;
     private EncryptDecryptInterface encryptDecryptInterface;
-
 
     @Autowired
     public AuthService(WebClient webClient,
                        TokenInfoRepository tokenInfoRepository,
-                       TokenInfoParametersRepository tokenInfoParametersRepository)
-    {
+                       TokenInfoParametersRepository tokenInfoParametersRepository,
+                       VegMvIntegrationEndptsRepository endptsRepository) {
         this.webClient = webClient;
         this.tokenInfoRepository = tokenInfoRepository;
         this.tokenInfoParametersRepository = tokenInfoParametersRepository;
+        this.endptsRepository = endptsRepository;
     }
 
-    public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface)
-    {
+    public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface) {
         this.encryptDecryptInterface = encryptDecryptInterface;
     }
 
-    private MultiValueMap<String, String>  getTokenInfoParameters(String origin)
-    {
+    private MultiValueMap<String, String>  getTokenInfoParameters(String origin) {
         MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
         TokenInfoParameters tokenInfoParameters = tokenInfoParametersRepository.findById(1).orElse(null);
 
-        if(tokenInfoParameters != null)
-        {
+        if(tokenInfoParameters != null) {
             bodyValues.add("client_id", tokenInfoParameters.getClientId());
             bodyValues.add("client_secret", tokenInfoParameters.getClientSecret());
 
@@ -74,35 +72,27 @@ public class AuthService
                     // Default
             }
 
-        }
-        else
-        {
+        } else {
             System.out.println("No parameters were found to obtain the access token with grant type: " + origin);
         }
-
         return  bodyValues;
     }
-    public String fetchAccessToken()
-    {
-        try
-        {
+    public String fetchAccessToken() {
+        try {
             return webClient.post()
-                    .uri("https://app.multivende.com/oauth/access-token")
+                    .uri(endptsRepository.getEndPointMuitiVende("AUTHENTICATE_OAUTH2"))
                     .body(BodyInserters.fromFormData(getTokenInfoParameters("authorization_code")))
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();
-        }
-        catch (WebClientResponseException e)
-        {
+        } catch (WebClientResponseException e) {
             return "{ \"error\" : \"" + e.getStatusCode() + " " + e.getMessage()  + "\" }";
         }
     }
 
     public void saveTokenInfo(JsonNode jsonNode)
-            throws NoSuchAlgorithmException, IllegalBlockSizeException, InvalidKeyException,
-            BadPaddingException, InvalidAlgorithmParameterException, NoSuchPaddingException, ParseException
-    {
+            throws NoSuchAlgorithmException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
+                    BadPaddingException, InvalidKeyException, ParseException {
         SecretKey key = encryptDecryptInterface.generateKey(128);
         IvParameterSpec ivParameterSpec = encryptDecryptInterface.generateIv();
         String algorithm = "AES/CBC/PKCS5Padding";
@@ -121,29 +111,26 @@ public class AuthService
         tokenInfo.setInitializationVector(AuthService.convertIvParameterSpecToString(ivParameterSpec));
         tokenInfo.setUpdatedAt(formatter.parse(jsonNode.get("updatedAt").asText()));
         tokenInfo.setCreatedAt(formatter.parse(jsonNode.get("createdAt").asText()));
-
+        tokenInfo.setIntegrationCompany("MULTIVENDE");
         tokenInfoRepository.save(tokenInfo);
-        System.out.println("Token Info saved successfully");
+        System.out.println("Token Info saved successfully.");
     }
 
-    private static String convertSecretKeyToString(SecretKey secretKey) throws NoSuchAlgorithmException {
+    private static String convertSecretKeyToString(SecretKey secretKey) {
         byte[] rawData = secretKey.getEncoded();
         return Base64.getEncoder().encodeToString(rawData);
     }
 
-    private static String convertIvParameterSpecToString(IvParameterSpec ivParameterSpec) throws NoSuchAlgorithmException {
+    private static String convertIvParameterSpecToString(IvParameterSpec ivParameterSpec) {
         byte[] rawData = ivParameterSpec.getIV();
         return Base64.getEncoder().encodeToString(rawData);
     }
 
     public String refreshAccessToken()
-            throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
-            NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException
-    {
+            throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
+                    BadPaddingException, InvalidKeyException, JsonProcessingException {
         TokenInfo tokenInfo =  tokenInfoRepository.findById(1).orElse(null);
-
-        if(tokenInfo != null)
-        {
+        if(tokenInfo != null) {
             SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
             IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
             String algorithm = "AES/CBC/PKCS5Padding";
@@ -152,25 +139,19 @@ public class AuthService
             MultiValueMap<String, String> bodyValues = getTokenInfoParameters("refresh_token");
             bodyValues.add("refresh_token", refreshToken);
 
-            try
-            {
+            try {
                 return webClient.post()
-                        .uri("https://app.multivende.com/oauth/access-token")
+                        .uri(endptsRepository.getEndPointMuitiVende("REFRESH_TOKEN_OAUTH2"))
                         .body(BodyInserters.fromFormData(bodyValues))
                         .retrieve()
                         .bodyToMono(String.class)
                         .block();
-            }
-            catch (WebClientResponseException e)
-            {
+            } catch (WebClientResponseException e) {
                 return "{ \"error\" : \"" + e.getStatusCode() + " " + e.getMessage()  + "\" }";
             }
-        }
-        else
-        {
+        } else {
             return "{ \"error\" : \"Token info to generate the refresh token was not found.\" }";
         }
-
     }
 
 }

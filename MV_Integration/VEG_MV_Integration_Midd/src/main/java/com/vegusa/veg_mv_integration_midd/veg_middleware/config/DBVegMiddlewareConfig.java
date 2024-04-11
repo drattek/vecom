@@ -23,8 +23,7 @@ import javax.sql.DataSource;
         transactionManagerRef = "dbVegMiddTransactionManager",
         basePackages = {"com.vegusa.veg_mv_integration_midd.veg_middleware.repository"}
 )
-public class DBVegMiddlewareConfig
-{
+public class DBVegMiddlewareConfig {
     @Primary
     @Bean(name = "vegMiddlewareDataSource")
     @ConfigurationProperties(prefix = "spring.veg-middleware.datasource")
@@ -35,8 +34,7 @@ public class DBVegMiddlewareConfig
     @Primary
     @Bean(name = "dbVegMiddEntityManagerFactory")
     public LocalContainerEntityManagerFactoryBean
-    entityManagerFactory(EntityManagerFactoryBuilder builder, @Qualifier("vegMiddlewareDataSource") DataSource dataSource)
-    {
+    entityManagerFactory(EntityManagerFactoryBuilder builder, @Qualifier("vegMiddlewareDataSource") DataSource dataSource) {
         return builder
                 .dataSource(dataSource)
                 .packages("com.vegusa.veg_mv_integration_midd.veg_middleware.entity")
@@ -47,8 +45,7 @@ public class DBVegMiddlewareConfig
     @Primary
     @Bean(name = "dbVegMiddTransactionManager")
     public PlatformTransactionManager dbVegMiddTransactionManager(
-            @Qualifier("dbVegMiddEntityManagerFactory") EntityManagerFactory dbVegMiddEntityManagerFactory)
-    {
+            @Qualifier("dbVegMiddEntityManagerFactory") EntityManagerFactory dbVegMiddEntityManagerFactory) {
         return new JpaTransactionManager(dbVegMiddEntityManagerFactory);
     }
 

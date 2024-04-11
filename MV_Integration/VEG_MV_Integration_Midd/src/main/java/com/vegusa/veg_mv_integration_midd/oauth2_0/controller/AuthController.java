@@ -1,11 +1,11 @@
 package com.vegusa.veg_mv_integration_midd.oauth2_0.controller;
 
-import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.AESEncryptDecrypt;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.service.AuthService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.utils.AuthUtils;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.msb.VegEcommGralParameterRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
@@ -21,73 +21,74 @@ import java.security.NoSuchAlgorithmException;
 import java.text.ParseException;
 
 @Component
-public class AuthController  implements ApplicationRunner
-{
+public class AuthController  implements ApplicationRunner {
     private final AuthService authService;
     private int attemptsToeGetRefreshToken = 1;
+    //Middleware - Repository - msb
+    private final VegEcommGralParameterRepository vegEcommGralParameterRepository;
 
     @Autowired
-    public AuthController(AuthService authService)
+    public AuthController(AuthService authService, VegEcommGralParameterRepository vegEcommGralParameterRepository)
     {
         this.authService = authService;
+        this.vegEcommGralParameterRepository = vegEcommGralParameterRepository;
     }
 
     @Override
-    public void run(ApplicationArguments args) throws Exception
-    {
+    public void run(ApplicationArguments args) throws Exception {
         System.out.println("Application Oauth2.0 Starts!");
         generateToken(1);
     }
 
-    private void generateToken(int attemptNumber)
-            throws InvalidAlgorithmParameterException, IllegalBlockSizeException, NoSuchPaddingException,
-            NoSuchAlgorithmException, BadPaddingException, InvalidKeyException,
-            JsonProcessingException, ParseException, InterruptedException
-    {
-        ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode jsonNode = objectMapper.readTree(authService.fetchAccessToken());
-
-        if(jsonNode.has("error"))
-        {
-            System.out.println("Error generating Token Info: " + jsonNode.get("error").asText());
-
-            if(attemptNumber < AuthUtils.getMaxAttemptsToGetAccessToken())
-            {
-                Thread.sleep(AuthUtils.getThreadSleepErrorAccessToken());
-                generateToken(attemptNumber + 1);
+    private void generateToken(int attemptNumber) {
+        try {
+            ObjectMapper objectMapper = new ObjectMapper();
+            JsonNode jsonNode = objectMapper.readTree(authService.fetchAccessToken());
+            if(jsonNode.has("error")) {
+                System.out.println("Error generating Token Info: " + jsonNode.get("error").asText());
+                if(attemptNumber < vegEcommGralParameterRepository
+                        .getMiddlewareGeneralParameter("ATTEMPS_ACCESS_TOKEN").getIntValue()) {
+                    Thread.sleep(vegEcommGralParameterRepository
+                            .getMiddlewareGeneralParameter("ATTEMP_ACCESS_TOKEN_SLEEP_VALUE").getIntValue());
+                    generateToken(attemptNumber + 1);
+                }
+            } else {
+                System.out.println("Token Info successfully obtained!");
+                authService.setEncryptDecryptInterface(MiddUtils.getEncryptDecryptInterface());
+                authService.saveTokenInfo(jsonNode);
             }
+        }catch (JsonProcessingException | InterruptedException | InvalidAlgorithmParameterException | NoSuchPaddingException |
+                IllegalBlockSizeException | NoSuchAlgorithmException |  BadPaddingException | ParseException | InvalidKeyException e) {
+            System.out.println("An error occurred while saving the token.");
+            System.out.println("StackTrace: ");
+            e.printStackTrace();
         }
-        else
-        {
-            System.out.println("Token Info successfully obtained!");
-            authService.setEncryptDecryptInterface(MiddUtils.getEncryptDecryptInterface());
-            authService.saveTokenInfo(jsonNode);
-        }
+
     }
 
-    @Scheduled(fixedRate = 18000000, initialDelay = 18000000) //se hace el refresh cada 5 horas, hace falta validar
-    public void refreshTokenPeriodically()
-            throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
-            NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException,
-            InterruptedException, ParseException
-    {
-        ObjectMapper objectMapper = new ObjectMapper();
-        JsonNode jsonNode = objectMapper.readTree(this.authService.refreshAccessToken());
-        if(jsonNode.has("error"))
-        {
-            System.out.println("Refresh token periodically method: " + jsonNode.get("error").asText());
-
-            if(attemptsToeGetRefreshToken < AuthUtils.getMaxAttemptsToGetRefreshToken())
-            {
-                attemptsToeGetRefreshToken++;
-                Thread.sleep(AuthUtils.getThreadSleepErrorRefreshToken());
-                refreshTokenPeriodically();
+    @Scheduled(fixedRate = 21000000, initialDelay = 21000000)
+    public void refreshTokenPeriodically(){
+        try{
+            ObjectMapper objectMapper = new ObjectMapper();
+            JsonNode jsonNode = objectMapper.readTree(this.authService.refreshAccessToken());
+            if(jsonNode.has("error")) {
+                System.out.println("Refresh token periodically method: " + jsonNode.get("error").asText());
+                if(attemptsToeGetRefreshToken < vegEcommGralParameterRepository
+                        .getMiddlewareGeneralParameter("ATTEMPS_REFRESH_TOKEN").getIntValue()) {
+                    attemptsToeGetRefreshToken++;
+                    Thread.sleep(vegEcommGralParameterRepository
+                            .getMiddlewareGeneralParameter("ATTEMP_REFRESH_TOKEN_SLEEP_VALUE").getIntValue());
+                    refreshTokenPeriodically();
+                }
+            } else {
+                System.out.println("Refresh token periodically method: Access token refreshed successfully.");
+                this.authService.saveTokenInfo(jsonNode);
             }
-        }
-        else
-        {
-            System.out.println("Refresh token periodically method: Access token refreshed successfully.");
-            this.authService.saveTokenInfo(jsonNode);
+        } catch (InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
+                BadPaddingException | InvalidKeyException | JsonProcessingException | InterruptedException | ParseException e){
+            System.out.println("An error occurred while saving the token.");
+            System.out.println("StackTrace: ");
+            e.printStackTrace();
         }
     }
 
