@@ -14,14 +14,14 @@ public class VegEcommSynchronizedImage {
     @Column(name = "id", nullable = false)
     private Long id;
 
-    @Column(name = "product_id", nullable = false, length = 100)
+    @Column(name = "product_id", length = 100)
     @JsonProperty("ProductId")
     private String productId;
 
     @Column(name = "url", length = 250)
     private String url;
 
-    @Column(name = "id_ecomm", nullable = false, length = 100)
+    @Column(name = "id_ecomm", length = 100)
     @JsonProperty("_id")
     private String idEcomm;
 
@@ -82,7 +82,7 @@ public class VegEcommSynchronizedImage {
     @JsonProperty("createdAt")
     private Date createdAt;
 
-    @Column(name = "product_id_error", nullable = false, length = 100)
+    @Column(name = "product_id_error", length = 100)
     @JsonProperty("productId")
     private String productIdError;
 

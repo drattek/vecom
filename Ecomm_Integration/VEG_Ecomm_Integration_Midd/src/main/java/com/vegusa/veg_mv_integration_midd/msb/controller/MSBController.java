@@ -70,7 +70,6 @@ public class MSBController {
             imagesSyncService.setEncryptDecryptInterface(MiddUtils.getEncryptDecryptInterface());
             requestBody = imagesSyncService.getJSONToSyncProductsImages();
             uploadResponse = imagesSyncService.uploadProductImages(requestBody);
-            System.out.println("Subio imagenes a MV.");
             return imagesSyncService.updateMiddlewareSynchronizedImages(uploadResponse);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException |
                 IllegalBlockSizeException | NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
