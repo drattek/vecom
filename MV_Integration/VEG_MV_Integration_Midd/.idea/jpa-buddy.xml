@@ -1,9 +1,0 @@
-<?xml version="1.0" encoding="UTF-8"?>
-<project version="4">
-  <component name="JpaBuddyIdeaProjectConfig">
-    <option name="defaultUnitInitialized" value="true" />
-    <option name="renamerInitialized" value="true" />
-    <option name="reverseEngineeringLastDbConnectionId" value="39030441-fe85-41dc-9a83-7e2346734001" />
-    <option name="reLastEntityCreationPackage" value="src/main/java/com/vegusa/veg_mv_integration_midd/msb/entity" />
-  </component>
-</project>
