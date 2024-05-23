@@ -1,5 +1,8 @@
 package com.vegusa.veg_mv_integration_midd.veg_middleware.utils;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.AESEncryptDecrypt;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfo;
@@ -33,8 +36,8 @@ public class MiddUtils {
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();
-        } catch (WebClientResponseException e) {
-            return "{ \"error\" : \"" + e.getStatusCode() + " " + e.getMessage()  + "\" }";
+        } catch (RuntimeException e) {
+            return "{ \"error\" : \"" + e.getMessage()  + "\" }";
         }
     }
 
@@ -50,7 +53,6 @@ public class MiddUtils {
         } else {
             return "{ \"error\" : \"Access token was not found.\" }";
         }
-
     }
 
     public static SecretKey convertStringToSecretKey(String encodedKey) {
@@ -67,7 +69,15 @@ public class MiddUtils {
         return new AESEncryptDecrypt();
     }
 
-
+    public static JsonNode getJSONResponse(String errorMessage, String response) throws JsonProcessingException {
+        ObjectMapper objMapper = new ObjectMapper();
+        JsonNode jsonNodeAppInfo = objMapper.readTree(response);
+        if(jsonNodeAppInfo.has("error")) {
+            throw new RuntimeException(errorMessage + jsonNodeAppInfo.get("error").asText());
+        } else {
+            return jsonNodeAppInfo;
+        }
+    }
 
 
 }

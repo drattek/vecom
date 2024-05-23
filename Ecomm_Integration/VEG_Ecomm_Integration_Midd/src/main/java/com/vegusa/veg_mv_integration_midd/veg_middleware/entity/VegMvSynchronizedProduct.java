@@ -21,83 +21,80 @@ public class VegMvSynchronizedProduct {
     @Column(name = "id_mv", nullable = false, length = 100)
     @JsonProperty("_id")
     private String idMv;
-    @Column(name = "synchronization_Status", nullable = false, length = 50)
-    @JsonProperty("synchronizationStatus")
-    private String synchronizationStatus;
 
-    @Column(name = "status_mv", length = 50)
+    @Column(name = "status_mv")
     @JsonProperty("status")
     private String status;
 
-    @Column(name = "name", length = 100)
+    @Column(name = "name")
     @JsonProperty("name")
     private String name;
 
-    @Column(name = "alias", length = 100)
+    @Column(name = "alias")
     @JsonProperty("alias")
     private String alias;
 
-    @Column(name = "model", length = 50)
+    @Column(name = "model")
     @JsonProperty("model")
     private String model;
 
-    @Column(name = "description", length = 100)
+    @Column(name = "description")
     @JsonProperty("description")
     private String description;
 
-    @Column(name = "brand_id", length = 100)
+    @Column(name = "brand_id")
     @JsonProperty("BrandId")
     private String brandId;
 
-    @Column(name = "season_id", length = 100)
+    @Column(name = "season_id")
     @JsonProperty("SeasonId")
     private String seasonId;
 
-    @Column(name = "product_category_id", length = 100)
+    @Column(name = "product_category_id")
     @JsonProperty("ProductCategoryId")
     private String productCategoryId;
 
-    @Column(name = "code", length = 50)
+    @Column(name = "code")
     @JsonProperty("code")
     private String code;
 
-    @Column(name = "internal_code", nullable = false, length = 50)
+    @Column(name = "internal_code", nullable = false)
     @JsonProperty("internalCode")
     private String internalCode;
 
-    @Column(name = "short_description", length = 100)
+    @Column(name = "short_description")
     @JsonProperty("shortDescription")
     private String shortDescription;
 
-    @Column(name = "html_description", length = 250)
+    @Column(name = "html_description")
     @JsonProperty("htmlDescription")
     private String htmlDescription;
 
-    @Column(name = "html_short_description", length = 250)
+    @Column(name = "html_short_description")
     @JsonProperty("htmlShortDescription")
     private String htmlShortDescription;
 
-    @Column(name = "warranty_id", length = 100)
+    @Column(name = "warranty_id")
     @JsonProperty("WarrantyId")
     private String warrantyId;
 
-    @Column(name = "shipping_class_id", length = 100)
+    @Column(name = "shipping_class_id")
     @JsonProperty("ShippingClassId")
     private String shippingClassId;
 
-    @Column(name = "official_store_id", length = 100)
+    @Column(name = "official_store_id")
     @JsonProperty("OfficialStoreId")
     private String officialStoreId;
 
-    @Column(name = "created_by_id", length = 100)
+    @Column(name = "created_by_id")
     @JsonProperty("CreatedById")
     private String createdById;
 
-    @Column(name = "updated_by_id", length = 100)
+    @Column(name = "updated_by_id")
     @JsonProperty("UpdatedById")
     private String updatedById;
 
-    @Column(name = "merchant_id", length = 100)
+    @Column(name = "merchant_id")
     @JsonProperty("MerchantId")
     private String merchantId;
 
@@ -109,13 +106,16 @@ public class VegMvSynchronizedProduct {
     @JsonProperty("createdAt")
     private Date createdAt;
 
-    @Column(name = "product_type_Id", length = 100)
+    @Column(name = "product_type_Id")
     @JsonProperty("ProductTypeId")
     private String productTypeId;
     @Column(nullable = false)
     private String integration_company;
-    @Column(name = "veg_business_unit", nullable = false, length = 50)
+    @Column(name = "veg_business_unit", nullable = false)
     private String vegBusinessUnit;
+
+    @Column(name = "veg_sync_status")
+    private String vegSyncStatus;
 
     public Long getId() {
         return id;
@@ -131,14 +131,6 @@ public class VegMvSynchronizedProduct {
 
     public void setIdMvd(String idMv) {
         this.idMv = idMv;
-    }
-
-    public String getSynchronizationStatus() {
-        return synchronizationStatus;
-    }
-
-    public void setSynchronizationStatus(String synchronizationStatus) {
-        this.synchronizationStatus = synchronizationStatus;
     }
     public String getStatus() {
         return status;
@@ -318,6 +310,7 @@ public class VegMvSynchronizedProduct {
     public void setVegBusinessUnit(String vegBusinessUnit) { this.vegBusinessUnit = vegBusinessUnit; }
     public String getIntegrationCompany(){ return this.integration_company; }
     public void setIntegrationCompany(String integration_company){ this.integration_company = integration_company; }
-
+    public String getVegSyncStatus(){ return this.vegSyncStatus; }
+    public void setVegSyncStatus(String vegSyncStatus){ this.vegSyncStatus = vegSyncStatus; }
 
 }

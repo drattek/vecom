@@ -84,25 +84,30 @@ public class MSBImagesSyncService {
         return request.toString();
     }
 
-    public String uploadProductImages(String bodyRequest) throws InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String uploadProductImages(String bodyRequest) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface);
         ObjectMapper objMapAppInfo = new ObjectMapper();
         JsonNode jsonNodeAppInfo = objMapAppInfo.
                 readTree(MiddUtils.getAppInfo(webClient, endptsRepository.getEndPointMuitiVende("GET_APP_INFORMATION"), accessToken));
-        HttpHeaders headers = new HttpHeaders();
-        headers.add("Content-Type", "application/json");
-        headers.add("Authorization", "Bearer " + accessToken);
-        String url = endptsRepository.getEndPointMuitiVende("UPLOAD_PICTURE_TO_PRODUCT_BY_URL")
-                .replace("{{merchant_id}}", jsonNodeAppInfo.get("MerchantId").asText())
-                .replace("{{product-pictures-set-id}}", "default");
-        return webClient.post()
-                .uri(url)
-                .headers(h -> h.addAll(headers))
-                .bodyValue(bodyRequest)
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+        if(jsonNodeAppInfo.has("error")) {
+            System.err.println("An error occurred while obtaining App Information.");
+            throw new RuntimeException("An error occurred while obtaining App Information." + jsonNodeAppInfo.get("error").asText());
+        } else {
+            HttpHeaders headers = new HttpHeaders();
+            headers.add("Content-Type", "application/json");
+            headers.add("Authorization", "Bearer " + accessToken);
+            String url = endptsRepository.getEndPointMuitiVende("UPLOAD_PICTURE_TO_PRODUCT_BY_URL")
+                    .replace("{{merchant_id}}", jsonNodeAppInfo.get("MerchantId").asText())
+                    .replace("{{product-pictures-set-id}}", "default");
+            return webClient.post()
+                    .uri(url)
+                    .headers(h -> h.addAll(headers))
+                    .bodyValue(bodyRequest)
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        }
     }
 
     public String updateMiddlewareSynchronizedImages(String uploadResponse) throws JsonProcessingException, RuntimeException {

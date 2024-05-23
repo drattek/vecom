@@ -38,17 +38,15 @@ public class MSBController {
     }
 
     @PostMapping(value = "/synchronize-products")
-    public String uploadProducts(){
+    public String uploadProducts() {
         try {
             msbProductSyncService.setEncryptDecryptInterface(MiddUtils.getEncryptDecryptInterface());
-            msbProductSyncService.processProducts();
-            return "{ \"message\" : \"" + "Product synchronization ends! " + "\" }";
-        } catch ( JsonProcessingException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
-                NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | ParseException e){
-            System.err.println("An error occurred while synchronizing the products.");
-            System.out.println("StackTrace: ");
+            return msbProductSyncService.processProducts();
+        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
+                NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
+            System.err.println("An error occurred while synchronizing the products: ");
             e.printStackTrace();
-            return "{ \"error\" : \"" + e.getStackTrace() + "\" }";
+            return "An error occurred while synchronizing the products: " + "\r" + e.getMessage();
         }
     }
 
@@ -71,8 +69,8 @@ public class MSBController {
             requestBody = imagesSyncService.getJSONToSyncProductsImages();
             uploadResponse = imagesSyncService.uploadProductImages(requestBody);
             return imagesSyncService.updateMiddlewareSynchronizedImages(uploadResponse);
-        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException |
-                IllegalBlockSizeException | NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
+        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
+                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
             return e.getMessage();
         }
     }

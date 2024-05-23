@@ -23,10 +23,15 @@ public interface ProductsRepository extends JpaRepository<EcommProducts, Long>
             @QueryHint(name = HINT_CACHEABLE, value = "false"),
             @QueryHint(name = READ_ONLY, value = "true")
     })
+    @Query(value = "select distinct ep.Name, ep.NameAlias, ep.SearchName, ep.Description, ep.ItemId, ep.InventTable_modifieddatetime " +
+        "from ecommproducts ep where ep.ItemId like 'MSB-_______' order by ep.ItemId ",
+        nativeQuery = true)
+    Stream<Object[]> getProductsToSynchronize();
 
     @Query(value = "select distinct ep.Name, ep.NameAlias, ep.SearchName, ep.Description, ep.ItemId, ep.InventTable_modifieddatetime " +
-            "from ecommproducts ep where ep.ItemId like 'MSB-_______' order by ep.ItemId",
+            "from ecommproducts ep where ep.ItemId = 'MSB-0005841' OR ep.ItemId = 'MSB-0005842' OR ep.ItemId = 'MSB-0005843' " +
+            "OR ep.ItemId = 'MSB-0005844' OR ep.ItemId = 'MSB-0005845' order by ep.ItemId ",
             nativeQuery = true)
-    Stream<Object[]> getProductsToSynchronize();
+    Object[][] getProductsToSynchronizeTEST();
 
 }
