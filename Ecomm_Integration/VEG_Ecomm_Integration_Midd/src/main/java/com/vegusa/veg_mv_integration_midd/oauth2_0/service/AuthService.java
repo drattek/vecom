@@ -91,7 +91,7 @@ public class AuthService {
                     .bodyToMono(String.class)
                     .block();
         } catch (WebClientResponseException e) {
-            return "{ \"error\" : \"" + e.getStatusCode() + " " + e.getMessage()  + "\" }";
+            return MiddUtils.getSimpleJSONResponse("error", e.getStatusCode() + " " + e.getMessage());
         }
     }
 
@@ -154,10 +154,10 @@ public class AuthService {
                         .bodyToMono(String.class)
                         .block();
             } catch (WebClientResponseException e) {
-                return "{ \"error\" : \"" + e.getStatusCode() + " " + e.getMessage()  + "\" }";
+                return MiddUtils.getSimpleJSONResponse("error", e.getStatusCode() + " " + e.getMessage());
             }
         } else {
-            return "{ \"error\" : \"Token info to generate the refresh token was not found.\" }";
+            return MiddUtils.getSimpleJSONResponse("error", "Token info to generate the refresh token was not found.");
         }
     }
 

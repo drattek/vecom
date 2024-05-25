@@ -7,9 +7,9 @@ import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.AESEncryptDec
 import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfo;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRepository;
+import org.json.JSONObject;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
@@ -37,12 +37,12 @@ public class MiddUtils {
                     .bodyToMono(String.class)
                     .block();
         } catch (RuntimeException e) {
-            return "{ \"error\" : \"" + e.getMessage()  + "\" }";
+            return MiddUtils.getSimpleJSONResponse("error", e.getMessage());
         }
     }
 
     public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface)
-            throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
+            throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
             BadPaddingException, InvalidKeyException {
         TokenInfo tokenInfo =  tokenInfoRepository.findById(1).orElse(null);
         if(tokenInfo != null) {
@@ -51,7 +51,7 @@ public class MiddUtils {
             String algorithm = "AES/CBC/PKCS5Padding";
             return encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherAccessToken(), key, ivParameterSpec);
         } else {
-            return "{ \"error\" : \"Access token was not found.\" }";
+            throw new RuntimeException("Access token was not found in Middleware data base.");
         }
     }
 
@@ -69,7 +69,7 @@ public class MiddUtils {
         return new AESEncryptDecrypt();
     }
 
-    public static JsonNode getJSONResponse(String errorMessage, String response) throws JsonProcessingException {
+    public static JsonNode validateResponse(String errorMessage, String response) throws JsonProcessingException {
         ObjectMapper objMapper = new ObjectMapper();
         JsonNode jsonNodeAppInfo = objMapper.readTree(response);
         if(jsonNodeAppInfo.has("error")) {
@@ -77,6 +77,12 @@ public class MiddUtils {
         } else {
             return jsonNodeAppInfo;
         }
+    }
+
+    public static String getSimpleJSONResponse(String key, String value){
+        JSONObject response = new JSONObject();
+        response.put(key, value);
+        return response.toString();
     }
 
 

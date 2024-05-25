@@ -1,16 +1,13 @@
 package com.vegusa.veg_mv_integration_midd.msb.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.vegusa.veg_mv_integration_midd.msb.service.MSBImageWebScraperService;
 import com.vegusa.veg_mv_integration_midd.msb.service.MSBImagesSyncService;
 import com.vegusa.veg_mv_integration_midd.msb.service.MSBProductSyncService;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
-import org.json.JSONArray;
-import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.util.MultiValueMap;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
@@ -18,7 +15,6 @@ import javax.crypto.NoSuchPaddingException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.text.ParseException;
 import java.util.HashMap;
 
 @RestController
@@ -44,19 +40,23 @@ public class MSBController {
             return msbProductSyncService.processProducts();
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
-            System.err.println("An error occurred while synchronizing the products: ");
+            System.err.println("An error occurred while synchronizing the products.");
+            System.err.println("StackTrace: ");
             e.printStackTrace();
             return "An error occurred while synchronizing the products: " + "\r" + e.getMessage();
         }
     }
 
     @PostMapping(value="/image-scraper")
-    public String tvhWebScraper(@RequestBody HashMap<String, String> userCredentials){
+    public String tvhWebScraper(@RequestBody HashMap<String, String> userCredentials) {
         try {
             String bodyRequest = imageWebScraperService.getJSONRequest(userCredentials.get("userEmail"), userCredentials.get("userPass"));
-            return  imageWebScraperService.getTVHScrapedImages(bodyRequest);
-        } catch (WebClientResponseException e){
-            return  e.getMessage();
+            return imageWebScraperService.getTVHScrapedImages(bodyRequest);
+        } catch (RuntimeException e){
+            System.err.println("An error occurred while scraping the images.");
+            System.err.println("StackTrace: ");
+            e.printStackTrace();
+            return "An error occurred while scraping the images: " + "\r" + e.getMessage();
         }
     }
 
@@ -64,23 +64,17 @@ public class MSBController {
     public String uploadImages() {
         try {
             String requestBody;
-            String uploadResponse;
+            JsonNode uploadResponse;
             imagesSyncService.setEncryptDecryptInterface(MiddUtils.getEncryptDecryptInterface());
             requestBody = imagesSyncService.getJSONToSyncProductsImages();
-            uploadResponse = imagesSyncService.uploadProductImages(requestBody);
+            uploadResponse = MiddUtils.validateResponse("Error while uploading images to ecommerce: ", imagesSyncService.uploadProductImages(requestBody));
             return imagesSyncService.updateMiddlewareSynchronizedImages(uploadResponse);
-        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
-                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
-            return e.getMessage();
+        } catch (RuntimeException | JsonProcessingException e) {
+            System.err.println("An error occurred while uploading the images.");
+            System.err.println("StackTrace: ");
+            e.printStackTrace();
+            return "An error occurred while uploading the images: " + "\r" + e.getMessage();
         }
     }
-
-
-
-
-
-
-
-
 
 }

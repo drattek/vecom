@@ -59,15 +59,15 @@ public class AuthController  implements ApplicationRunner {
         }catch (JsonProcessingException | InterruptedException | InvalidAlgorithmParameterException | NoSuchPaddingException |
                 IllegalBlockSizeException | NoSuchAlgorithmException |  BadPaddingException | ParseException | InvalidKeyException e) {
             System.err.println("An error occurred while saving the token.");
-            System.out.println("StackTrace: ");
+            System.err.println("StackTrace: ");
             e.printStackTrace();
         }
 
     }
 
     @Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "${fixedDelayRefreshToken.in.milliseconds}")
-    public void refreshTokenPeriodically(){
-        try{
+    public void refreshTokenPeriodically() {
+        try {
             ObjectMapper objectMapper = new ObjectMapper();
             JsonNode jsonNode = objectMapper.readTree(this.authService.refreshAccessToken());
             if(jsonNode.has("error")) {
@@ -86,7 +86,7 @@ public class AuthController  implements ApplicationRunner {
         } catch (InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException | InterruptedException | ParseException e){
             System.err.println("An error occurred while refreshing the token.");
-            System.out.println("StackTrace: ");
+            System.err.println("StackTrace: ");
             e.printStackTrace();
         }
     }
