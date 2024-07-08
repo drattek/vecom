@@ -3,19 +3,22 @@ package com.vegusa.veg_mv_integration_midd.msb.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vegusa.veg_mv_integration_midd.msb.repository.ProductsRepository;
+import com.vegusa.veg_mv_integration_midd.msb.entity.ECOMProduct;
+import com.vegusa.veg_mv_integration_midd.msb.repository.ProductRepository;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfo;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VegMvSynchronizedProduct;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VwVegEcommScrapedAdditionalInfo;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvIntegrationEndptsRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvSynchronizedProductRepository;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VwVegEcommScrapedAdditionalInfoRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import jakarta.persistence.EntityManager;
 import org.json.JSONObject;
 import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
@@ -24,8 +27,6 @@ import org.springframework.http.HttpHeaders;
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
-import javax.crypto.SecretKey;
-import javax.crypto.spec.IvParameterSpec;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -37,27 +38,31 @@ import java.util.HashMap;
 @Service
 public class MSBProductSyncService {
     //MSB-Repository
-    private final ProductsRepository productsRepository;
+    private final ProductRepository productsRepository;
     //Middleware - Repository
     private final VegMvIntegrationEndptsRepository endptsRepository;
     private final TokenInfoRepository tokenInfoRepository;
     private final VegMvSynchronizedProductRepository vegMvSynchronizedProductRepository;
+    private final VwVegEcommScrapedAdditionalInfoRepository vwVegEcommScrapedAdditionalInfoRepository;
+
     private final WebClient webClient;
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
     private final EntityManager entityManager;
 
     @Autowired
-    public MSBProductSyncService(ProductsRepository productsRepository,
+    public MSBProductSyncService(ProductRepository productsRepository,
                                  VegMvIntegrationEndptsRepository endptsRepository,
                                  TokenInfoRepository tokenInfoRepository,
                                  VegMvSynchronizedProductRepository vegMvSynchronizedProductRepository,
+                                 VwVegEcommScrapedAdditionalInfoRepository vwVegEcommScrapedAdditionalInfoRepository,
                                  WebClient webClient, Environment env,
                                  EntityManager entityManager) {
         this.productsRepository = productsRepository;
         this.endptsRepository = endptsRepository;
         this.tokenInfoRepository = tokenInfoRepository;
         this.vegMvSynchronizedProductRepository = vegMvSynchronizedProductRepository;
+        this.vwVegEcommScrapedAdditionalInfoRepository = vwVegEcommScrapedAdditionalInfoRepository;
         this.webClient = webClient;
         this.env = env;
         this.entityManager = entityManager;
@@ -74,15 +79,16 @@ public class MSBProductSyncService {
         JsonNode jsonNodeAppInfo = MiddUtils
                 .validateResponse("An error occurred while obtaining App Information: ",
                         MiddUtils.getAppInfo(webClient, endptsRepository.getEndPointMuitiVende("GET_APP_INFORMATION"), accessToken));
-        Object[][] productsStream = productsRepository.getProductsToSynchronizeTEST();
+       // Object[][] productsStream = productsRepository.getProductsToSynchronizeTEST();
+        ECOMProduct[] products = productsRepository.getProductsToSynchronize();
         String urlCreateProduct = endptsRepository.getEndPointMuitiVende("CREATE_PRODUCT")
                 .replace("{{merchant_id}}", jsonNodeAppInfo.get("MerchantId").asText());
         String urlUpdateProduct = endptsRepository.getEndPointMuitiVende("UPDATE_PRODUCT");
-        for (int it = 0; it < productsStream.length; it++) {
+        for (int it = 0; it < products.length; it++) {
+            /*
             try {
                 HashMap<String, String> syncProduct = new HashMap<>();
-                Object[] product = productsStream[it];
-                VegMvSynchronizedProduct synchronizedProduct = vegMvSynchronizedProductRepository.getSynchronizedProductById(product[4].toString());
+                VegMvSynchronizedProduct synchronizedProduct = vegMvSynchronizedProductRepository.getSynchronizedProductById(products[it].getArticulo());
                 SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                 String url = (synchronizedProduct == null) ? urlCreateProduct :
                         (formatter.parse(product[5].toString()).after(formatter.parse(synchronizedProduct.getUpdatedAtMv().toString())))
@@ -100,34 +106,20 @@ public class MSBProductSyncService {
                     System.out.println("The product " + product[4].toString() + " doesn´t require to be synchronized.");
                 }
             } catch  (RuntimeException | ParseException | JsonProcessingException e) {
-                System.err.println("Error when synchronizing the product " + productsStream[it][4]);
+                System.err.println("Error when synchronizing the product " + products[it].getArticulo());
                 e.printStackTrace();
                 HashMap<String, String> syncProductError = new HashMap<>();
-                syncProductError.put("error", "Error when synchronizing the product " + productsStream[it][4]);
+                syncProductError.put("error", "Error when synchronizing the product " + products[it].getArticulo());
                 syncProductError.put("message", e.getMessage());
                 response.accumulate("error", syncProductError);
                 if(e.getMessage().contains("401")){
-                    accessToken = getDecryptedAccessToken();
+                    accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface,
+                            "Access token was not found in processProducts method.");
                 }
             }
+            */
         }
         return response.toString();
-    }
-
-    private String getDecryptedAccessToken() {
-        try {
-            TokenInfo tokenInfo =  tokenInfoRepository.findById(1).orElse(null);
-            if(tokenInfo != null) {
-                SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
-                IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
-                String algorithm = "AES/CBC/PKCS5Padding";
-                return encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherAccessToken(), key, ivParameterSpec);
-            }
-        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
-                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException e){
-            System.err.println("Access token was not found in processProducts method.");
-        }
-        return "";
     }
 
     private String synchronizeProducts(String accessToken, Object[] product, String url, VegMvSynchronizedProduct synchronizedProduct) {
@@ -200,5 +192,64 @@ public class MSBProductSyncService {
             System.err.println("The product " + jsonNodeResp.get("internalCode").asText() + " with error status was NOT saved in Middleware table.");
         }
     }
+
+    @Transactional(readOnly = false)
+    public String processTVHAdditionalInfo() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
+            NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
+        JSONObject response = new JSONObject();
+        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface);
+        String urlUpdateProduct = endptsRepository.getEndPointMuitiVende("UPDATE_PRODUCT");
+        VwVegEcommScrapedAdditionalInfo[] additionalInfo = vwVegEcommScrapedAdditionalInfoRepository.getAdditionalProductsInfo();
+        for(int it = 0; it < additionalInfo.length; it++){
+            try {
+                HashMap<String, String> syncProduct = new HashMap<>();
+                VegMvSynchronizedProduct synchronizedProduct = vegMvSynchronizedProductRepository
+                        .getSynchronizedProductById(additionalInfo[it].getInternalProductId());
+                String url = urlUpdateProduct.replace("{{product_id}}", additionalInfo[it].getIdMv());
+                JsonNode jsonNodeSyncProducts = MiddUtils
+                        .validateResponse("", synchronizeProducts(accessToken, additionalInfo[it], url));
+                updateMiddlewareSynchronizedProducts(jsonNodeSyncProducts, synchronizedProduct);
+                syncProduct.put("ok", "The product " + additionalInfo[it].getInternalProductId() + " was synchronized successfully.");
+                response.accumulate("ok", syncProduct);
+                System.out.println("The product " + additionalInfo[it].getInternalProductId() + " was synchronized successfully.");
+            } catch (RuntimeException | JsonProcessingException e) {
+                System.err.println("Error when synchronizing the product " + additionalInfo[it].getInternalProductId());
+                e.printStackTrace();
+                HashMap<String, String> syncProductError = new HashMap<>();
+                syncProductError.put("error", "Error when synchronizing the product " + additionalInfo[it].getInternalProductId());
+                syncProductError.put("message", e.getMessage());
+                response.accumulate("error", syncProductError);
+                if(e.getMessage().contains("401")){
+                    accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface,
+                            "Access token was not found in processProducts method.");
+                }
+            }
+        }
+        return response.toString();
+    }
+
+    private String synchronizeProducts(String accessToken, VwVegEcommScrapedAdditionalInfo product, String url) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.add("Content-Type", "application/json");
+            headers.add("Authorization", "Bearer " + accessToken);
+            MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
+            bodyValues.add("name", product.getShortDescription());
+            bodyValues.add("description", product.getShortDescription() + " "
+                    + product.getWeight() + "-" + product.getUnitOfMeasure() + " "
+                    + product.getCrossReference());
+            bodyValues.add("shortDescription", product.getShortDescription());
+            return webClient.put()
+                    .uri(url)
+                    .headers(h -> h.addAll(headers))
+                    .body(BodyInserters.fromFormData(bodyValues))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (RuntimeException e) {
+            return MiddUtils.getSimpleJSONResponse("error", e.getMessage());
+        }
+    }
+
 
 }

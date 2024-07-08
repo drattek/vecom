@@ -27,10 +27,4 @@ public interface ProductsRepository extends JpaRepository<EcommProducts, Long>
         "from ecommproducts ep where ep.ItemId like 'MSB-_______' order by ep.ItemId ",
         nativeQuery = true)
     Stream<Object[]> getProductsToSynchronize();
-
-    @Query(value = "select distinct ep.Name, ep.NameAlias, ep.SearchName, ep.Description, ep.ItemId, ep.InventTable_modifieddatetime " +
-            "from ecommproducts ep where ep.ItemId like 'MSB-_______' order by ep.ItemId ",
-            nativeQuery = true)
-    Object[][] getProductsToSynchronizeTEST();
-
 }

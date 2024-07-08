@@ -10,7 +10,6 @@ import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRep
 import org.json.JSONObject;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.reactive.function.client.WebClient;
-
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
@@ -55,6 +54,23 @@ public class MiddUtils {
         }
     }
 
+    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, String ExcMessage) {
+        try {
+            TokenInfo tokenInfo =  tokenInfoRepository.findById(1).orElse(null);
+            if(tokenInfo != null) {
+                SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
+                IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
+                String algorithm = "AES/CBC/PKCS5Padding";
+                return encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherAccessToken(), key, ivParameterSpec);
+            }
+        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
+                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException e){
+            System.err.println(ExcMessage);
+        }
+        return "";
+    }
+
+
     public static SecretKey convertStringToSecretKey(String encodedKey) {
         byte[] decodedKey = Base64.getDecoder().decode(encodedKey);
         return new SecretKeySpec(decodedKey, 0, decodedKey.length, "AES");
@@ -71,11 +87,11 @@ public class MiddUtils {
 
     public static JsonNode validateResponse(String errorMessage, String response) throws JsonProcessingException {
         ObjectMapper objMapper = new ObjectMapper();
-        JsonNode jsonNodeAppInfo = objMapper.readTree(response);
-        if(jsonNodeAppInfo.has("error")) {
-            throw new RuntimeException(errorMessage + jsonNodeAppInfo.get("error").asText());
+        JsonNode jsonNode = objMapper.readTree(response);
+        if(jsonNode.has("error")) {
+            throw new RuntimeException(errorMessage + jsonNode.get("error").asText());
         } else {
-            return jsonNodeAppInfo;
+            return jsonNode;
         }
     }
 
