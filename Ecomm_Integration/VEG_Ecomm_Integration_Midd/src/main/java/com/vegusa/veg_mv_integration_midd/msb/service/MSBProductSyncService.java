@@ -75,7 +75,7 @@ public class MSBProductSyncService {
     public String processProducts() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
             NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
-        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface);
+        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env);
         JsonNode jsonNodeAppInfo = MiddUtils
                 .validateResponse("An error occurred while obtaining App Information: ",
                         MiddUtils.getAppInfo(webClient, endptsRepository.getEndPointMuitiVende("GET_APP_INFORMATION"), accessToken));
@@ -197,7 +197,7 @@ public class MSBProductSyncService {
     public String processTVHAdditionalInfo() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
             NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
         JSONObject response = new JSONObject();
-        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface);
+        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env);
         String urlUpdateProduct = endptsRepository.getEndPointMuitiVende("UPDATE_PRODUCT");
         VwVegEcommScrapedAdditionalInfo[] additionalInfo = vwVegEcommScrapedAdditionalInfoRepository.getAdditionalProductsInfo();
         for(int it = 0; it < additionalInfo.length; it++){
@@ -220,7 +220,7 @@ public class MSBProductSyncService {
                 syncProductError.put("message", e.getMessage());
                 response.accumulate("error", syncProductError);
                 if(e.getMessage().contains("401")){
-                    accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface,
+                    accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env,
                             "Access token was not found in processProducts method.");
                 }
             }

@@ -12,6 +12,7 @@ import jakarta.persistence.EntityManager;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -37,6 +38,7 @@ public class MSBImagesSyncService {
     private final EntityManager entityManager;
     private final WebClient webClient;
     private EncryptDecryptInterface encryptDecryptInterface;
+    private final Environment env;
 
     @Autowired
     public MSBImagesSyncService(VwVegImagesByProductRepository vwVegImagesByProductRepository,
@@ -44,13 +46,15 @@ public class MSBImagesSyncService {
                                 TokenInfoRepository tokenInfoRepository,
                                 VegMvIntegrationEndptsRepository endptsRepository,
                                 EntityManager entityManager,
-                                WebClient webClient){
+                                WebClient webClient,
+                                Environment env){
         this.vwVegImagesByProductRepository = vwVegImagesByProductRepository;
         this.vegEcommSynchronizedImageRepository = vegEcommSynchronizedImageRepository;
         this.tokenInfoRepository = tokenInfoRepository;
         this.endptsRepository = endptsRepository;
         this.entityManager = entityManager;
         this.webClient = webClient;
+        this.env = env;
     }
 
     public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface) {
@@ -61,7 +65,7 @@ public class MSBImagesSyncService {
     public String processProductsImages(int maxNumOfProductsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
-        AtomicReference<String> accessToken = new AtomicReference<>(MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface));
+        AtomicReference<String> accessToken = new AtomicReference<>(MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env));
         JsonNode jsonNodeAppInfo = MiddUtils
                 .validateResponse("An error occurred while obtaining App Information: ",
                         MiddUtils.getAppInfo(webClient, endptsRepository.getEndPointMuitiVende("GET_APP_INFORMATION"), accessToken.get()));
@@ -102,7 +106,7 @@ public class MSBImagesSyncService {
                 System.err.println("An error occurred processing product images of: " + imageByProduct.getInternalCode());
                 e.printStackTrace();
                 if(e.getMessage().contains("401")){
-                    accessToken.set(MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface,
+                    accessToken.set(MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env,
                             "Access token was not found in processProductsImages method."));
                 }
                 response.accumulate("error", e.getMessage());

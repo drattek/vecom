@@ -8,6 +8,7 @@ import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.EncryptDecryp
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfo;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRepository;
 import org.json.JSONObject;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
 import org.springframework.web.reactive.function.client.WebClient;
 import javax.crypto.BadPaddingException;
@@ -40,10 +41,10 @@ public class MiddUtils {
         }
     }
 
-    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface)
+    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env)
             throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
             BadPaddingException, InvalidKeyException {
-        TokenInfo tokenInfo =  tokenInfoRepository.findById(1).orElse(null);
+        TokenInfo tokenInfo =  tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
         if(tokenInfo != null) {
             SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
             IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
@@ -54,9 +55,9 @@ public class MiddUtils {
         }
     }
 
-    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, String ExcMessage) {
+    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env, String ExcMessage) {
         try {
-            TokenInfo tokenInfo =  tokenInfoRepository.findById(1).orElse(null);
+            TokenInfo tokenInfo =  tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
             if(tokenInfo != null) {
                 SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
                 IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
