@@ -7,7 +7,7 @@ import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfo;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.TokenInfoParameters;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoParametersRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRepository;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvIntegrationEndptsRepository;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegEcomvIntegrationEndptsRepository;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
@@ -35,7 +35,7 @@ public class AuthService {
     //Middleware - Repository
     private final TokenInfoRepository tokenInfoRepository;
     private final TokenInfoParametersRepository tokenInfoParametersRepository;
-    private final VegMvIntegrationEndptsRepository endptsRepository;
+    private final VegEcomvIntegrationEndptsRepository endptsRepository;
     private EncryptDecryptInterface encryptDecryptInterface;
     private final Environment env;
 
@@ -43,7 +43,7 @@ public class AuthService {
     public AuthService(WebClient webClient,
                        TokenInfoRepository tokenInfoRepository,
                        TokenInfoParametersRepository tokenInfoParametersRepository,
-                       VegMvIntegrationEndptsRepository endptsRepository,
+                       VegEcomvIntegrationEndptsRepository endptsRepository,
                        Environment env) {
         this.webClient = webClient;
         this.tokenInfoRepository = tokenInfoRepository;
@@ -60,7 +60,6 @@ public class AuthService {
         MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
         TokenInfoParameters tokenInfoParameters = tokenInfoParametersRepository
                 .getTokenInfoParameters(env.getProperty("integration.company.name"));
-
         if(tokenInfoParameters != null) {
             bodyValues.add("client_id", tokenInfoParameters.getClientId());
             bodyValues.add("client_secret", tokenInfoParameters.getClientSecret());
@@ -85,7 +84,7 @@ public class AuthService {
     public String fetchAccessToken() {
         try {
             return webClient.post()
-                    .uri(endptsRepository.getEndPointMuitiVende("AUTHENTICATE_OAUTH2"))
+                    .uri(endptsRepository.getIntegrationEndPoint("AUTHENTICATE_OAUTH2", "MULTIVENDE"))
                     .body(BodyInserters.fromFormData(getTokenInfoParameters("authorization_code")))
                     .retrieve()
                     .bodyToMono(String.class)
@@ -148,7 +147,7 @@ public class AuthService {
 
             try {
                 return webClient.post()
-                        .uri(endptsRepository.getEndPointMuitiVende("REFRESH_TOKEN_OAUTH2"))
+                        .uri(endptsRepository.getIntegrationEndPoint("REFRESH_TOKEN_OAUTH2", "MULTIVENDE"))
                         .body(BodyInserters.fromFormData(bodyValues))
                         .retrieve()
                         .bodyToMono(String.class)

@@ -3,7 +3,7 @@ package com.vegusa.veg_mv_integration_midd.veg_middleware.entity;
 import jakarta.persistence.*;
 @Entity
 @Table(name = "veg_ecomm_integration_endpts")
-public class VegMvIntegrationEndpts {
+public class VegEcomIntegrationEndpts {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", columnDefinition = "int UNSIGNED not null")

@@ -1,9 +1,7 @@
 package com.vegusa.veg_mv_integration_midd.msb.service;
 
-import com.vegusa.veg_mv_integration_midd.msb.entity.ECOMProduct;
 import com.vegusa.veg_mv_integration_midd.msb.repository.ProductRepository;
 import com.vegusa.veg_mv_integration_midd.msb.repository.ProductsRepository;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VwVegImagesByProduct;
 import jakarta.persistence.EntityManager;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -15,11 +13,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
 import java.util.Iterator;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 @Service
-public class MSBImageWebScraperService {
+public class MSBWebScraperService {
 
     private final ProductsRepository productsRepository;
     private final ProductRepository productRepository;
@@ -28,10 +25,10 @@ public class MSBImageWebScraperService {
     private final WebClient webClient;
 
     @Autowired
-    public MSBImageWebScraperService(ProductsRepository productsRepository,
-                                     ProductRepository productRepository,
-                                     EntityManager entityManager,
-                                     WebClient webClient){
+    public MSBWebScraperService(ProductsRepository productsRepository,
+                                ProductRepository productRepository,
+                                EntityManager entityManager,
+                                WebClient webClient){
         this.productsRepository = productsRepository;
         this.productRepository = productRepository;
         this.entityManager = entityManager;

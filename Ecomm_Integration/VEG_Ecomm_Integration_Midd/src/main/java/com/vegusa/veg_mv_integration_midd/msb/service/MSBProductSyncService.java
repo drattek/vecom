@@ -6,12 +6,11 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.veg_mv_integration_midd.msb.entity.ECOMProduct;
 import com.vegusa.veg_mv_integration_midd.msb.repository.ProductRepository;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VegMvSynchronizedProduct;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VegEcomSynchronizedBrands;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VegEcomSynchronizedCategories;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VegEcomSynchronizedProducts;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VwVegEcommScrapedAdditionalInfo;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.TokenInfoRepository;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvIntegrationEndptsRepository;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VegMvSynchronizedProductRepository;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.VwVegEcommScrapedAdditionalInfoRepository;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.*;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
 import jakarta.persistence.EntityManager;
 import org.json.JSONObject;
@@ -40,22 +39,27 @@ public class MSBProductSyncService {
     //MSB-Repository
     private final ProductRepository productsRepository;
     //Middleware - Repository
-    private final VegMvIntegrationEndptsRepository endptsRepository;
+    private final VegEcomvIntegrationEndptsRepository endptsRepository;
     private final TokenInfoRepository tokenInfoRepository;
-    private final VegMvSynchronizedProductRepository vegMvSynchronizedProductRepository;
+    private final VegEcomSynchronizedProductsRepository vegMvSynchronizedProductRepository;
     private final VwVegEcommScrapedAdditionalInfoRepository vwVegEcommScrapedAdditionalInfoRepository;
-
+    private final VegEcomSynchronizedBrandsRepository vegEcomSynchronizedBrandsRepository;
+    private final VegEcomSynchronizedCategoriesRepository vegEcomSynchronizedCategoriesRepository;
+    //Global
     private final WebClient webClient;
     private final Environment env;
-    private EncryptDecryptInterface encryptDecryptInterface;
     private final EntityManager entityManager;
+    private EncryptDecryptInterface encryptDecryptInterface;
+    private String algorithm;
 
     @Autowired
     public MSBProductSyncService(ProductRepository productsRepository,
-                                 VegMvIntegrationEndptsRepository endptsRepository,
+                                 VegEcomvIntegrationEndptsRepository endptsRepository,
                                  TokenInfoRepository tokenInfoRepository,
-                                 VegMvSynchronizedProductRepository vegMvSynchronizedProductRepository,
+                                 VegEcomSynchronizedProductsRepository vegMvSynchronizedProductRepository,
                                  VwVegEcommScrapedAdditionalInfoRepository vwVegEcommScrapedAdditionalInfoRepository,
+                                 VegEcomSynchronizedBrandsRepository vegEcomSynchronizedBrandsRepository,
+                                 VegEcomSynchronizedCategoriesRepository vegEcomSynchronizedCategoriesRepository,
                                  WebClient webClient, Environment env,
                                  EntityManager entityManager) {
         this.productsRepository = productsRepository;
@@ -63,47 +67,49 @@ public class MSBProductSyncService {
         this.tokenInfoRepository = tokenInfoRepository;
         this.vegMvSynchronizedProductRepository = vegMvSynchronizedProductRepository;
         this.vwVegEcommScrapedAdditionalInfoRepository = vwVegEcommScrapedAdditionalInfoRepository;
+        this.vegEcomSynchronizedBrandsRepository = vegEcomSynchronizedBrandsRepository;
+        this.vegEcomSynchronizedCategoriesRepository = vegEcomSynchronizedCategoriesRepository;
         this.webClient = webClient;
         this.env = env;
         this.entityManager = entityManager;
     }
 
-    public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface) {
+    public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface, String algorithm) {
         this.encryptDecryptInterface = encryptDecryptInterface;
+        this.algorithm = algorithm;
     }
 
-    public String processProducts() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
+    public String processAndUploadProducts() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
             NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
-        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env);
-        JsonNode jsonNodeAppInfo = MiddUtils
-                .validateResponse("An error occurred while obtaining App Information: ",
-                        MiddUtils.getAppInfo(webClient, endptsRepository.getEndPointMuitiVende("GET_APP_INFORMATION"), accessToken));
-       // Object[][] productsStream = productsRepository.getProductsToSynchronizeTEST();
-        ECOMProduct[] products = productsRepository.getProductsToSynchronize();
-        String urlCreateProduct = endptsRepository.getEndPointMuitiVende("CREATE_PRODUCT")
+        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm);
+        JsonNode jsonNodeAppInfo = MiddUtils.validateResponse("An error occurred while obtaining App Information: ",
+                        MiddUtils.getAppInfo(webClient, endptsRepository.getIntegrationEndPoint("GET_APP_INFORMATION", "MULTIVENDE"), accessToken));
+        ECOMProduct[] products = productsRepository.getDYNProducts();
+        String urlCreateProduct = endptsRepository.getIntegrationEndPoint("CREATE_PRODUCT", "MULTIVENDE")
                 .replace("{{merchant_id}}", jsonNodeAppInfo.get("MerchantId").asText());
-        String urlUpdateProduct = endptsRepository.getEndPointMuitiVende("UPDATE_PRODUCT");
+        String urlUpdateProduct = endptsRepository.getIntegrationEndPoint("UPDATE_PRODUCT", "MULTIVENDE");
         for (int it = 0; it < products.length; it++) {
-            /*
             try {
                 HashMap<String, String> syncProduct = new HashMap<>();
-                VegMvSynchronizedProduct synchronizedProduct = vegMvSynchronizedProductRepository.getSynchronizedProductById(products[it].getArticulo());
+                VegEcomSynchronizedProducts synchronizedProduct = vegMvSynchronizedProductRepository.getSynchronizedProductById(products[it].getArticulo());
                 SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                 String url = (synchronizedProduct == null) ? urlCreateProduct :
-                        (formatter.parse(product[5].toString()).after(formatter.parse(synchronizedProduct.getUpdatedAtMv().toString())))
+                        (formatter.parse(products[it].getModifieddatetime().toString()).after(formatter.parse(synchronizedProduct.getUpdatedAtMv().toString())))
                                 ? urlUpdateProduct.replace("{{product_id}}", synchronizedProduct.getIdMvd().toString()) : "not synchronize";
+              //  String url = urlUpdateProduct.replace("{{product_id}}", synchronizedProduct.getIdMvd().toString());
                 if(url != "not synchronize"){
+                    HashMap<String, String> idCatalogs = getCatalogs(accessToken, jsonNodeAppInfo.get("MerchantId").asText(), products[it].getMarca(), products[it].getCateogria());
                     JsonNode jsonNodeSyncProducts = MiddUtils
-                            .validateResponse("", synchronizeProducts(accessToken, product, url, synchronizedProduct));
+                            .validateResponse("", synchronizeProducts(accessToken, synchronizedProduct, url, products[it], idCatalogs));
                     updateMiddlewareSynchronizedProducts(jsonNodeSyncProducts, synchronizedProduct);
-                    syncProduct.put("ok", "The product " + product[4].toString() + " was synchronized successfully.");
+                    syncProduct.put("ok", "The product " + products[it].getArticulo() + " was synchronized successfully.");
                     response.accumulate("ok", syncProduct);
-                    System.out.println("The product " + product[4].toString() + " was synchronized successfully.");
+                    System.out.println("The product " + products[it].getArticulo() + " was synchronized successfully.");
                 } else {
-                    syncProduct.put("ok", "The product " + product[4].toString() + " doesn´t require to be synchronized.");
+                    syncProduct.put("ok", "The product " + products[it].getArticulo() + " doesn´t require to be synchronized.");
                     response.accumulate("synchronized", syncProduct);
-                    System.out.println("The product " + product[4].toString() + " doesn´t require to be synchronized.");
+                    System.out.println("The product " + products[it].getArticulo() + " doesn´t require to be synchronized.");
                 }
             } catch  (RuntimeException | ParseException | JsonProcessingException e) {
                 System.err.println("Error when synchronizing the product " + products[it].getArticulo());
@@ -113,28 +119,83 @@ public class MSBProductSyncService {
                 syncProductError.put("message", e.getMessage());
                 response.accumulate("error", syncProductError);
                 if(e.getMessage().contains("401")){
-                    accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface,
+                    accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface,  env, algorithm,
                             "Access token was not found in processProducts method.");
                 }
             }
-            */
         }
         return response.toString();
     }
 
-    private String synchronizeProducts(String accessToken, Object[] product, String url, VegMvSynchronizedProduct synchronizedProduct) {
+    private HashMap getCatalogs(String accessToken, String merchantId, String brand, String category){
+        try {
+            HashMap<String, String> idCatalogs = new HashMap<>();
+            VegEcomSynchronizedBrands syncBrandId = vegEcomSynchronizedBrandsRepository.getSynchronizedBrand(brand, "MSB");
+            VegEcomSynchronizedCategories syncCategory = vegEcomSynchronizedCategoriesRepository.getSynchronizedCategory(category, "MSB");
+            String brandId = syncBrandId != null ? syncBrandId.getIdEcom() : brand != null ?
+                    createCatalogValue("BRANDS", accessToken, merchantId, endptsRepository.getIntegrationEndPoint("POST_BRAND", "MULTIVENDE"), brand) : null;
+            String categoryId = syncCategory != null ? syncCategory.getIdEcom() : category != null ?
+                    createCatalogValue("CATEGORIES", accessToken, merchantId, endptsRepository.getIntegrationEndPoint("CREATE_PRODUCT_CATEGORY", "MULTIVENDE"), category) : null;
+            idCatalogs.put("brandId", brandId);
+            idCatalogs.put("categoryId", categoryId);
+            return idCatalogs;
+        } catch (RuntimeException | JsonProcessingException e){
+            throw new RuntimeException("An error occurred while obtaining the catalog IDs." + e.getMessage());
+        }
+    }
+
+    private String createCatalogValue(String catalog, String accessToken, String merchantId, String url, String value) throws RuntimeException, JsonProcessingException {
+        String catalogValue = "";
+        HttpHeaders headers = new HttpHeaders();
+        MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
+        ObjectMapper objMapSyncCatalogValue = new ObjectMapper();
+        String createdCatalogValue;
+        headers.add("Content-Type", "application/json");
+        headers.add("Authorization", "Bearer " + accessToken);
+        bodyValues.add("name", value);
+        bodyValues.add("description", value);
+        createdCatalogValue = webClient.post()
+                .uri(url.replace("{{merchant_id}}", merchantId))
+                .headers(h -> h.addAll(headers))
+                .body(BodyInserters.fromFormData(bodyValues))
+                .retrieve()
+                .bodyToMono(String.class)
+                .block();
+        MiddUtils.validateResponse("An error occurred while creating the catalog ID value to " + value + " in " + catalog, createdCatalogValue);
+        switch(catalog) {
+            case "BRANDS":
+                VegEcomSynchronizedBrands vegEcomSynchronizedBrands = objMapSyncCatalogValue.readValue(createdCatalogValue, VegEcomSynchronizedBrands.class);
+                vegEcomSynchronizedBrands.setVegCompany("MSB");
+                vegEcomSynchronizedBrandsRepository.save(vegEcomSynchronizedBrands);
+                catalogValue = vegEcomSynchronizedBrands.getIdEcom();
+                break;
+            case "CATEGORIES":
+                VegEcomSynchronizedCategories vegEcomSynchronizedCategories = objMapSyncCatalogValue.readValue(createdCatalogValue, VegEcomSynchronizedCategories.class);
+                vegEcomSynchronizedCategories.setVegCompany("MSB");
+                vegEcomSynchronizedCategoriesRepository.save(vegEcomSynchronizedCategories);
+                catalogValue = vegEcomSynchronizedCategories.getIdEcom();
+                break;
+            default:
+                // code block
+        }
+        return catalogValue;
+    }
+
+    private String synchronizeProducts(String accessToken, VegEcomSynchronizedProducts synchronizedProduct, String url, ECOMProduct product, HashMap<String, String> idCatalogs) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.add("Content-Type", "application/json");
             headers.add("Authorization", "Bearer " + accessToken);
             MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
-            bodyValues.add("name", product[0] + "");
-            bodyValues.add("alias", product[1] + "");
-            bodyValues.add("model", product[2] + "");
-            bodyValues.add("description", product[3] + "");
-            bodyValues.add("code", product[4] + "");
-            bodyValues.add("internalCode", product[4] + "");
+            bodyValues.add("name", product.getDescripcion() + "");
+            bodyValues.add("alias", product.getNumParte() + "");
+            bodyValues.add("model", product.getNumParte() + "");
+            bodyValues.add("description", product.getDescripcion() + "");
+            bodyValues.add("code", product.getNumParte() + "");
+            bodyValues.add("internalCode", product.getArticulo() + "");
             bodyValues.add("InventoryTypeId", "791a6654-c5f2-11e6-aad6-2c56dc130c0d");
+            if(idCatalogs.get("brandId") != null){ bodyValues.add("BrandId", idCatalogs.get("brandId")); }
+            if(idCatalogs.get("categoryId") != null){ bodyValues.add("ProductCategoryId", idCatalogs.get("categoryId")); }
             if (synchronizedProduct == null) {
                 return webClient.post()
                         .uri(url)
@@ -157,10 +218,10 @@ public class MSBProductSyncService {
         }
     }
 
-    private void updateMiddlewareSynchronizedProducts(JsonNode jsonNodeResp, VegMvSynchronizedProduct synchronizedProduct) {
+    private void updateMiddlewareSynchronizedProducts(JsonNode jsonNodeResp, VegEcomSynchronizedProducts synchronizedProduct) {
         try {
             ObjectMapper objMapSyncProducts = new ObjectMapper();
-            VegMvSynchronizedProduct vegMvSynchronizedProduct = objMapSyncProducts.readValue(jsonNodeResp.toString(), VegMvSynchronizedProduct.class);
+            VegEcomSynchronizedProducts vegMvSynchronizedProduct = objMapSyncProducts.readValue(jsonNodeResp.toString(), VegEcomSynchronizedProducts.class);
             vegMvSynchronizedProduct.setVegBusinessUnit("MSB");
             vegMvSynchronizedProduct.setIntegrationCompany(env.getProperty("integration.company.name"));
             vegMvSynchronizedProduct.setVegSyncStatus("synchronized");
@@ -174,9 +235,9 @@ public class MSBProductSyncService {
         }
     }
 
-    private void updateMiddlewareSynchronizedProductsWithError(JsonNode jsonNodeResp, VegMvSynchronizedProduct synchronizedProduct){
+    private void updateMiddlewareSynchronizedProductsWithError(JsonNode jsonNodeResp, VegEcomSynchronizedProducts synchronizedProduct){
         try {
-            VegMvSynchronizedProduct vegMvSynchronizedProduct = new VegMvSynchronizedProduct();
+            VegEcomSynchronizedProducts vegMvSynchronizedProduct = new VegEcomSynchronizedProducts();
             if(synchronizedProduct != null){
                 vegMvSynchronizedProduct.setId(synchronizedProduct.getId());
             }
@@ -197,13 +258,13 @@ public class MSBProductSyncService {
     public String processTVHAdditionalInfo() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
             NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
         JSONObject response = new JSONObject();
-        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env);
-        String urlUpdateProduct = endptsRepository.getEndPointMuitiVende("UPDATE_PRODUCT");
+        String accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm);
+        String urlUpdateProduct = endptsRepository.getIntegrationEndPoint("UPDATE_PRODUCT", "MULTIVENDE");
         VwVegEcommScrapedAdditionalInfo[] additionalInfo = vwVegEcommScrapedAdditionalInfoRepository.getAdditionalProductsInfo();
         for(int it = 0; it < additionalInfo.length; it++){
             try {
                 HashMap<String, String> syncProduct = new HashMap<>();
-                VegMvSynchronizedProduct synchronizedProduct = vegMvSynchronizedProductRepository
+                VegEcomSynchronizedProducts synchronizedProduct = vegMvSynchronizedProductRepository
                         .getSynchronizedProductById(additionalInfo[it].getInternalProductId());
                 String url = urlUpdateProduct.replace("{{product_id}}", additionalInfo[it].getIdMv());
                 JsonNode jsonNodeSyncProducts = MiddUtils
@@ -220,7 +281,7 @@ public class MSBProductSyncService {
                 syncProductError.put("message", e.getMessage());
                 response.accumulate("error", syncProductError);
                 if(e.getMessage().contains("401")){
-                    accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env,
+                    accessToken = MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm,
                             "Access token was not found in processProducts method.");
                 }
             }

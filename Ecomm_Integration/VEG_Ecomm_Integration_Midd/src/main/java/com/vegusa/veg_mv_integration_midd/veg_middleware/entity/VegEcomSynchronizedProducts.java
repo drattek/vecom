@@ -9,9 +9,9 @@ import java.util.Date;
 @Entity
 @Table(name = "veg_ecomm_synchronized_products")
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class VegMvSynchronizedProduct {
+public class VegEcomSynchronizedProducts {
 
-    public VegMvSynchronizedProduct(){}
+    public VegEcomSynchronizedProducts(){}
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     //@Column(name = "id", nullable = false)

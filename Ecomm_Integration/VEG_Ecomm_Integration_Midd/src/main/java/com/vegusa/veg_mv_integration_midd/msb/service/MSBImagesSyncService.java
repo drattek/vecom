@@ -4,7 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.veg_mv_integration_midd.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
-import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VegEcommSynchronizedImage;
+import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VegEcomSynchronizedImages;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.entity.VwVegImagesByProduct;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.repository.*;
 import com.vegusa.veg_mv_integration_midd.veg_middleware.utils.MiddUtils;
@@ -32,19 +32,20 @@ import java.util.stream.Stream;
 @Service
 public class MSBImagesSyncService {
     private VwVegImagesByProductRepository vwVegImagesByProductRepository;
-    private VegEcommSynchronizedImageRepository vegEcommSynchronizedImageRepository;
+    private VegEcomSynchronizedImagesRepository vegEcommSynchronizedImageRepository;
     private final TokenInfoRepository tokenInfoRepository;
-    private final VegMvIntegrationEndptsRepository endptsRepository;
+    private final VegEcomvIntegrationEndptsRepository endptsRepository;
     private final EntityManager entityManager;
     private final WebClient webClient;
-    private EncryptDecryptInterface encryptDecryptInterface;
     private final Environment env;
+    private EncryptDecryptInterface encryptDecryptInterface;
+    private String algorithm;
 
     @Autowired
     public MSBImagesSyncService(VwVegImagesByProductRepository vwVegImagesByProductRepository,
-                                VegEcommSynchronizedImageRepository vegEcommSynchronizedImageRepository,
+                                VegEcomSynchronizedImagesRepository vegEcommSynchronizedImageRepository,
                                 TokenInfoRepository tokenInfoRepository,
-                                VegMvIntegrationEndptsRepository endptsRepository,
+                                VegEcomvIntegrationEndptsRepository endptsRepository,
                                 EntityManager entityManager,
                                 WebClient webClient,
                                 Environment env){
@@ -57,19 +58,20 @@ public class MSBImagesSyncService {
         this.env = env;
     }
 
-    public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface) {
+    public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface, String algorithm) {
         this.encryptDecryptInterface = encryptDecryptInterface;
+        this.algorithm = algorithm;
     }
 
     @Transactional(readOnly = false)
-    public String processProductsImages(int maxNumOfProductsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String processAndUploadProductsImages(int maxNumOfProductsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
-        AtomicReference<String> accessToken = new AtomicReference<>(MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env));
+        AtomicReference<String> accessToken = new AtomicReference<>(MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm));
         JsonNode jsonNodeAppInfo = MiddUtils
                 .validateResponse("An error occurred while obtaining App Information: ",
-                        MiddUtils.getAppInfo(webClient, endptsRepository.getEndPointMuitiVende("GET_APP_INFORMATION"), accessToken.get()));
-        String url = endptsRepository.getEndPointMuitiVende("UPLOAD_PICTURE_TO_PRODUCT_BY_URL")
+                        MiddUtils.getAppInfo(webClient, endptsRepository.getIntegrationEndPoint("GET_APP_INFORMATION", "MULTIVENDE"), accessToken.get()));
+        String url = endptsRepository.getIntegrationEndPoint("UPLOAD_PICTURE_TO_PRODUCT_BY_URL", "MULTIVENDE")
                 .replace("{{merchant_id}}", jsonNodeAppInfo.get("MerchantId").asText())
                 .replace("{{product-pictures-set-id}}", "default");
         Supplier<Stream<VwVegImagesByProduct>> vwVegImagesByProductIdStream = () -> vwVegImagesByProductRepository.getSynchronizedProductsWithImages();
@@ -106,7 +108,7 @@ public class MSBImagesSyncService {
                 System.err.println("An error occurred processing product images of: " + imageByProduct.getInternalCode());
                 e.printStackTrace();
                 if(e.getMessage().contains("401")){
-                    accessToken.set(MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env,
+                    accessToken.set(MiddUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm,
                             "Access token was not found in processProductsImages method."));
                 }
                 response.accumulate("error", e.getMessage());
@@ -156,8 +158,8 @@ public class MSBImagesSyncService {
                     for(int i = 0; i < jaUpImageInfo.length(); i++){
                         JSONObject upImageInfo = jaUpImageInfo.optJSONObject(i);
                         ObjectMapper objMapUpImageInfo = new ObjectMapper();
-                        VegEcommSynchronizedImage vegEcommSynchronizedImage = objMapUpImageInfo
-                                .readValue(upImageInfo.toString(), VegEcommSynchronizedImage.class);
+                        VegEcomSynchronizedImages vegEcommSynchronizedImage = objMapUpImageInfo
+                                .readValue(upImageInfo.toString(), VegEcomSynchronizedImages.class);
                         vegEcommSynchronizedImageRepository.save(vegEcommSynchronizedImage);
                         response.put(new JSONObject(vegEcommSynchronizedImage.getProductId(), vegEcommSynchronizedImage.getUrl()));
                     }

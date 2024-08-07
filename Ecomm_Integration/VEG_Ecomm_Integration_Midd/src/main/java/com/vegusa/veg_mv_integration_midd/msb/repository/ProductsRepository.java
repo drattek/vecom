@@ -16,7 +16,6 @@ import static org.hibernate.jpa.HibernateHints.HINT_FETCH_SIZE;
 @Repository
 public interface ProductsRepository extends JpaRepository<EcommProducts, Long>
 {
-
     @QueryHints(value = {
          //   @QueryHint(name = HINT_FETCH_SIZE, value = "" + Integer.MIN_VALUE),
             @QueryHint(name = HINT_FETCH_SIZE, value = "" + 25),

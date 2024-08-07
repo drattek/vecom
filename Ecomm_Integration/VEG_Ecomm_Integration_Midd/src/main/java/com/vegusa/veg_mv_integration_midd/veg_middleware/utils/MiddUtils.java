@@ -41,27 +41,25 @@ public class MiddUtils {
         }
     }
 
-    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env)
+    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm)
             throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
             BadPaddingException, InvalidKeyException {
         TokenInfo tokenInfo =  tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
         if(tokenInfo != null) {
             SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
             IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
-            String algorithm = "AES/CBC/PKCS5Padding";
             return encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherAccessToken(), key, ivParameterSpec);
         } else {
             throw new RuntimeException("Access token was not found in Middleware data base.");
         }
     }
 
-    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env, String ExcMessage) {
+    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm, String ExcMessage) {
         try {
             TokenInfo tokenInfo =  tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
             if(tokenInfo != null) {
                 SecretKey key = MiddUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
                 IvParameterSpec ivParameterSpec = MiddUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
-                String algorithm = "AES/CBC/PKCS5Padding";
                 return encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherAccessToken(), key, ivParameterSpec);
             }
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |

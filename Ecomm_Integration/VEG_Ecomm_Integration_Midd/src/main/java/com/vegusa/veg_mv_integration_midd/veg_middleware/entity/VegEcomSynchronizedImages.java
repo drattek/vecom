@@ -3,12 +3,11 @@ package com.vegusa.veg_mv_integration_midd.veg_middleware.entity;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
-import java.time.LocalDate;
 import java.util.Date;
 
 @Entity
 @Table(name = "veg_ecomm_synchronized_images")
-public class VegEcommSynchronizedImage {
+public class VegEcomSynchronizedImages {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)

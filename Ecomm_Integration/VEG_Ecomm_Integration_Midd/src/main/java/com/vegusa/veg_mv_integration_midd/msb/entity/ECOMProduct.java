@@ -8,6 +8,7 @@ import org.hibernate.annotations.Immutable;
 import org.hibernate.annotations.Nationalized;
 
 import java.math.BigDecimal;
+import java.util.Date;
 
 /**
  * Mapping for DB view
@@ -16,14 +17,13 @@ import java.math.BigDecimal;
 @Immutable
 @Table(name = "ECOMProducts")
 public class ECOMProduct {
-    @Id
     @Nationalized
     @Column(name = "Articulo", nullable = false, length = 20)
     private String articulo;
 
     @Nationalized
     @Column(name = "\"Descripción\"", length = 60)
-    private String descripción;
+    private String descripcion;
 
     @Nationalized
     @Column(name = "\"Num.Parte\"", length = 20)
@@ -45,18 +45,49 @@ public class ECOMProduct {
 
     @Nationalized
     @Column(name = "\"Cateogría\"", length = 254)
-    private String cateogría;
+    private String categoria;
 
     @Nationalized
     @Column(name = "Marca", length = 1000)
     private String marca;
 
+    @Column(name = "MODIFIEDDATETIME", nullable = false)
+    private Date modifieddatetime;
+
+    @Nationalized
+    @Column(name = "NameAlias", length = 20)
+    private String nameAlias;
+
+    @Nationalized
+    @Column(name = "Description", length = 1000)
+    private String description;
+
+    @Id
+    @Column(name = "RECID", nullable = false)
+    private Long recid;
+
+    public Long getRecid() {
+        return recid;
+    }
+
+    public String getDescription() {
+        return description;
+    }
+
+    public String getNameAlias() {
+        return nameAlias;
+    }
+
+    public Date getModifieddatetime() {
+        return modifieddatetime;
+    }
+
     public String getArticulo() {
         return articulo;
     }
 
-    public String getDescripción() {
-        return descripción;
+    public String getDescripcion() {
+        return descripcion;
     }
 
     public String getNumParte() {
@@ -79,8 +110,8 @@ public class ECOMProduct {
         return dimension;
     }
 
-    public String getCateogría() {
-        return cateogría;
+    public String getCateogria() {
+        return categoria;
     }
 
     public String getMarca() {
