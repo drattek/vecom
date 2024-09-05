@@ -1,9 +1,8 @@
 <component name="ProjectRunConfigurationManager">
-  <configuration default="false" name="VegMvIntegrationMiddApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
+  <configuration default="false" name="EcommerceMiddlewareApplication" type="SpringBootApplicationConfigurationType" factoryName="Spring Boot" nameIsGenerated="true">
     <option name="ALTERNATIVE_JRE_PATH" value="openjdk-21" />
     <option name="ALTERNATIVE_JRE_PATH_ENABLED" value="true" />
-    <module name="VEG_Ecomm_Integration_Midd.main" />
-    <option name="SPRING_BOOT_MAIN_CLASS" value="com.vegusa.veg_mv_integration_midd.VegMvIntegrationMiddApplication" />
+    <option name="SPRING_BOOT_MAIN_CLASS" value="com.vegusa.EcommerceMiddlewareApplication" />
     <option name="VM_PARAMETERS" value="-Dserver.port=8090" />
     <method v="2">
       <option name="Make" enabled="true" />

@@ -1,15 +1,16 @@
 package com.vegusa.veg_ecomm_webscraperimages.controller;
 
-import com.vegusa.veg_ecomm_webscraperimages.entity.EcomScrapedAdditionalInfo;
 import com.vegusa.veg_ecomm_webscraperimages.service.WebScraperService;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.openqa.selenium.WebDriver;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.HashMap;
+import java.util.List;
 
 @RestController
 @RequestMapping(value = "veg-web-scraper")
@@ -22,7 +23,7 @@ public class WebScraperController {
     }
 
     @PostMapping(value="/tvh-images")
-    public String scrapeTVHImages(@RequestBody String productsReq) {
+    public String scrapeTVHImages(@RequestBody String productsReq){
         JSONObject response = new JSONObject();
         JSONObject productsInfo = new JSONObject(productsReq);
         JSONArray productsList = productsInfo.getJSONArray("products");
@@ -31,7 +32,6 @@ public class WebScraperController {
             try {
                 HashMap<String, String> imageUrlToUpload;
                 HashMap<String, String> imageUrlUploaded;
-                HashMap<String, String> imageSaved;
                 imageUrlToUpload = webScraperService.scraperTVHPage(productsList.getJSONObject(i).getString("internalProductId"),
                         productsList.getJSONObject(i).getString("productId"), loginDriver, "images");
                 if (imageUrlToUpload.containsKey("error")) {
@@ -40,30 +40,63 @@ public class WebScraperController {
                 } else {
                     imageUrlUploaded = webScraperService.uploadImageToAzure(productsList.getJSONObject(i).getString("internalProductId"),
                             productsList.getJSONObject(i).getString("productId"), imageUrlToUpload.get("image"));
-                    if (imageUrlUploaded.containsKey("error")) {
-                        System.err.println(imageUrlUploaded.get("error") + " " + imageUrlUploaded.get("message"));
-                        response.accumulate("unsavedProductImages", imageUrlUploaded);
-                    } else {
-                        imageSaved = webScraperService.saveUploadedImageInfo(productsList.getJSONObject(i).getString("internalProductId"),
-                                productsList.getJSONObject(i).getString("productName"), productsList.getJSONObject(i).getString("productId"),
-                                imageUrlUploaded.get("blobName"), imageUrlUploaded.get("urlSavedImage"));
-                        if (imageSaved.containsKey("error")) {
-                            System.err.println(imageSaved.get("error") + " " + imageSaved.get("message"));
-                            response.accumulate("unsavedProductImages", imageSaved);
-                        } else{
-                            response.accumulate("savedProductImages", imageSaved);
-                        }
-                    }
+                    saveInfo(response, productsList, i, imageUrlUploaded, "");
                 }
-                if((i + 1) % 100 == 0){
-                    System.out.println("Is in Sleep time!");
-                    Thread.sleep(300000); //10 minutes
-                }
-            } catch (InterruptedException e) {
+            } catch (RuntimeException e) {
                 System.err.println("An error occurred in the sleep method to the product: " + productsList.getJSONObject(i).getString("internalProductId"));
             }
         }
         return response.toString();
+    }
+
+    @PostMapping(value="/scrape-uca-images")
+    public String scrapeUCAImages(@RequestBody String request){
+        try {
+            JSONObject response = new JSONObject(), requestInfo = new JSONObject(request);
+            JSONArray productsList = requestInfo.getJSONArray("products");
+            WebDriver loginDriver = webScraperService.getUCADriverLoginPage(requestInfo.get("userEmail").toString(), requestInfo.get("userPass").toString());
+            for(int i = 0; i < productsList.length(); i++) {
+                System.out.println("ENTER TO FOR CYCLE...");
+                try {
+                    List<String> imageUrlToUpload = webScraperService.scraperUCAPage(productsList.getJSONObject(i).getString("internalProductId"),
+                            productsList.getJSONObject(i).getString("productId"), loginDriver);
+                    String partNumberFound = imageUrlToUpload.getFirst();
+                    HashMap<String, String> imageUrlUploaded;
+                    imageUrlToUpload.removeFirst();
+                    for (String image : imageUrlToUpload) {
+                        imageUrlUploaded = webScraperService.uploadImageToAzure(productsList.getJSONObject(i).getString("internalProductId"),
+                                productsList.getJSONObject(i).getString("productId"), image);
+                        saveInfo(response, productsList, i, imageUrlUploaded, partNumberFound);
+                    }
+                } catch (RuntimeException e) {
+                    System.err.println("An error occurred while scraping / saving the images for item: " + productsList.getJSONObject(i).getString("internalProductId") + " " + e.getMessage());
+                    response.accumulate("unsavedProductImages", e.getMessage());
+                }
+                System.out.println("END SCRAPE CYCLE TO ..." + productsList.getJSONObject(i).getString("internalProductId"));
+            }
+            return response.toString();
+        } catch (RuntimeException e){
+            System.err.println("An error occurred while scraping uca images.");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
+        }
+    }
+
+    private void saveInfo(JSONObject response, JSONArray productsList, int i, HashMap<String, String> imageUrlUploaded, String partNumberFound) throws RuntimeException{
+        HashMap<String, String> imageSaved;
+        if(imageUrlUploaded.containsKey("error")) {
+            System.err.println(imageUrlUploaded.get("error") + " " + imageUrlUploaded.get("message"));
+            response.accumulate("unsavedProductImages", imageUrlUploaded);
+        } else {
+            imageSaved = webScraperService.saveUploadedImageInfo(productsList.getJSONObject(i).getString("internalProductId"),
+                    productsList.getJSONObject(i).getString("productName"), productsList.getJSONObject(i).getString("productId"),
+                    imageUrlUploaded.get("blobName"), imageUrlUploaded.get("urlSavedImage"), partNumberFound);
+            if (imageSaved.containsKey("error")) {
+                System.err.println(imageSaved.get("error") + " " + imageSaved.get("message"));
+                response.accumulate("unsavedProductImages", imageSaved);
+            } else{
+                response.accumulate("savedProductImages", imageSaved);
+            }
+        }
     }
 
     @PostMapping(value="/tvh-additional-info")
@@ -138,5 +171,14 @@ public class WebScraperController {
     public void fixCrossReferences(){
         webScraperService.fixCrossReferences();
     }
+
+    @PostMapping(value="/add-founded-part-number")
+    public void addFoundedPartNumberColumn(){
+        webScraperService.addFoundedPartNumberColumn();
+        System.out.println("The work ends!");
+    }
+
+
+
 
 }

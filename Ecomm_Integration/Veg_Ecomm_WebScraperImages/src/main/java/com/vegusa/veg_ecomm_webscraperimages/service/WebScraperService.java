@@ -3,17 +3,19 @@ package com.vegusa.veg_ecomm_webscraperimages.service;
 import com.azure.storage.blob.BlobContainerClient;
 import com.azure.storage.blob.BlobContainerClientBuilder;
 import com.azure.storage.blob.specialized.BlockBlobClient;
-import com.vegusa.veg_ecomm_webscraperimages.entity.EcomImageProducts;
 import com.vegusa.veg_ecomm_webscraperimages.entity.EcomPartCrossReference;
 import com.vegusa.veg_ecomm_webscraperimages.entity.EcomScrapedAdditionalInfo;
+import com.vegusa.veg_ecomm_webscraperimages.entity.ScrapedImage;
 import com.vegusa.veg_ecomm_webscraperimages.repository.EcomPartCrossReferenceRepository;
 import com.vegusa.veg_ecomm_webscraperimages.repository.EcomImageProductsRepository;
 import com.vegusa.veg_ecomm_webscraperimages.repository.EcomScrapedAdditionalInfoRepository;
+import com.vegusa.veg_ecomm_webscraperimages.repository.SynchronizedProductRepository;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.jsoup.Jsoup;
 import org.jsoup.nodes.Document;
 import org.jsoup.nodes.Element;
+import org.jsoup.select.Elements;
 import org.openqa.selenium.By;
 import org.openqa.selenium.WebDriver;
 import org.openqa.selenium.WebElement;
@@ -31,8 +33,7 @@ import java.net.URL;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
-import java.util.Date;
-import java.util.HashMap;
+import java.util.*;
 
 @Service
 public class WebScraperService {
@@ -40,17 +41,20 @@ public class WebScraperService {
     private final EcomImageProductsRepository ecommImageProductsRepository;
     private final EcomScrapedAdditionalInfoRepository ecommProductsInfoRepository;
     private final EcomPartCrossReferenceRepository ecomPartCrossReferenceRepository;
+    private final SynchronizedProductRepository syncProducts;
     private final WebClient webClient;
 
     @Autowired
     public WebScraperService(EcomImageProductsRepository ecommImageProductsRepository,
                              EcomScrapedAdditionalInfoRepository ecommProductsInfoRepository,
                              EcomPartCrossReferenceRepository ecomPartCrossReferenceRepository,
+                             SynchronizedProductRepository syncProducts,
                              WebClient webClient,
                              Environment env){
         this.ecommImageProductsRepository = ecommImageProductsRepository;
         this.ecommProductsInfoRepository = ecommProductsInfoRepository;
         this.ecomPartCrossReferenceRepository = ecomPartCrossReferenceRepository;
+        this.syncProducts = syncProducts;
         this.webClient = webClient;
         this.env = env;
     }
@@ -77,7 +81,35 @@ public class WebScraperService {
         return driver;
     }
 
-    public HashMap scraperTVHPage(String internalProductId, String productId, WebDriver driver, String aim) {
+    public WebDriver getUCADriverLoginPage(String userEmail, String userPass){
+        ChromeOptions chromeOptions = new ChromeOptions();
+        chromeOptions.addArguments("--headless");
+        chromeOptions.addArguments("window-size=1200,1100");
+        //Create web driver
+        WebDriver driver = new ChromeDriver(chromeOptions);
+        //LOGIN PAGE
+        driver.get(env.getProperty("integration.env.uca-login-page"));
+        //Find and set username
+        WebElement username = driver.findElement(By.id("username"));
+        username.sendKeys(userEmail);
+        //Find and set password
+        WebElement password = driver.findElement(By.id("password"));
+        password.sendKeys(userPass);
+        //Find and click login button
+        WebElement loginButton = driver.findElement(By.id("btnSubmit"));
+        loginButton.click();
+        driver.get(env.getProperty("integration.env.uca-verify-access-page"));
+        System.out.println("Ingresa el código de verificación: ");
+        Scanner scanner = new Scanner(System.in);
+        String code = scanner.nextLine();
+        WebElement verificationCode = driver.findElement(By.id("VerificationCode"));
+        verificationCode.sendKeys(code);
+        WebElement submitBtn = driver.findElement(By.id("btnSubmit"));
+        submitBtn.click();
+        return driver;
+    }
+
+    public HashMap<String, String> scraperTVHPage(String internalProductId, String productId, WebDriver driver, String aim) {
         HashMap<String, String> response = new HashMap<>();
         try {
             //HOME PAGE
@@ -133,7 +165,67 @@ public class WebScraperService {
         }
     }
 
-    public HashMap uploadImageToAzure(String internalProductId, String productId, String url) {
+    public List<String> scraperUCAPage(String internalProductId, String productId, WebDriver driver) {
+        List<String> response = new ArrayList<String>();
+        System.out.println("Enter to scrape method: " + internalProductId);
+        try {
+            //HOME PAGE
+            driver.get(env.getProperty("integration.env.uca-home-page"));
+            System.out.println("Charging home page...");
+            Thread.sleep(7000);
+            //Search text box
+            WebElement searchText = driver.findElement(By.id("headerSearchPartNumber"));
+            searchText.sendKeys(productId);
+            //Search button
+            WebElement searchButton = driver.findElement(By.id("btnId"));
+            searchButton.click();
+            System.out.println("Charging part number info...");
+            Thread.sleep(7000);
+            if(validateScrapField(driver)){
+                System.out.println("Find multiple results!");
+                WebElement partInfo = driver.findElement(By.className("part-info-component__img-container"));
+                partInfo.click();
+                System.out.println("Charging the first result...");
+                Thread.sleep(   7000);
+            }
+            //SCRAPE PAGE
+            //Retrieve the page source from Selenium
+            String pageSource = driver.getPageSource();
+            //Parse the page source with jsoup
+            Document page = Jsoup.parse(pageSource);
+            Element partNumberFound = page.getElementById("part-detail-part-number");
+            String auxNumParte = partNumberFound != null ? partNumberFound.text() : "";
+            System.out.println("Part number found: " + auxNumParte);
+            response.add(auxNumParte);
+            Elements images = page.getElementsByClass("carousel-item");
+            for (Element image : images) {
+                try {
+                    String auxImage = image.select("img").attr("src");
+                    System.out.println("Image found: " + auxImage);
+                    response.add(auxImage);
+                }catch(RuntimeException e){
+                    System.err.println("An error occurred while scraping the image.");
+                }
+            }
+            System.out.println("The scrape to product " + productId + " ended.");
+        } catch(RuntimeException | InterruptedException e) {
+            System.err.println("Error en el scrape: " + e.getMessage());
+            throw new RuntimeException("An error occurred while scraping the image of: " + internalProductId + "/" + productId + " " + e.getMessage());
+        }
+        return response;
+    }
+
+    private boolean validateScrapField(WebDriver driver){
+        boolean response = true;
+        try {
+            driver.findElement(By.id("categoryParts"));
+        } catch (RuntimeException e){
+            response = false;
+        }
+        return response;
+    }
+
+    public HashMap<String, String> uploadImageToAzure(String internalProductId, String productId, String url) {
         HashMap<String, String> response = new HashMap<>();
         try {
             URL urlImage = new URL(url);
@@ -178,24 +270,25 @@ public class WebScraperService {
         return blobName;
     }
 
-    public HashMap saveUploadedImageInfo(String internalProductId, String productName, String productId, String blobName, String urlSavedImage){
+    public HashMap<String, String> saveUploadedImageInfo(String internalProductId, String productName, String productId, String blobName, String urlSavedImage, String partNumberFound){
         HashMap<String, String> response = new HashMap<>();
         try {
             Integer auxImageBlobNumber = ecommImageProductsRepository.getMaxImageProductNumber(internalProductId, env.getProperty("integration.env.business.unit"));
             int imageBlobNumber = auxImageBlobNumber == null ? 1 : auxImageBlobNumber + 1;
             ZonedDateTime zdt = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of("America/Mexico_City"));
             Date date = Date.from(zdt.toInstant());
-            EcomImageProducts ecommImageProducts = new EcomImageProducts();
+            ScrapedImage ecommImageProducts = new ScrapedImage();
             ecommImageProducts.setInternalProductId(internalProductId);
             ecommImageProducts.setProductName(productName);
-            ecommImageProducts.setProductSearchId(productId);
+            ecommImageProducts.setPartNumberSearched(productId);
+         //   ecommImageProducts.setNewPartNumberFound(partNumberFound);
             ecommImageProducts.setImageNumber(imageBlobNumber);
             ecommImageProducts.setBlobName(blobName);
             ecommImageProducts.setImageUrl(urlSavedImage);
-            ecommImageProducts.setVegBusinessUnit(env.getProperty("integration.env.business.unit"));
+            ecommImageProducts.setBusinessUnit(env.getProperty("integration.env.business.unit"));
             ecommImageProducts.setCreatedAt(date);
             ecommImageProducts.setUpdatedAt(date);
-            ecommImageProducts.setDownloadPortal("TVH");
+            ecommImageProducts.setDownloadPortal(partNumberFound);
             ecommImageProductsRepository.save(ecommImageProducts);
             response.put("ok","The scraped task finished successfully!");
             response.put("message","Image to " + internalProductId + "/" + productId + " saved in: " + urlSavedImage);
@@ -206,7 +299,7 @@ public class WebScraperService {
         return response;
     }
 
-    public HashMap saveScrapedProductInfo(String internalProductId, String productName, String productId, HashMap scrapedInfo){
+    public HashMap<String, String> saveScrapedProductInfo(String internalProductId, String productName, String productId, HashMap scrapedInfo){
         HashMap<String, String> response = new HashMap<>();
         try{
             ZonedDateTime zdt = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of("America/Mexico_City"));
@@ -298,7 +391,7 @@ public class WebScraperService {
     }
 
     public void fixCrossReferences(){
-        EcomScrapedAdditionalInfo[] ecomScrapedAdditionalInfo = ecommProductsInfoRepository.getAdditionalInfo();
+        EcomScrapedAdditionalInfo[] ecomScrapedAdditionalInfo = ecommProductsInfoRepository.getAdditionalInfo("TVH");
         String internalProductId, originalPartId, auxPartNumber, auxOEMDescription, auxOriginalChain;
         int auxChainLength, auxCharIndex;
         for(int it = 0; it < ecomScrapedAdditionalInfo.length; it++){
@@ -344,5 +437,22 @@ public class WebScraperService {
             System.err.println("An error occurred while saving cross reference of " + internalProductId);
         }
     }
+
+    public void addFoundedPartNumberColumn(){
+        EcomScrapedAdditionalInfo[] additionalInfo = ecommProductsInfoRepository.getAdditionalInfo("TVH");
+        String auxShortDescription, newValue;
+        int auxIndex, auxSize;
+        for (EcomScrapedAdditionalInfo ecomScrapedAdditionalInfo : additionalInfo) {
+            auxShortDescription = ecomScrapedAdditionalInfo.getShortDescription();
+            auxIndex = auxShortDescription.lastIndexOf(" / ") + 3;
+            auxSize = auxShortDescription.length();
+            newValue = auxShortDescription.substring(auxIndex, auxSize);
+            ecomScrapedAdditionalInfo.setPartNumber(newValue);
+            ecommProductsInfoRepository.save(ecomScrapedAdditionalInfo);
+            System.out.println("End work to " + ecomScrapedAdditionalInfo.getInternalProductId());
+        }
+    }
+
+
 
 }
