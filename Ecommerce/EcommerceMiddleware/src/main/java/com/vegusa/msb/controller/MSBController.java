@@ -20,7 +20,7 @@ import java.util.HashMap;
 @RestController
 @RequestMapping("msb-ecommerce-integration")
 public class MSBController {
-    private final ItemSyncService msbProductSyncService;
+    private final ItemSyncService itemSyncService;
     private final ItemControlTableService controlTable;
     private final InterfaceInfoService interfaceInfo;
     private final ItemInventorySyncService itemInventory;
@@ -29,14 +29,14 @@ public class MSBController {
     private final WebScraperService webScraperService;
 
     @Autowired
-    public MSBController(ItemSyncService msbProductSyncService,
+    public MSBController(ItemSyncService itemSyncService,
                          ItemControlTableService controlTable,
                          InterfaceInfoService interfaceInfo,
                          ItemInventorySyncService itemInventory,
                          ItemPriceSyncService itemPrice,
                          ImageSyncService msbImagesSyncService,
                          WebScraperService webScraperService){
-        this.msbProductSyncService = msbProductSyncService;
+        this.itemSyncService = itemSyncService;
         this.controlTable = controlTable;
         this.interfaceInfo = interfaceInfo;
         this.itemInventory = itemInventory;
@@ -48,8 +48,8 @@ public class MSBController {
     @PostMapping(value = "/synchronize-products")
     public String uploadProducts(@RequestBody HashMap<String, String> bodyRequest) {
         try {
-            msbProductSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            return msbProductSyncService.processAndUploadProducts(bodyRequest.get("dataAreaId"));
+            itemSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            return itemSyncService.processAndUploadProducts(bodyRequest.get("dataAreaId"));
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while synchronizing the products.");
@@ -152,8 +152,8 @@ public class MSBController {
     @PostMapping(value="/add-tvh-additional-info")
     public String uploadTVHAdditionalInfo() {
         try{
-            msbProductSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            return msbProductSyncService.processTVHAdditionalInfo();
+            itemSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            return itemSyncService.processTVHAdditionalInfo();
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException e){
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
