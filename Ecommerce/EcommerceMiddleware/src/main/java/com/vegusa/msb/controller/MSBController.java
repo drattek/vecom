@@ -45,6 +45,11 @@ public class MSBController {
         this.webScraperService = webScraperService;
     }
 
+    public void printHello()
+    {
+        System.out.println("Hello");
+    }
+
     @PostMapping(value = "/synchronize-products")
     public String uploadProducts(@RequestBody HashMap<String, String> bodyRequest) {
         try {
