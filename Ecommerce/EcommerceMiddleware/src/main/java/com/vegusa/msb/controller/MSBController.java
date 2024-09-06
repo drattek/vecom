@@ -1,5 +1,5 @@
 package com.vegusa.msb.controller;
-//
+
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.vegusa.middleware.entity.SynchronizedPriceList;
@@ -43,11 +43,6 @@ public class MSBController {
         this.itemPrice = itemPrice;
         this.msbImagesSyncService = msbImagesSyncService;
         this.webScraperService = webScraperService;
-    }
-
-    public void printHello()
-    {
-        System.out.println("Hello");
     }
 
     @PostMapping(value = "/synchronize-products")
