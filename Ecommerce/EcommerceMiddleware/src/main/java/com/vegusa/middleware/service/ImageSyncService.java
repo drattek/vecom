@@ -60,14 +60,6 @@ public class ImageSyncService {
         this.webClient = webClient;
         this.env = env;
     }
-
-    public void printHello(){
-        System.out.println("Hello!");
-    }
-
-    public void printHello02(){
-        System.out.println("Hello 2! ");
-    }
     
     public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface, String algorithm) {
         this.encryptDecryptInterface = encryptDecryptInterface;
