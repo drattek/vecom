@@ -3,11 +3,11 @@ package com.vegusa.oauth2_0.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
-import com.vegusa.middleware.entity.TokenInfo;
-import com.vegusa.middleware.entity.TokenInfoParameters;
-import com.vegusa.middleware.repository.TokenInfoParametersRepository;
-import com.vegusa.middleware.repository.TokenInfoRepository;
-import com.vegusa.middleware.repository.VegEcomvIntegrationEndptsRepository;
+import com.vegusa.middleware.entity.AuthToken;
+import com.vegusa.middleware.entity.AuthTokenParameters;
+import com.vegusa.middleware.repository.AuthTokenParametersRepository;
+import com.vegusa.middleware.repository.AuthTokenRepository;
+import com.vegusa.middleware.repository.EndpointRepository;
 import com.vegusa.middleware.utils.MWUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
@@ -33,17 +33,17 @@ import java.util.Base64;
 public class AuthService {
     private final WebClient webClient;
     //Middleware - Repository
-    private final TokenInfoRepository tokenInfoRepository;
-    private final TokenInfoParametersRepository tokenInfoParametersRepository;
-    private final VegEcomvIntegrationEndptsRepository endptsRepository;
+    private final AuthTokenRepository tokenInfoRepository;
+    private final AuthTokenParametersRepository tokenInfoParametersRepository;
+    private final EndpointRepository endptsRepository;
     private EncryptDecryptInterface encryptDecryptInterface;
     private final Environment env;
 
     @Autowired
     public AuthService(WebClient webClient,
-                       TokenInfoRepository tokenInfoRepository,
-                       TokenInfoParametersRepository tokenInfoParametersRepository,
-                       VegEcomvIntegrationEndptsRepository endptsRepository,
+                       AuthTokenRepository tokenInfoRepository,
+                       AuthTokenParametersRepository tokenInfoParametersRepository,
+                       EndpointRepository endptsRepository,
                        Environment env) {
         this.webClient = webClient;
         this.tokenInfoRepository = tokenInfoRepository;
@@ -58,7 +58,7 @@ public class AuthService {
 
     private MultiValueMap<String, String> getTokenInfoParameters(String origin) {
         MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
-        TokenInfoParameters tokenInfoParameters = tokenInfoParametersRepository
+        AuthTokenParameters tokenInfoParameters = tokenInfoParametersRepository
                 .getTokenInfoParameters(env.getProperty("integration.company.name"));
         if(tokenInfoParameters != null) {
             bodyValues.add("client_id", tokenInfoParameters.getClientId());
@@ -85,7 +85,7 @@ public class AuthService {
     public String fetchAccessToken() {
         try {
             return webClient.post()
-                    .uri(endptsRepository.getIntegrationEndPoint("AUTHENTICATE_OAUTH2", "MULTIVENDE"))
+                    .uri(endptsRepository.getEndpointUrl("AUTHENTICATE_OAUTH2", "MULTIVENDE"))
                     .body(BodyInserters.fromFormData(getTokenInfoParameters("authorization_code")))
                     .retrieve()
                     .bodyToMono(String.class)
@@ -105,8 +105,8 @@ public class AuthService {
         String cipherRefreshToken = encryptDecryptInterface.encrypt(algorithm, jsonNode.get("refreshToken").asText(), key, ivParameterSpec);
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
 
-        TokenInfo auxTokenInfo = tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
-        TokenInfo tokenInfo =  (auxTokenInfo != null) ? auxTokenInfo : new TokenInfo();
+        AuthToken auxTokenInfo = tokenInfoRepository.getAuthToken(env.getProperty("integration.company.name"));
+        AuthToken tokenInfo =  (auxTokenInfo != null) ? auxTokenInfo : new AuthToken();
 
         tokenInfo.setIdMv(jsonNode.get("_id").asText());
         tokenInfo.setStatus(jsonNode.get("status").asText());
@@ -136,7 +136,7 @@ public class AuthService {
     public String refreshAccessToken()
             throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
                     BadPaddingException, InvalidKeyException, JsonProcessingException {
-        TokenInfo tokenInfo = tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
+        AuthToken tokenInfo = tokenInfoRepository.getAuthToken(env.getProperty("integration.company.name"));
         if(tokenInfo != null) {
             SecretKey key = MWUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
             IvParameterSpec ivParameterSpec = MWUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
@@ -148,7 +148,7 @@ public class AuthService {
 
             try {
                 return webClient.post()
-                        .uri(endptsRepository.getIntegrationEndPoint("REFRESH_TOKEN_OAUTH2", "MULTIVENDE"))
+                        .uri(endptsRepository.getEndpointUrl("REFRESH_TOKEN_OAUTH2", "MULTIVENDE"))
                         .body(BodyInserters.fromFormData(bodyValues))
                         .retrieve()
                         .bodyToMono(String.class)

@@ -31,9 +31,9 @@ import java.util.Objects;
 
 @Service
 public class ItemInventorySyncService {
-    private final VegEcomvIntegrationEndptsRepository endpoints;
+    private final EndpointRepository endpointRepo;
     private final ItemInventLocationRepository itemInventory;
-    private final TokenInfoRepository tokenInfo;
+    private final AuthTokenRepository tokenInfo;
     private final CompanyRepository companies;
     private final SyncProductsRepository syncProducts;
     private final SyncWarehouseRepository syncWarehouses;
@@ -44,16 +44,16 @@ public class ItemInventorySyncService {
     private String algorithm;
 
     @Autowired
-    public ItemInventorySyncService(VegEcomvIntegrationEndptsRepository endpoints,
+    public ItemInventorySyncService(EndpointRepository endpointRepo,
                                     ItemInventLocationRepository itemInventory,
-                                    TokenInfoRepository tokenInfo,
+                                    AuthTokenRepository tokenInfo,
                                     CompanyRepository companies,
                                     SyncProductsRepository syncProducts,
                                     SyncWarehouseRepository syncWarehouses,
                                     SyncItemInventoryRepository syncItemInventory,
                                     WebClient webClient,
                                     Environment env){
-        this.endpoints = endpoints;
+        this.endpointRepo = endpointRepo;
         this.itemInventory = itemInventory;
         this.tokenInfo = tokenInfo;
         this.companies = companies;
@@ -69,13 +69,18 @@ public class ItemInventorySyncService {
         this.algorithm = algorithm;
     }
 
-    public void uploadWarehouses(String dataAreaId) throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
-            NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
+    private String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
+        String url = endpointRepo.getEndpointUrl("GET_APP_INFORMATION", env.getProperty("integration.company.name"));
+        String appInfo = MWUtils.getAppInfo(webClient, url, accessToken);
+        return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
+    }
+
+    public void uploadWarehouses(String dataAreaId) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+            IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
-        JsonNode jsonNodeAppInfo = MWUtils.validateResponse("An error occurred while obtaining App Information: ",
-                MWUtils.getAppInfo(webClient, endpoints.getIntegrationEndPoint("GET_APP_INFORMATION", "MULTIVENDE"), accessToken));
-        String url = endpoints.getIntegrationEndPoint("CREATE_STORE_OR_WAREHOUSE", "MULTIVENDE")
-                .replace("{{merchant_id}}", jsonNodeAppInfo.get("MerchantId").asText());
+        String merchantId = getMerchantId(accessToken);
+        String url = endpointRepo.getEndpointUrl("CREATE_STORE_OR_WAREHOUSE", "MULTIVENDE")
+                .replace("{{merchant_id}}", merchantId);
         Company company = companies.getCompany(dataAreaId);
         SynchronizedWarehouse syncWarehouse;
         JsonNode jsonNodeSyncWarehouses;
@@ -130,7 +135,7 @@ public class ItemInventorySyncService {
         JSONObject response = new JSONObject();
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
         Company company = companies.getCompany(dataAreaId);
-        String url = endpoints.getIntegrationEndPoint("BULK_UPDATE_STOCK", "MULTIVENDE"), auxUrl = "";
+        String url = endpointRepo.getEndpointUrl("BULK_UPDATE_STOCK", "MULTIVENDE"), auxUrl = "";
         SynchronizedWarehouse[] syncWarehouses = this.syncWarehouses.getSyncWarehouses();
         ItemInventLocation[] auxItemInventory;
         List<JSONArray> auxBodyRequest;

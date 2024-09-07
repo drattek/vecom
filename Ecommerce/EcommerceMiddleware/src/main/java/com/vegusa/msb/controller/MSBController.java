@@ -16,32 +16,33 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.concurrent.atomic.AtomicReference;
 
 @RestController
-@RequestMapping("msb-ecommerce-integration")
+@RequestMapping("msb-ecommerce-middleware")
 public class MSBController {
     private final ItemSyncService itemSyncService;
-    private final ItemControlTableService controlTable;
-    private final InterfaceInfoService interfaceInfo;
-    private final ItemInventorySyncService itemInventory;
-    private final ItemPriceSyncService itemPrice;
-    private final ImageSyncService msbImagesSyncService;
+    private final ItemControlTableService ctrlTableService;
+    private final InterfaceInfoService interfaceInfoService;
+    private final ItemInventorySyncService itemInventService;
+    private final ItemPriceSyncService itemPriceSyncService;
+    private final ImageSyncService imageSyncService;
     private final WebScraperService webScraperService;
 
     @Autowired
     public MSBController(ItemSyncService itemSyncService,
-                         ItemControlTableService controlTable,
-                         InterfaceInfoService interfaceInfo,
-                         ItemInventorySyncService itemInventory,
-                         ItemPriceSyncService itemPrice,
-                         ImageSyncService msbImagesSyncService,
+                         ItemControlTableService ctrlTableService,
+                         InterfaceInfoService interfaceInfoService,
+                         ItemInventorySyncService itemInventService,
+                         ItemPriceSyncService itemPriceSyncService,
+                         ImageSyncService imageSyncService,
                          WebScraperService webScraperService){
         this.itemSyncService = itemSyncService;
-        this.controlTable = controlTable;
-        this.interfaceInfo = interfaceInfo;
-        this.itemInventory = itemInventory;
-        this.itemPrice = itemPrice;
-        this.msbImagesSyncService = msbImagesSyncService;
+        this.ctrlTableService = ctrlTableService;
+        this.interfaceInfoService = interfaceInfoService;
+        this.itemInventService = itemInventService;
+        this.itemPriceSyncService = itemPriceSyncService;
+        this.imageSyncService = imageSyncService;
         this.webScraperService = webScraperService;
     }
 
@@ -53,22 +54,21 @@ public class MSBController {
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while synchronizing the products.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
 
     @PostMapping(value="/synchronize-images")
-    public String uploadImages() {
+    public String synchronizeImages(@RequestBody HashMap<String, String> request) {
         try {
-            msbImagesSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            return msbImagesSyncService.processAndUploadProductsImages(50);
+            String itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall")), authToken, merchantId;
+            imageSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            authToken = imageSyncService.getAccessToken();
+            merchantId = imageSyncService.getMerchantId(authToken);
+            return imageSyncService.processImagesSync(new AtomicReference<>(authToken), merchantId, Integer.parseInt(itemsPerCall));
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
             System.err.println("An error occurred while uploading the images.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
@@ -76,11 +76,9 @@ public class MSBController {
     @PostMapping(value="/update-products-control-table")
     public String updateProductsControlTable(@RequestBody HashMap<String, String> interfaceDS){
         try{
-            return controlTable.processAndSaveInterfaceInfo(interfaceDS.get("interfaceId"), interfaceDS.get("dataAreaId"));
+            return ctrlTableService.processAndSaveInterfaceInfo(interfaceDS.get("interfaceId"), interfaceDS.get("dataAreaId"));
         } catch (RuntimeException e){
             System.err.println("An error occurred while updating product control table.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
@@ -90,15 +88,13 @@ public class MSBController {
         try {
             return switch (interfaceDS.get("interfaceId")) {
                 case "DYN" ->
-                        interfaceInfo.updateDYNInterfaceInfo(interfaceDS.get("dataAreaId"), interfaceDS.get("interfaceId"));
+                        interfaceInfoService.updateDYNInterfaceInfo(interfaceDS.get("dataAreaId"), interfaceDS.get("interfaceId"));
                 case "UCA", "TVH" ->
-                        interfaceInfo.updateInterfaceInfo(interfaceDS.get("dataAreaId"), interfaceDS.get("interfaceId"));
+                        interfaceInfoService.updateInterfaceInfo(interfaceDS.get("dataAreaId"), interfaceDS.get("interfaceId"));
                 default -> throw new RuntimeException("The interfaceId sent doesn't exist.");
             };
         } catch (RuntimeException e){
             System.err.println("An error occurred while updating interface information.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
@@ -106,14 +102,12 @@ public class MSBController {
     @PostMapping(value="/upload-item-inventory")
     public String uploadItemInventory(@RequestBody HashMap<String, String> requestBody){
         try {
-            itemInventory.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            itemInventory.uploadWarehouses(requestBody.get("dataAreaId"));
-            return itemInventory.processItemInventoryUpdate(requestBody.get("dataAreaId"), Integer.parseInt(requestBody.get("itemsPerCall")));
+            itemInventService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            itemInventService.uploadWarehouses(requestBody.get("dataAreaId"));
+            return itemInventService.processItemInventoryUpdate(requestBody.get("dataAreaId"), Integer.parseInt(requestBody.get("itemsPerCall")));
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while uploading item inventory.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
@@ -129,22 +123,20 @@ public class MSBController {
                     marketplace = MWUtils.bodyValidation(requestBody.get("marketplace")),
                     currencyCode = MWUtils.bodyValidation(requestBody.get("currencyCode")),
                     itemsPerCall = MWUtils.bodyValidation(requestBody.get("itemsPerCall"));
-            itemPrice.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            accessToken = itemPrice.getAccessToken();
-            merchantId = itemPrice.getMerchantId(accessToken);
+            itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            accessToken = itemPriceSyncService.getAccessToken();
+            merchantId = itemPriceSyncService.getMerchantId(accessToken);
             fullPriceListName = dataAreaId + "_" + priceListName + "_" + marketplace;
-            currencyId = itemPrice.getCurrencyId(currencyCode, accessToken, merchantId);
-            priceList = itemPrice.getSyncPriceList(fullPriceListName, currencyId, dataAreaId);
+            currencyId = itemPriceSyncService.getCurrencyId(currencyCode, accessToken, merchantId);
+            priceList = itemPriceSyncService.getSyncPriceList(fullPriceListName, currencyId, dataAreaId);
             if(priceList == null){
-                JsonNode jsonNodePriceList =  itemPrice.createPriceList(fullPriceListName, description, currencyId, accessToken, merchantId);
-                priceList = itemPrice.savePriceListInfo(jsonNodePriceList, dataAreaId);
+                JsonNode jsonNodePriceList =  itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, accessToken, merchantId);
+                priceList = itemPriceSyncService.savePriceListInfo(jsonNodePriceList, dataAreaId);
             }
-            return itemPrice.processPriceUpdate(priceList.getResponseId(), requestBody, Integer.parseInt(itemsPerCall), accessToken, dataAreaId);
+            return itemPriceSyncService.processPriceUpdate(priceList.getResponseId(), requestBody, Integer.parseInt(itemsPerCall), accessToken, dataAreaId);
         } catch(RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while creating the price list.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
@@ -167,8 +159,6 @@ public class MSBController {
             return webScraperService.getTVHScrapedImages(bodyRequest);
         } catch (RuntimeException e) {
             System.err.println("An error occurred while scraping the images.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
@@ -180,8 +170,6 @@ public class MSBController {
             return webScraperService.getTVHProductsInfo(bodyRequest);
         } catch (RuntimeException e) {
             System.err.println("An error occurred while scraping products info.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
@@ -193,8 +181,6 @@ public class MSBController {
             return webScraperService.getUCAProductsInfo(bodyRequest);
         } catch (RuntimeException e) {
             System.err.println("An error occurred while searching products info.");
-            System.err.println("StackTrace: ");
-            e.printStackTrace();
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }

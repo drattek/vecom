@@ -2,8 +2,8 @@ package com.vegusa.middleware.entity;
 
 import jakarta.persistence.*;
 @Entity
-@Table(name = "veg_ecomm_integration_endpts")
-public class VegEcomIntegrationEndpts {
+@Table(name = "Endpoints")
+public class Endpoint {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", columnDefinition = "int UNSIGNED not null")

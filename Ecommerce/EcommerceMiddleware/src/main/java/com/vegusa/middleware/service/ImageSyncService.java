@@ -1,15 +1,14 @@
 package com.vegusa.middleware.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vegusa.middleware.repository.TokenInfoRepository;
-import com.vegusa.middleware.repository.VegEcomSynchronizedImagesRepository;
-import com.vegusa.middleware.repository.VegEcomvIntegrationEndptsRepository;
-import com.vegusa.middleware.repository.VwVegImagesByProductRepository;
+import com.vegusa.middleware.repository.AuthTokenRepository;
+import com.vegusa.middleware.repository.SyncImageRepository;
+import com.vegusa.middleware.repository.EndpointRepository;
+import com.vegusa.middleware.repository.ItemImagesRepository;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
-import com.vegusa.middleware.entity.VegEcomSynchronizedImages;
-import com.vegusa.middleware.entity.VwVegImagesByProduct;
+import com.vegusa.middleware.entity.SyncImage;
+import com.vegusa.middleware.entity.ItemImages;
 import com.vegusa.middleware.utils.MWUtils;
 import jakarta.persistence.EntityManager;
 import org.json.JSONArray;
@@ -34,10 +33,10 @@ import java.util.stream.Stream;
 
 @Service
 public class ImageSyncService {
-    private final VwVegImagesByProductRepository vwVegImagesByProductRepository;
-    private final VegEcomSynchronizedImagesRepository vegEcommSynchronizedImageRepository;
-    private final TokenInfoRepository tokenInfoRepository;
-    private final VegEcomvIntegrationEndptsRepository endptsRepository;
+    private final ItemImagesRepository itemImagesRepo;
+    private final SyncImageRepository syncImageRepo;
+    private final EndpointRepository endpointRepo;
+    private final AuthTokenRepository authTokenRepo;
     private final EntityManager entityManager;
     private final WebClient webClient;
     private final Environment env;
@@ -45,17 +44,17 @@ public class ImageSyncService {
     private String algorithm;
 
     @Autowired
-    public ImageSyncService(VwVegImagesByProductRepository vwVegImagesByProductRepository,
-                            VegEcomSynchronizedImagesRepository vegEcommSynchronizedImageRepository,
-                            TokenInfoRepository tokenInfoRepository,
-                            VegEcomvIntegrationEndptsRepository endptsRepository,
+    public ImageSyncService(ItemImagesRepository itemImagesRepo,
+                            SyncImageRepository syncImageRepo,
+                            EndpointRepository endpointRepo,
+                            AuthTokenRepository authTokenRepo,
                             EntityManager entityManager,
                             WebClient webClient,
                             Environment env){
-        this.vwVegImagesByProductRepository = vwVegImagesByProductRepository;
-        this.vegEcommSynchronizedImageRepository = vegEcommSynchronizedImageRepository;
-        this.tokenInfoRepository = tokenInfoRepository;
-        this.endptsRepository = endptsRepository;
+        this.itemImagesRepo = itemImagesRepo;
+        this.syncImageRepo = syncImageRepo;
+        this.endpointRepo = endpointRepo;
+        this.authTokenRepo = authTokenRepo;
         this.entityManager = entityManager;
         this.webClient = webClient;
         this.env = env;
@@ -66,63 +65,63 @@ public class ImageSyncService {
         this.algorithm = algorithm;
     }
 
+    public String getAccessToken() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+            IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
+        return MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm);
+    }
+
+    public String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
+        String url = endpointRepo.getEndpointUrl("GET_APP_INFORMATION", env.getProperty("integration.company.name"));
+        String appInfo = MWUtils.getAppInfo(webClient, url, accessToken);
+        return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
+    }
+
     @Transactional(readOnly = false)
-    public String processAndUploadProductsImages(int maxNumOfProductsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String processImagesSync(AtomicReference<String> authToken, String merchantId, int maxNumOfItemsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
-        AtomicReference<String> accessToken = new AtomicReference<>(MWUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm));
-        JsonNode jsonNodeAppInfo = MWUtils
-                .validateResponse("An error occurred while obtaining App Information: ",
-                        MWUtils.getAppInfo(webClient, endptsRepository.getIntegrationEndPoint("GET_APP_INFORMATION", "MULTIVENDE"), accessToken.get()));
-        String url = endptsRepository.getIntegrationEndPoint("UPLOAD_PICTURE_TO_PRODUCT_BY_URL", "MULTIVENDE")
-                .replace("{{merchant_id}}", jsonNodeAppInfo.get("MerchantId").asText())
-                .replace("{{product-pictures-set-id}}", "default");
-        Supplier<Stream<VwVegImagesByProduct>> vwVegImagesByProductIdStream = () -> vwVegImagesByProductRepository.getSynchronizedProductsWithImages();
-        long auxStreamSize = vwVegImagesByProductIdStream.get().count();
-        AtomicLong auxProcessedProduct = new AtomicLong(1);
-        AtomicLong auxProcessedRow = new AtomicLong(1);
-        AtomicReference<String> auxPrevProductId = new AtomicReference<>(vwVegImagesByProductRepository.getFstSyncProductIDWithImage());
+        String url = endpointRepo.getEndpointUrl("UPLOAD_PICTURE_TO_PRODUCT_BY_URL", env.getProperty("integration.company.name"))
+                .replace("{{merchant_id}}", merchantId) .replace("{{product-pictures-set-id}}", "default");
+        Supplier<Stream<ItemImages>> itemImages = itemImagesRepo::getItemImages;
+        AtomicReference<String> auxPreviousItem = new AtomicReference<>(itemImagesRepo.getFstItemImageId());
         JSONArray request =  new JSONArray();
         ArrayList<String> images = new ArrayList<>();
-        vwVegImagesByProductIdStream.get().forEach(imageByProduct -> {
+        AtomicLong auxItemProcessed = new AtomicLong(1), auxRowProcessed = new AtomicLong(1);
+        long streamSize = itemImages.get().count();
+        itemImages.get().forEach(imageByProduct -> {
             try {
-                if(!imageByProduct.getIdMv().equals(auxPrevProductId.get())){
-                    insertProductImagesNode(request, images, auxPrevProductId.get());
-                    if(auxProcessedProduct.get() % maxNumOfProductsPerCall == 0){
-                        JsonNode auxResp = MWUtils
-                                .validateResponse("An error occurred while uploading the images. ",
-                                        uploadProductImages(accessToken.get(), url, request));
-                        JSONArray auxRespMiddleware = updateMiddlewareSynchronizedImages(auxResp.toString());
-                        response.accumulate("ok", auxRespMiddleware);
+                if(!imageByProduct.getIdMv().equals(auxPreviousItem.get())){
+                    insertItemImagesNode(request, images, auxPreviousItem.get());
+                    if(auxItemProcessed.get() % maxNumOfItemsPerCall == 0){
+                        String uploadResponse = uploadItemImages(authToken.get(), url, request);
+                        JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse);
+                        response.accumulate("ok", saveInfoResponse);
                     }
-                    auxProcessedProduct.getAndIncrement();
+                    auxItemProcessed.getAndIncrement();
                 }
                 images.add(imageByProduct.getImageUrl());
-                auxPrevProductId.set(imageByProduct.getIdMv());
-                if(auxProcessedRow.get() == auxStreamSize){
-                    insertProductImagesNode(request, images, imageByProduct.getIdMv());
-                    JsonNode auxResp = MWUtils
-                            .validateResponse("An error occurred while uploading the images. ",
-                                    uploadProductImages(accessToken.get(), url, request));
-                    JSONArray auxRespMiddleware = updateMiddlewareSynchronizedImages(auxResp.toString());
-                    response.accumulate("ok", auxRespMiddleware);
+                auxPreviousItem.set(imageByProduct.getIdMv());
+                if(auxRowProcessed.get() == streamSize){
+                    insertItemImagesNode(request, images, imageByProduct.getIdMv());
+                    String uploadResponse = uploadItemImages(authToken.get(), url, request);
+                    JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse);
+                    response.accumulate("ok", saveInfoResponse);
                 }
-            } catch (RuntimeException | JsonProcessingException e) {
+            } catch (RuntimeException e) {
                 System.err.println("An error occurred processing product images of: " + imageByProduct.getInternalCode());
-                e.printStackTrace();
                 if(e.getMessage().contains("401")){
-                    accessToken.set(MWUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm,
-                            "Access token was not found in processProductsImages method."));
+                    authToken.set(MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm,
+                            "Authorization token was not found in Middleware data base."));
                 }
                 response.accumulate("error", e.getMessage());
             }
-            auxProcessedRow.getAndIncrement();
+            auxRowProcessed.getAndIncrement();
             entityManager.detach(imageByProduct);
         });
         return response.toString();
     }
 
-    private void insertProductImagesNode(JSONArray request,  ArrayList<String> images, String productId) throws RuntimeException {
+    private void insertItemImagesNode(JSONArray request, ArrayList<String> images, String productId) throws RuntimeException {
         JSONObject productImages =  new JSONObject();
         productImages.put("productId", productId);
         productImages.put("images", images);
@@ -130,7 +129,7 @@ public class ImageSyncService {
         images.clear();
     }
 
-    public String uploadProductImages(String accessToken, String url, JSONArray bodyRequest) {
+    public String uploadItemImages(String accessToken, String url, JSONArray bodyRequest) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.add("Content-Type", "application/json");
@@ -143,13 +142,14 @@ public class ImageSyncService {
                     .bodyToMono(String.class)
                     .block();
         } catch (RuntimeException e){
-            return MWUtils.getSimpleJSONResponse("error", e.getMessage());
+            System.err.println("An error occurred while uploading item images." + e.getMessage());
+            throw new RuntimeException("An error occurred while uploading item images." + e.getMessage());
         } finally {
             bodyRequest.clear();
         }
     }
 
-    public JSONArray updateMiddlewareSynchronizedImages(String uploadResponse) {
+    public JSONArray saveSyncImagesInfo(String uploadResponse) {
         try {
             JSONArray response = new JSONArray();
             MWUtils.validateResponse("Error occurred while uploading images to ecommerce: ", uploadResponse);
@@ -161,20 +161,19 @@ public class ImageSyncService {
                     for(int i = 0; i < jaUpImageInfo.length(); i++){
                         JSONObject upImageInfo = jaUpImageInfo.optJSONObject(i);
                         ObjectMapper objMapUpImageInfo = new ObjectMapper();
-                        VegEcomSynchronizedImages vegEcommSynchronizedImage = objMapUpImageInfo
-                                .readValue(upImageInfo.toString(), VegEcomSynchronizedImages.class);
-                        vegEcommSynchronizedImageRepository.save(vegEcommSynchronizedImage);
+                        SyncImage vegEcommSynchronizedImage = objMapUpImageInfo
+                                .readValue(upImageInfo.toString(), SyncImage.class);
+                        syncImageRepo.save(vegEcommSynchronizedImage);
                         response.put(new JSONObject(vegEcommSynchronizedImage.getProductId(), vegEcommSynchronizedImage.getUrl()));
                     }
                 } catch (RuntimeException e) {
                     System.err.println("An error occurred while saving uploaded image info to: " + uploadRespArray.optJSONObject(it));
-                    e.printStackTrace();
                 }
             }
             return response;
         } catch (RuntimeException | JsonProcessingException e) {
             System.err.println("Error occurred while saving uploaded images info to Middleware data base: " + "\r" + e.getMessage());
-            throw new RuntimeException(e.getMessage());
+            throw new RuntimeException("An error occurred while saving uploaded images info to Middleware data base: " + e.getMessage());
         }
     }
 

@@ -5,8 +5,8 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.oauth2_0.encrypt_decrypt.AESEncryptDecrypt;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
-import com.vegusa.middleware.entity.TokenInfo;
-import com.vegusa.middleware.repository.TokenInfoRepository;
+import com.vegusa.middleware.entity.AuthToken;
+import com.vegusa.middleware.repository.AuthTokenRepository;
 import org.json.JSONObject;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
@@ -30,7 +30,6 @@ public class MWUtils {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.add("Authorization", "Bearer " + accessToken);
-
             return webClient.get()
                     .uri(url)
                     .headers(h -> h.addAll(headers))
@@ -38,26 +37,26 @@ public class MWUtils {
                     .bodyToMono(String.class)
                     .block();
         } catch (RuntimeException e) {
-            return MWUtils.getSimpleJSONResponse("error", e.getMessage());
+            throw new RuntimeException("An error occurred while obtaining App Information: " + e.getMessage());
         }
     }
 
-    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm)
+    public static String getDecryptedAccessToken(AuthTokenRepository authTokenRepo, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm)
             throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
             BadPaddingException, InvalidKeyException {
-        TokenInfo tokenInfo =  tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
+        AuthToken tokenInfo =  authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
         if(tokenInfo != null) {
             SecretKey key = MWUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
             IvParameterSpec ivParameterSpec = MWUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
             return encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherAccessToken(), key, ivParameterSpec);
         } else {
-            throw new RuntimeException("Access token was not found in Middleware data base.");
+            throw new RuntimeException("Authorization token was not found in Middleware data base.");
         }
     }
 
-    public static String getDecryptedAccessToken(TokenInfoRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm, String ExcMessage) {
+    public static String getDecryptedAccessToken(AuthTokenRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm, String ExcMessage) {
         try {
-            TokenInfo tokenInfo =  tokenInfoRepository.getTokenInfo(env.getProperty("integration.company.name"));
+            AuthToken tokenInfo =  tokenInfoRepository.getAuthToken(env.getProperty("integration.company.name"));
             if(tokenInfo != null) {
                 SecretKey key = MWUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
                 IvParameterSpec ivParameterSpec = MWUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
@@ -92,6 +91,12 @@ public class MWUtils {
         } else {
             return jsonNode;
         }
+    }
+
+    public static String getJsonNodeResponse(String response, String label) throws JsonProcessingException {
+        ObjectMapper objMapper = new ObjectMapper();
+        JsonNode jsonNode = objMapper.readTree(response);
+        return jsonNode.get(label).asText();
     }
 
     public static String getSimpleJSONResponse(String key, String value){

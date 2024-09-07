@@ -29,8 +29,8 @@ import java.util.*;
 @Service
 public class ItemPriceSyncService {
     private final ItemInventLocationRepository itemInventory;
-    private final VegEcomvIntegrationEndptsRepository endpoints;
-    private final TokenInfoRepository tokenInfo;
+    private final EndpointRepository endpoints;
+    private final AuthTokenRepository tokenInfo;
     private final SyncPriceListRepository priceLists;
     private final SyncItemPriceRepository itemPrices;
     private final ProfitMarginCategoryRepository marginCategories;
@@ -44,8 +44,8 @@ public class ItemPriceSyncService {
 
     @Autowired
     private ItemPriceSyncService(ItemInventLocationRepository itemInventory,
-                                 VegEcomvIntegrationEndptsRepository endpoints,
-                                 TokenInfoRepository tokenInfo,
+                                 EndpointRepository endpoints,
+                                 AuthTokenRepository tokenInfo,
                                  SyncPriceListRepository priceLists,
                                  SyncItemPriceRepository itemPrices,
                                  ProfitMarginCategoryRepository marginCategories,
@@ -78,9 +78,9 @@ public class ItemPriceSyncService {
     }
 
     public String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
-        JsonNode jsonNodeAppInfo = MWUtils.validateResponse("An error occurred while obtaining App Information: ",
-                MWUtils.getAppInfo(webClient, endpoints.getIntegrationEndPoint("GET_APP_INFORMATION", "MULTIVENDE"), accessToken));
-        return jsonNodeAppInfo.get("MerchantId").asText();
+        String url = endpoints.getEndpointUrl("GET_APP_INFORMATION", env.getProperty("integration.company.name"));
+        String appInfo = MWUtils.getAppInfo(webClient, url, accessToken);
+        return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
     }
 
     public SynchronizedPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
@@ -89,7 +89,7 @@ public class ItemPriceSyncService {
 
     public JsonNode createPriceList(String name, String description, String currencyId, String accessToken, String merchantId)
             throws RuntimeException, JsonProcessingException {
-        String url = endpoints.getIntegrationEndPoint("CREATE_PRICE_LIST", "MULTIVENDE").replace("{{merchant_id}}", merchantId);
+        String url = endpoints.getEndpointUrl("CREATE_PRICE_LIST", "MULTIVENDE").replace("{{merchant_id}}", merchantId);
         HttpHeaders headers = MWUtils.getHeaders(accessToken);
         MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
         bodyValues.add("name", name);
@@ -122,7 +122,7 @@ public class ItemPriceSyncService {
         String response, url;
         JsonNode allCurrencies;
         HttpHeaders headers = MWUtils.getHeaders(accessToken);
-        url = endpoints.getIntegrationEndPoint("GET_CURRENCIES", "MULTIVENDE").replace("{{merchant_id}}", merchantId);
+        url = endpoints.getEndpointUrl("GET_CURRENCIES", "MULTIVENDE").replace("{{merchant_id}}", merchantId);
         allCurrencies = MWUtils.validateResponse("",
                 webClient.get()
                 .uri(url)
@@ -158,7 +158,7 @@ public class ItemPriceSyncService {
             throws RuntimeException, JsonProcessingException {
         JSONObject response = new JSONObject();
         Company company = companies.getCompany(dataAreaId);
-        String url = endpoints.getIntegrationEndPoint("UPDATE_PRICE_BULK_SETs", "MULTIVENDE")
+        String url = endpoints.getEndpointUrl("UPDATE_PRICE_BULK_SETs", "MULTIVENDE")
                 .replace("{{product_price_list_id}}", priceListId);
         List<JSONArray> bodyValues = getItemPrices(requestBody, itemsPerCall, dataAreaId);
         JsonNode auxSyncPrices;

@@ -6,8 +6,8 @@ import jakarta.persistence.*;
 import java.util.Date;
 
 @Entity
-@Table(name = "veg_ecomm_synchronized_images")
-public class VegEcomSynchronizedImages {
+@Table(name = "SyncImage")
+public class SyncImage {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)

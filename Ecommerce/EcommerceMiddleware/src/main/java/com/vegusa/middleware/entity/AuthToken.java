@@ -5,8 +5,8 @@ import jakarta.persistence.*;
 import java.util.Date;
 
 @Entity
-@Table(name = "veg_ecomm_token_info")
-public class TokenInfo
+@Table(name = "AuthToken")
+public class AuthToken
 {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

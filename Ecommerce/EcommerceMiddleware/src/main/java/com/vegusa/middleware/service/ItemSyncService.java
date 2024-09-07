@@ -33,8 +33,8 @@ import java.util.List;
 @Service
 public class ItemSyncService {
     //Middleware - Repository
-    private final VegEcomvIntegrationEndptsRepository endptsRepository;
-    private final TokenInfoRepository tokenInfoRepository;
+    private final EndpointRepository endpointRepo;
+    private final AuthTokenRepository tokenInfoRepository;
     private final SyncProductsRepository vegMvSynchronizedProductRepository;
     private final VwVegEcommScrapedAdditionalInfoRepository vwVegEcommScrapedAdditionalInfoRepository;
     private final VegEcomSynchronizedBrandsRepository vegEcomSynchronizedBrandsRepository;
@@ -52,8 +52,8 @@ public class ItemSyncService {
     private String algorithm;
 
     @Autowired
-    public ItemSyncService(VegEcomvIntegrationEndptsRepository endptsRepository,
-                           TokenInfoRepository tokenInfoRepository,
+    public ItemSyncService(EndpointRepository endpointRepo,
+                           AuthTokenRepository tokenInfoRepository,
                            SyncProductsRepository vegMvSynchronizedProductRepository,
                            VwVegEcommScrapedAdditionalInfoRepository vwVegEcommScrapedAdditionalInfoRepository,
                            VegEcomSynchronizedBrandsRepository vegEcomSynchronizedBrandsRepository,
@@ -66,7 +66,7 @@ public class ItemSyncService {
                            WebClient webClient,
                            Environment env,
                            EntityManager entityManager) {
-        this.endptsRepository = endptsRepository;
+        this.endpointRepo = endpointRepo;
         this.tokenInfoRepository = tokenInfoRepository;
         this.vegMvSynchronizedProductRepository = vegMvSynchronizedProductRepository;
         this.vwVegEcommScrapedAdditionalInfoRepository = vwVegEcommScrapedAdditionalInfoRepository;
@@ -87,15 +87,20 @@ public class ItemSyncService {
         this.algorithm = algorithm;
     }
 
+    private String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
+        String url = endpointRepo.getEndpointUrl("GET_APP_INFORMATION", env.getProperty("integration.company.name"));
+        String appInfo = MWUtils.getAppInfo(webClient, url, accessToken);
+        return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
+    }
+
     public String processAndUploadProducts(String dataAreaId) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm);
-        JsonNode jsonNodeAppInfo = MWUtils.validateResponse("An error occurred while obtaining App Information: ",
-                        MWUtils.getAppInfo(webClient, endptsRepository.getIntegrationEndPoint("GET_APP_INFORMATION", "MULTIVENDE"), accessToken));
-        String urlCreateProduct = endptsRepository.getIntegrationEndPoint("CREATE_PRODUCT", "MULTIVENDE")
-                .replace("{{merchant_id}}", jsonNodeAppInfo.get("MerchantId").asText());
-        String urlUpdateProduct = endptsRepository.getIntegrationEndPoint("UPDATE_PRODUCT", "MULTIVENDE");
+        String merchantId = getMerchantId(accessToken);
+        String urlCreateProduct = endpointRepo.getEndpointUrl("CREATE_PRODUCT", "MULTIVENDE")
+                .replace("{{merchant_id}}", merchantId);
+        String urlUpdateProduct = endpointRepo.getEndpointUrl("UPDATE_PRODUCT", "MULTIVENDE");
         InterfaceProduct auxIProduct = new InterfaceProduct();
         List<String> itemIds = attributeValues.getItemIdList(dataAreaId);
         for(String itemId : itemIds){
@@ -108,7 +113,7 @@ public class ItemSyncService {
                         (formatter.parse(auxIProduct.getUpdatedAt().toString()).after(formatter.parse(synchronizedProduct.getUpdatedAtMv().toString())))
                                 ? urlUpdateProduct.replace("{{product_id}}", synchronizedProduct.getIdMvd()) : "not synchronize";
                 if(!url.equals("not synchronize")){
-                    HashMap<String, String> idCatalogs = getCatalogs(accessToken, jsonNodeAppInfo.get("MerchantId").asText(), auxIProduct.getBrand(), auxIProduct.getCategory());
+                    HashMap<String, String> idCatalogs = getCatalogs(accessToken, merchantId, auxIProduct.getBrand(), auxIProduct.getCategory());
                     JsonNode jsonNodeSyncProducts = MWUtils
                             .validateResponse("", synchronizeProducts(accessToken, synchronizedProduct, url, auxIProduct, idCatalogs));
                     updateMiddlewareSynchronizedProducts(jsonNodeSyncProducts, synchronizedProduct);
@@ -191,9 +196,9 @@ public class ItemSyncService {
             VegEcomSynchronizedBrands syncBrandId = vegEcomSynchronizedBrandsRepository.getSynchronizedBrand(brand, "MSB");
             VegEcomSynchronizedCategories syncCategory = vegEcomSynchronizedCategoriesRepository.getSynchronizedCategory(category, "MSB");
             String brandId = syncBrandId != null ? syncBrandId.getIdEcom() : brand != null ?
-                    createCatalogValue("BRANDS", accessToken, merchantId, endptsRepository.getIntegrationEndPoint("POST_BRAND", "MULTIVENDE"), brand) : null;
+                    createCatalogValue("BRANDS", accessToken, merchantId, endpointRepo.getEndpointUrl("POST_BRAND", "MULTIVENDE"), brand) : null;
             String categoryId = syncCategory != null ? syncCategory.getIdEcom() : category != null ?
-                    createCatalogValue("CATEGORIES", accessToken, merchantId, endptsRepository.getIntegrationEndPoint("CREATE_PRODUCT_CATEGORY", "MULTIVENDE"), category) : null;
+                    createCatalogValue("CATEGORIES", accessToken, merchantId, endpointRepo.getEndpointUrl("CREATE_PRODUCT_CATEGORY", "MULTIVENDE"), category) : null;
             idCatalogs.put("brandId", brandId);
             idCatalogs.put("categoryId", categoryId);
             return idCatalogs;
@@ -317,7 +322,7 @@ public class ItemSyncService {
             NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
         JSONObject response = new JSONObject();
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm);
-        String urlUpdateProduct = endptsRepository.getIntegrationEndPoint("UPDATE_PRODUCT", "MULTIVENDE");
+        String urlUpdateProduct = endpointRepo.getEndpointUrl("UPDATE_PRODUCT", "MULTIVENDE");
         VwVegEcommScrapedAdditionalInfo[] additionalInfo = vwVegEcommScrapedAdditionalInfoRepository.getAdditionalProductsInfo();
         for(int it = 0; it < additionalInfo.length; it++){
             try {

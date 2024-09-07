@@ -3,8 +3,8 @@ package com.vegusa.middleware.entity;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "veg_ecomm_token_info_parameters")
-public class TokenInfoParameters
+@Table(name = "AuthTokenParameters")
+public class AuthTokenParameters
 {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

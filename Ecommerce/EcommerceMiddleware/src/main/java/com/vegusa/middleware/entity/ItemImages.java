@@ -12,7 +12,7 @@ import org.hibernate.annotations.Immutable;
 @Entity
 @Immutable
 @Table(name = "vw_veg_images_by_product")
-public class VwVegImagesByProduct {
+public class ItemImages {
     @EmbeddedId
     private VwVegImagesByProductId id;
 
@@ -45,6 +45,6 @@ public class VwVegImagesByProduct {
         return imageUrl;
     }
 
-    protected VwVegImagesByProduct() {
+    protected ItemImages() {
     }
 }
