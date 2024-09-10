@@ -141,7 +141,4 @@ public class MWUtils {
         return attributes;
     }
 
-    public static validateDataAreaId(){
-
-    }
 }
