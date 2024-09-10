@@ -134,11 +134,4 @@ public class MWUtils {
         return headers;
     }
 
-    public static HashMap<String, String> getMarginCategoriesBodyRelation(){
-        HashMap<String, String> attributes = new HashMap<>();
-        attributes.put("PRICE_LIST", "priceListName");
-        attributes.put("MARKETPLACE", "marketplace");
-        return attributes;
-    }
-
 }
