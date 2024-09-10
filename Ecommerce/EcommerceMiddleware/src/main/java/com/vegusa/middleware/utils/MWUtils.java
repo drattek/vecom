@@ -140,4 +140,8 @@ public class MWUtils {
         attributes.put("MARKETPLACE", "marketplace");
         return attributes;
     }
+
+    public static validateDataAreaId(){
+
+    }
 }

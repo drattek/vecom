@@ -1,6 +1,7 @@
 package com.vegusa.msb.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.vegusa.middleware.entity.Company;
 import com.vegusa.middleware.entity.SynchronizedPriceList;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
@@ -46,10 +47,13 @@ public class MSBController {
     }
 
     @PostMapping(value = "/synchronize-products")
-    public String uploadProducts(@RequestBody HashMap<String, String> bodyRequest) {
+    public String uploadProducts(@RequestBody HashMap<String, String> request) {
         try {
+            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId"));
+            Company company = itemSyncService.getCompany(dataAreaId);
+            assert company != null : "The company provided doesn't exist.";
             itemSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            return itemSyncService.processAndUploadProducts(bodyRequest.get("dataAreaId"));
+            return itemSyncService.processAndUploadProducts(dataAreaId);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while synchronizing the products.");
@@ -73,9 +77,13 @@ public class MSBController {
     }
 
     @PostMapping(value="/update-products-control-table")
-    public String updateProductsControlTable(@RequestBody HashMap<String, String> interfaceDS){
+    public String updateProductsControlTable(@RequestBody HashMap<String, String> request){
         try{
-            return ctrlTableService.processAndSaveInterfaceInfo(interfaceDS.get("interfaceId"), interfaceDS.get("dataAreaId"));
+            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    interfaceId =  MWUtils.bodyValidation(request.get("interfaceId"));
+            Company company = ctrlTableService.getCompany(dataAreaId);
+            assert company != null : "The company provided doesn't exist.";
+            return ctrlTableService.processAndSaveInterfaceInfo(interfaceId, dataAreaId);
         } catch (RuntimeException e){
             System.err.println("An error occurred while updating product control table.");
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
@@ -83,13 +91,17 @@ public class MSBController {
     }
 
     @PostMapping(value="/update-interface-information")
-    public String updateInterfaceInfo(@RequestBody HashMap<String, String> interfaceDS){
+    public String updateInterfaceInfo(@RequestBody HashMap<String, String> request){
         try {
-            return switch (interfaceDS.get("interfaceId")) {
+            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    interfaceId = MWUtils.bodyValidation(request.get("interfaceId"));
+            Company company = interfaceInfoService.getCompany(dataAreaId);
+            assert company != null : "The company provided doesn't exist.";
+            return switch (interfaceId) {
                 case "DYN" ->
-                        interfaceInfoService.updateDYNInterfaceInfo(interfaceDS.get("dataAreaId"), interfaceDS.get("interfaceId"));
+                        interfaceInfoService.updateDYNInterfaceInfo(dataAreaId, interfaceId);
                 case "UCA", "TVH" ->
-                        interfaceInfoService.updateInterfaceInfo(interfaceDS.get("dataAreaId"), interfaceDS.get("interfaceId"));
+                        interfaceInfoService.updateInterfaceInfo(dataAreaId, interfaceId);
                 default -> throw new RuntimeException("The interfaceId sent doesn't exist.");
             };
         } catch (RuntimeException e){
@@ -99,11 +111,15 @@ public class MSBController {
     }
 
     @PostMapping(value="/upload-item-inventory")
-    public String uploadItemInventory(@RequestBody HashMap<String, String> requestBody){
+    public String uploadItemInventory(@RequestBody HashMap<String, String> request){
         try {
+            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall"));
+            Company company = itemInventService.getCompany(dataAreaId);
+            assert company != null : "The company provided doesn't exist.";
             itemInventService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            itemInventService.uploadWarehouses(requestBody.get("dataAreaId"));
-            return itemInventService.processItemInventoryUpdate(requestBody.get("dataAreaId"), Integer.parseInt(requestBody.get("itemsPerCall")));
+            itemInventService.uploadWarehouses(dataAreaId);
+            return itemInventService.processItemInventoryUpdate(dataAreaId, Integer.parseInt(itemsPerCall));
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while uploading item inventory.");
@@ -122,6 +138,8 @@ public class MSBController {
                     channel = MWUtils.bodyValidation(request.get("channel")),
                     currencyCode = MWUtils.bodyValidation(request.get("currencyCode")),
                     itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall"));
+            Company company = itemPriceSyncService.getCompany(dataAreaId);
+            assert company != null : "The company provided doesn't exist.";
             itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
             accessToken = itemPriceSyncService.getAccessToken();
             merchantId = itemPriceSyncService.getMerchantId(accessToken);
@@ -130,9 +148,9 @@ public class MSBController {
             priceList = itemPriceSyncService.getSyncPriceList(fullPriceListName, currencyId, dataAreaId);
             if(priceList == null){
                 String createdPriceList = itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, accessToken, merchantId);
-                priceList = itemPriceSyncService.savePriceListInfo(createdPriceList, dataAreaId);
+                priceList = itemPriceSyncService.savePriceListInfo(createdPriceList, company);
             }
-            return itemPriceSyncService.processPriceListSync(priceList.getResponseId(), request, Integer.parseInt(itemsPerCall), accessToken, dataAreaId);
+            return itemPriceSyncService.processPriceListSync(priceList, priceListName, channel, currencyCode, Integer.parseInt(itemsPerCall), accessToken);
         } catch(RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while creating the price list.");

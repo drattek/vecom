@@ -6,10 +6,10 @@ import org.hibernate.annotations.ColumnDefault;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "Category")
-public class Category {
+@Table(name = "PriceList")
+public class PriceList {
     @EmbeddedId
-    private CategoryId id;
+    private PriceListId id;
 
     @Column(name = "Percentage", nullable = false, precision = 4, scale = 1)
     private BigDecimal percentage;
@@ -26,11 +26,11 @@ public class Category {
     @Column(name = "CurrencyCode", nullable = false)
     private String currencyCode;
 
-    public CategoryId getId() {
+    public PriceListId getId() {
         return id;
     }
 
-    public void setId(CategoryId id) {
+    public void setId(PriceListId id) {
         this.id = id;
     }
 

@@ -26,22 +26,26 @@ public class InterfaceInfoService {
     //MSB-Repository
     private final MSBProductRepository dynProducts;
     //Middleware-Repository
-    private final CompanyRepository companies;
+    private final CompanyRepository companyRepo;
     private final InterfaceDSRepository interfaces;
     private final InterfaceProductRepository interfaceProducts;
     private final ProductAdditionalInfoRepository additionalProducts;
 
     @Autowired
     public InterfaceInfoService(MSBProductRepository dynProducts,
-                                CompanyRepository companies,
+                                CompanyRepository companyRepo,
                                 InterfaceDSRepository interfaces,
                                 InterfaceProductRepository interfaceProducts,
                                 ProductAdditionalInfoRepository additionalProducts){
         this.dynProducts = dynProducts;
-        this.companies = companies;
+        this.companyRepo = companyRepo;
         this.interfaces = interfaces;
         this.interfaceProducts = interfaceProducts;
         this.additionalProducts = additionalProducts;
+    }
+
+    public Company getCompany(String dataAreaId) throws RuntimeException {
+        return companyRepo.getCompany(dataAreaId);
     }
 
     public String updateDYNInterfaceInfo(String dataAreaId, String interfaceId) throws RuntimeException{
@@ -51,7 +55,7 @@ public class InterfaceInfoService {
             throw new RuntimeException("The dataAreaId or interfaceId contains invalid information.");
         }
         MSBProduct[] dataSourceInfo = dynProducts.getDYNProducts();
-        Company company = companies.getCompany(dataAreaId);
+        Company company = companyRepo.getCompany(dataAreaId);
         if(company != null) {
             for (MSBProduct dsProduct : dataSourceInfo) {
                 try {
@@ -95,7 +99,7 @@ public class InterfaceInfoService {
     public String updateInterfaceInfo(String dataAreaId, String interfaceId) throws RuntimeException{
         JSONObject response = new JSONObject();
         ProductAdditionalInfo[] dataSourceInfo = additionalProducts.getProductsAdditionalInfo(interfaceId, dataAreaId);
-        Company company = companies.getCompany(dataAreaId);
+        Company company = companyRepo.getCompany(dataAreaId);
         InterfaceDS interfaceDS = interfaces.getInterface(interfaceId);
         if(!Objects.equals(interfaceDS.getCompany().getId().getDataAreaId(), dataAreaId)){
             throw new RuntimeException("The dataAreaId or interfaceId contains invalid information.");

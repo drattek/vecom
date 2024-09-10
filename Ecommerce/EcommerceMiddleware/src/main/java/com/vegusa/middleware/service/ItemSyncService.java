@@ -33,6 +33,7 @@ import java.util.List;
 @Service
 public class ItemSyncService {
     //Middleware - Repository
+    private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
     private final AuthTokenRepository tokenInfoRepository;
     private final SyncProductsRepository vegMvSynchronizedProductRepository;
@@ -52,7 +53,8 @@ public class ItemSyncService {
     private String algorithm;
 
     @Autowired
-    public ItemSyncService(EndpointRepository endpointRepo,
+    public ItemSyncService(CompanyRepository companyRepo,
+                           EndpointRepository endpointRepo,
                            AuthTokenRepository tokenInfoRepository,
                            SyncProductsRepository vegMvSynchronizedProductRepository,
                            VwVegEcommScrapedAdditionalInfoRepository vwVegEcommScrapedAdditionalInfoRepository,
@@ -66,6 +68,7 @@ public class ItemSyncService {
                            WebClient webClient,
                            Environment env,
                            EntityManager entityManager) {
+        this.companyRepo = companyRepo;
         this.endpointRepo = endpointRepo;
         this.tokenInfoRepository = tokenInfoRepository;
         this.vegMvSynchronizedProductRepository = vegMvSynchronizedProductRepository;
@@ -93,6 +96,10 @@ public class ItemSyncService {
         return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
     }
 
+    public Company getCompany(String dataAreaId) throws RuntimeException {
+        return companyRepo.getCompany(dataAreaId);
+    }
+
     public String processAndUploadProducts(String dataAreaId) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
@@ -106,7 +113,7 @@ public class ItemSyncService {
         for(String itemId : itemIds){
             try {
                 HashMap<String, String> syncProduct = new HashMap<>();
-                SynchronizedProducts synchronizedProduct = vegMvSynchronizedProductRepository.getSynchronizedProductById(itemId);
+                SynchronizedProducts synchronizedProduct = vegMvSynchronizedProductRepository.getSyncItem(itemId);
                 getProductToUpload(auxIProduct, itemId, dataAreaId);
                 SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                 String url = (synchronizedProduct == null) ? urlCreateProduct :
@@ -328,7 +335,7 @@ public class ItemSyncService {
             try {
                 HashMap<String, String> syncProduct = new HashMap<>();
                 SynchronizedProducts synchronizedProduct = vegMvSynchronizedProductRepository
-                        .getSynchronizedProductById(additionalInfo[it].getInternalProductId());
+                        .getSyncItem(additionalInfo[it].getInternalProductId());
                 String url = urlUpdateProduct.replace("{{product_id}}", additionalInfo[it].getIdMv());
                 JsonNode jsonNodeSyncProducts = MWUtils
                         .validateResponse("", synchronizeProducts(accessToken, additionalInfo[it], url));

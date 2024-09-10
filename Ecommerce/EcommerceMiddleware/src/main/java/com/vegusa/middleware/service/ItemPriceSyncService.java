@@ -27,9 +27,11 @@ import java.util.*;
 
 @Service
 public class ItemPriceSyncService {
-    private final SyncPriceListRepository priceListRepo;
+    private final SyncPriceListRepository syncPriceListRepo;
     private final SyncItemPriceRepository itemPriceRepo;
-    private final CategoryRepository profitMargin;
+    private final CategoryRepository categoryRepo;
+    private final ChannelRepository channelRepo;
+    private final PriceListRepository priceListRepo;
     private final ItemInventLocationRepository itemInventoryRepo;
     private final SyncProductsRepository syncItemRepo;
     private final CompanyRepository companyRepo;
@@ -41,9 +43,11 @@ public class ItemPriceSyncService {
     private String algorithm;
 
     @Autowired
-    private ItemPriceSyncService(SyncPriceListRepository priceListRepo,
+    private ItemPriceSyncService(SyncPriceListRepository syncPriceListRepo,
                                  SyncItemPriceRepository itemPriceRepo,
-                                 CategoryRepository profitMargin,
+                                 CategoryRepository categoryRepo,
+                                 ChannelRepository channelRepo,
+                                 PriceListRepository priceListRepo,
                                  ItemInventLocationRepository itemInventoryRepo,
                                  SyncProductsRepository syncItemRepo,
                                  CompanyRepository companyRepo,
@@ -51,9 +55,11 @@ public class ItemPriceSyncService {
                                  AuthTokenRepository authTokenRepo,
                                  WebClient webClient,
                                  Environment env){
-        this.priceListRepo = priceListRepo;
+        this.syncPriceListRepo = syncPriceListRepo;
         this.itemPriceRepo = itemPriceRepo;
-        this.profitMargin = profitMargin;
+        this.categoryRepo = categoryRepo;
+        this.channelRepo = channelRepo;
+        this.priceListRepo = priceListRepo;
         this.itemInventoryRepo = itemInventoryRepo;
         this.syncItemRepo = syncItemRepo;
         this.companyRepo = companyRepo;
@@ -79,8 +85,12 @@ public class ItemPriceSyncService {
         return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
     }
 
+    public Company getCompany(String dataAreaId) throws RuntimeException{
+        return companyRepo.getCompany(dataAreaId);
+    }
+
     public SynchronizedPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
-        return priceListRepo.getSyncPriceList(name, currencyId, dataAreaId);
+        return syncPriceListRepo.getSyncPriceList(name, currencyId, dataAreaId);
     }
 
     public String createPriceList(String name, String description, String currencyId, String accessToken, String merchantId) {
@@ -103,13 +113,12 @@ public class ItemPriceSyncService {
         }
     }
 
-    public SynchronizedPriceList savePriceListInfo(String response, String dataAreaId) throws RuntimeException {
+    public SynchronizedPriceList savePriceListInfo(String response, Company company) throws RuntimeException {
         try {
-            Company company = companyRepo.getCompany(dataAreaId);
             ObjectMapper objMapPriceList = new ObjectMapper();
             SynchronizedPriceList priceList = objMapPriceList.readValue(response, SynchronizedPriceList.class);
             priceList.setCompany(company);
-            priceListRepo.save(priceList);
+            syncPriceListRepo.save(priceList);
             return priceList;
         } catch (RuntimeException | JsonProcessingException e){
             throw new RuntimeException("An error occurred while saving information of price list created.");
@@ -153,18 +162,18 @@ public class ItemPriceSyncService {
         return response;
     }
 
-    public String processPriceListSync(String priceListId, HashMap<String, String> requestBody, int itemsPerCall, String accessToken, String dataAreaId)
+    public String processPriceListSync(SynchronizedPriceList syncPriceList, String priceListName, String channel, String currencyCode, int itemsPerCall, String accessToken)
             throws RuntimeException, JsonProcessingException {
         JSONObject response = new JSONObject();
-        Company company = companyRepo.getCompany(dataAreaId);
+        Company company = syncPriceList.getCompany();
         String url = endpointRepo.getEndpointUrl("UPDATE_PRICE_BULK_SET", env.getProperty("integration.company.name"))
-                .replace("{{product_price_list_id}}", priceListId);
-        List<JSONArray> bodyValues = getItemPrices(requestBody, itemsPerCall, dataAreaId);
+                .replace("{{product_price_list_id}}", syncPriceList.getResponseId());
+        List<JSONArray> bodyValues = getItemPrices(priceListName, channel, currencyCode, itemsPerCall, company.getId().getDataAreaId());
         for(JSONArray bodyValue: bodyValues){
             try {
                 String updatedPrices = updatePrices(accessToken, url, bodyValue);
-                saveSyncPriceListInfo(updatedPrices, priceListId, company);
-                response.accumulate("UpdatePrices", new JSONArray(updatedPrices));
+                saveSyncPriceListInfo(updatedPrices, syncPriceList.getResponseId(), company);
+                response.accumulate("updated", new JSONArray(updatedPrices));
                 System.out.println("A part of the price list was successfully updated.");
             }catch (RuntimeException e){
                 response.accumulate("error", e.getMessage());
@@ -174,69 +183,61 @@ public class ItemPriceSyncService {
         return response.toString();
     }
 
-    private List<JSONArray> getItemPrices(HashMap<String, String> requestBody, int itemsPerCall, String dataAreaId) throws RuntimeException {
+    private List<JSONArray> getItemPrices(String priceListName, String channel, String currencyCode, int itemsPerCall, String dataAreaId) throws RuntimeException {
         List<JSONArray> response = new ArrayList<>();
-        JSONArray auxItemPrices = new JSONArray();
-        float basePercentage = getBasePercentage(requestBody, dataAreaId), itemPercentage = 0, auxCost = 0;
-        HashMap<String, String> itemCost = getItemMap(itemInventoryRepo.getItemCost());
-        HashMap<String, String> itemCategory = getItemMap(itemInventoryRepo.getItemCategory());
-        SynchronizedProducts[] syncProducts = this.syncItemRepo.getSynchronizedProducts();
-        int countItemSyncProducts = 0, countItemArray = 0;
-        for(SynchronizedProducts product : syncProducts){
-            countItemSyncProducts++;
+        JSONArray itemPriceArray = new JSONArray();
+        float basePercentage = getBasePercentage(priceListName, channel, currencyCode, dataAreaId),
+                auxItemPercentage = 0, auxCost = 0;
+        HashMap<String, String> itemCostMap = getItemMap(itemInventoryRepo.getItemCost());
+        HashMap<String, String> itemCategoryMap = getItemMap(itemInventoryRepo.getItemCategory());
+        SynchronizedProducts[] syncItems = this.syncItemRepo.getSyncItem();
+        int countSyncItems = 0, countItemArray = 0;
+        for(SynchronizedProducts product : syncItems){
+            countSyncItems++;
             try {
-               if(itemCost.get(product.getInternalCode()) != null && itemCategory.get(product.getInternalCode()) != null ) {
+               if(itemCostMap.get(product.getInternalCode()) != null && itemCategoryMap.get(product.getInternalCode()) != null) {
                    countItemArray++;
-                   itemPercentage = profitMargin.getCategoryPercentage(itemCategory.get(product.getInternalCode()), requestBody.get("currencyCode"), dataAreaId).getPercentage().floatValue();
-                    auxCost = (((basePercentage + itemPercentage) / 100) + 1) * Float.parseFloat(itemCost.get(product.getInternalCode()));
+                   auxItemPercentage = categoryRepo.getCategory(itemCategoryMap.get(product.getInternalCode()), currencyCode, dataAreaId).getPercentage().floatValue();
+                    auxCost = (((basePercentage + auxItemPercentage) / 100) + 1) * Float.parseFloat(itemCostMap.get(product.getInternalCode()));
                     JSONObject itemPrice = new JSONObject();
                     itemPrice.put("ProductVersionId", product.getDefaultVersionId());
                     itemPrice.put("gross", "");
                     itemPrice.put("priceWithDiscount", "");
                     itemPrice.put("tax", "");
                     itemPrice.put("net", auxCost);
-                    auxItemPrices.put(itemPrice);
+                    itemPriceArray.put(itemPrice);
                    if (countItemArray % itemsPerCall == 0) {
-                       response.add(auxItemPrices);
-                       auxItemPrices = new JSONArray();
+                       response.add(itemPriceArray);
+                       itemPriceArray = new JSONArray();
                        countItemArray = 0;
                    }
-                    System.out.println("GENERO ALGO ");
                 }
-                if(countItemSyncProducts == syncProducts.length && !auxItemPrices.isEmpty()){
-                    response.add(auxItemPrices);
+                if(countSyncItems == syncItems.length && !itemPriceArray.isEmpty()){
+                    response.add(itemPriceArray);
                 }
-                System.out.println("TERMINO BIEN " + countItemSyncProducts + "/" + countItemArray);
             } catch (RuntimeException e){
-                System.err.println("OCURRIO UN ERROR" + e.getMessage());
+                System.err.println("An error occurred obtaining item price of " + product.getInternalCode() + " " + e.getMessage());
             }
         }
         return response;
     }
 
-    private HashMap<String, String> getItemMap(List<Object[]> itemCosts){
+    private HashMap<String, String> getItemMap(List<Object[]> itemValues) throws RuntimeException {
         HashMap<String, String> response = new HashMap<>();
-        for(Object[] itemCost: itemCosts){
+        for(Object[] itemValue: itemValues){
             try {
-                response.put(itemCost[0].toString(), itemCost[1].toString());
+                response.put(itemValue[0].toString(), itemValue[1].toString());
             }catch (RuntimeException e){
-                System.err.println("An error occurred while saving Item Cost Map.");
+                System.err.println("An error occurred while saving item value map.");
             }
         }
-        return  response;
+        return response;
     }
 
-    private float getBasePercentage(HashMap<String, String> requestBody, String dataAreaId) throws RuntimeException{
-     //   ProfitMarginCategory[] marginCategories = this.marginCategories.getProfitMarginCategory(false, true);
-        HashMap<String, String> bodyReqRelation = MWUtils.getMarginCategoriesBodyRelation();
-        String auxCategoryName = "";
-        float response = 0;
-    /*    for(ProfitMarginCategory category : marginCategories){
-            auxCategoryName = category.getId().getName();
-            response += profitMargin.getProfitMargin(auxCategoryName, requestBody.get(bodyReqRelation.get(auxCategoryName)),
-                    requestBody.get("currencyCode"), dataAreaId).getPercentage().floatValue();
-        } */
-        return response;
+    private float getBasePercentage(String priceListName, String channel, String currencyCode, String dataAreaId) throws RuntimeException {
+        float priceListPercentage = priceListRepo.getPriceList(priceListName, currencyCode, dataAreaId).getPercentage().floatValue();
+        float channelPercentage = channelRepo.getChannel(channel, currencyCode, dataAreaId).getPercentage().floatValue();
+        return priceListPercentage + channelPercentage;
     }
 
     private String updatePrices(String accessToken, String url, JSONArray bodyValues) {
@@ -250,7 +251,7 @@ public class ItemPriceSyncService {
                     .bodyToMono(String.class)
                     .block();
         } catch (RuntimeException e) {
-            throw new RuntimeException("An error occurred while updating Price List: " + e.getMessage());
+            throw new RuntimeException("An error occurred while updating price list: " + e.getMessage());
         }
     }
 

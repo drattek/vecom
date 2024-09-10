@@ -9,15 +9,10 @@ import org.springframework.stereotype.Repository;
 public interface SyncProductsRepository extends JpaRepository<SynchronizedProducts, Long>
 {
     @Query(value = "select * from veg_ecomm_synchronized_products vmsp where vmsp.internal_code = ?1", nativeQuery = true)
-    SynchronizedProducts getSynchronizedProductById(String internalCode);
-    /*
-    @QueryHints(value = {
-            @QueryHint(name = HINT_FETCH_SIZE, value = "" + Integer.MIN_VALUE),
-            @QueryHint(name = HINT_CACHEABLE, value = "false"),
-            @QueryHint(name = READ_ONLY, value = "true")
-    }) */
+    SynchronizedProducts getSyncItem(String internalCode);
+
     @Query(value = "select * from veg_ecomm_synchronized_products vmsp order by vmsp.internal_code", nativeQuery = true)
-    SynchronizedProducts[] getSynchronizedProducts();
+    SynchronizedProducts[] getSyncItem();
 
 
 }

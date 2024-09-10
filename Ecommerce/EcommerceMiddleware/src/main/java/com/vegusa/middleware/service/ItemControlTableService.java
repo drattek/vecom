@@ -1,13 +1,7 @@
 package com.vegusa.middleware.service;
 
-import com.vegusa.middleware.entity.InterfaceDS;
-import com.vegusa.middleware.entity.InterfaceProduct;
-import com.vegusa.middleware.entity.ProductAttribute;
-import com.vegusa.middleware.entity.ProductAttributeValue;
-import com.vegusa.middleware.repository.InterfaceDSRepository;
-import com.vegusa.middleware.repository.InterfaceProductRepository;
-import com.vegusa.middleware.repository.ProductAttributeRepository;
-import com.vegusa.middleware.repository.ProductAttributeValueRepository;
+import com.vegusa.middleware.entity.*;
+import com.vegusa.middleware.repository.*;
 import com.vegusa.middleware.utils.MWUtils;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,16 +18,23 @@ public class ItemControlTableService {
     private final InterfaceProductRepository interfaceProducts;
     private final ProductAttributeRepository attributes;
     private final ProductAttributeValueRepository attributeValues;
+    private final CompanyRepository companyRepo;
 
     @Autowired
     public ItemControlTableService(InterfaceDSRepository interfaces,
                                    InterfaceProductRepository interfaceProducts,
                                    ProductAttributeRepository attributes,
-                                   ProductAttributeValueRepository attributeValues){
+                                   ProductAttributeValueRepository attributeValues,
+                                   CompanyRepository companyRepo){
         this.interfaces = interfaces;
         this.interfaceProducts = interfaceProducts;
         this.attributes = attributes;
         this.attributeValues = attributeValues;
+        this.companyRepo = companyRepo;
+    }
+
+    public Company getCompany(String dataAreaId) throws RuntimeException {
+        return companyRepo.getCompany(dataAreaId);
     }
 
     public String processAndSaveInterfaceInfo(String interfaceId, String dataAreaId) throws RuntimeException {

@@ -34,7 +34,7 @@ public class ItemInventorySyncService {
     private final EndpointRepository endpointRepo;
     private final ItemInventLocationRepository itemInventory;
     private final AuthTokenRepository tokenInfo;
-    private final CompanyRepository companies;
+    private final CompanyRepository companyRepo;
     private final SyncProductsRepository syncProducts;
     private final SyncWarehouseRepository syncWarehouses;
     private final SyncItemInventoryRepository syncItemInventory;
@@ -47,7 +47,7 @@ public class ItemInventorySyncService {
     public ItemInventorySyncService(EndpointRepository endpointRepo,
                                     ItemInventLocationRepository itemInventory,
                                     AuthTokenRepository tokenInfo,
-                                    CompanyRepository companies,
+                                    CompanyRepository companyRepo,
                                     SyncProductsRepository syncProducts,
                                     SyncWarehouseRepository syncWarehouses,
                                     SyncItemInventoryRepository syncItemInventory,
@@ -56,7 +56,7 @@ public class ItemInventorySyncService {
         this.endpointRepo = endpointRepo;
         this.itemInventory = itemInventory;
         this.tokenInfo = tokenInfo;
-        this.companies = companies;
+        this.companyRepo = companyRepo;
         this.syncProducts = syncProducts;
         this.syncWarehouses = syncWarehouses;
         this.syncItemInventory = syncItemInventory;
@@ -75,13 +75,17 @@ public class ItemInventorySyncService {
         return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
     }
 
+    public Company getCompany(String dataAreaId) throws RuntimeException {
+        return companyRepo.getCompany(dataAreaId);
+    }
+
     public void uploadWarehouses(String dataAreaId) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
         String merchantId = getMerchantId(accessToken);
         String url = endpointRepo.getEndpointUrl("CREATE_STORE_OR_WAREHOUSE", env.getProperty("integration.company.name"))
                 .replace("{{merchant_id}}", merchantId);
-        Company company = companies.getCompany(dataAreaId);
+        Company company = companyRepo.getCompany(dataAreaId);
         SynchronizedWarehouse syncWarehouse;
         JsonNode jsonNodeSyncWarehouses;
         String auxWarehouse = "";
@@ -134,7 +138,7 @@ public class ItemInventorySyncService {
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
-        Company company = companies.getCompany(dataAreaId);
+        Company company = companyRepo.getCompany(dataAreaId);
         String url = endpointRepo.getEndpointUrl("BULK_UPDATE_STOCK", env.getProperty("integration.company.name")), auxUrl = "";
         SynchronizedWarehouse[] syncWarehouses = this.syncWarehouses.getSyncWarehouses();
         ItemInventLocation[] auxItemInventory;
@@ -172,7 +176,7 @@ public class ItemInventorySyncService {
         for (ItemInventLocation itemInventory : itemInventLocation) {
             try{
                 auxItemInventory++;
-                auxSyncProduct = syncProducts.getSynchronizedProductById(itemInventory.getId().getArticulo());
+                auxSyncProduct = syncProducts.getSyncItem(itemInventory.getId().getArticulo());
                 if (auxSyncProduct != null) {
                     auxCountItemArray++;
                     auxItemInventoryObj = new JSONObject();

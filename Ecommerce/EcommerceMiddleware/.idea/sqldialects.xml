@@ -3,17 +3,19 @@
   <component name="SqlDialectMappings">
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/AuthTokenParametersRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/AuthTokenRepository.java" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/CategoryRepository.java" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ChannelRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/CompanyRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/EndpointRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/InterfaceDSRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/InterfaceHierarchyRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/InterfaceProductRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ItemImagesRepository.java" dialect="GenericSQL" />
+    <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/PriceListRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProductAdditionalInfoRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProductAttributeHierarchyRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProductAttributeRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProductAttributeValueRepository.java" dialect="GenericSQL" />
-    <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProfitMarginRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/SyncItemInventoryRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/SyncItemPriceRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/SyncPriceListRepository.java" dialect="GenericSQL" />
