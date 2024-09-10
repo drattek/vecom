@@ -129,7 +129,7 @@ public class ImageSyncService {
         images.clear();
     }
 
-    public String uploadItemImages(String accessToken, String url, JSONArray bodyRequest) {
+    private String uploadItemImages(String accessToken, String url, JSONArray bodyRequest) {
         try {
             HttpHeaders headers = new HttpHeaders();
             headers.add("Content-Type", "application/json");
@@ -149,10 +149,9 @@ public class ImageSyncService {
         }
     }
 
-    public JSONArray saveSyncImagesInfo(String uploadResponse) {
+    private JSONArray saveSyncImagesInfo(String uploadResponse) {
         try {
             JSONArray response = new JSONArray();
-            MWUtils.validateResponse("Error occurred while uploading images to ecommerce: ", uploadResponse);
             JSONArray uploadRespArray = new JSONArray(uploadResponse);
             for(int it = 0; it < uploadRespArray.length(); it++){
                 try {

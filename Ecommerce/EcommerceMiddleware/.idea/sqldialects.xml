@@ -13,7 +13,6 @@
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProductAttributeHierarchyRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProductAttributeRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProductAttributeValueRepository.java" dialect="GenericSQL" />
-    <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProfitMarginCategoryRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/ProfitMarginRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/SyncItemInventoryRepository.java" dialect="GenericSQL" />
     <file url="file://$PROJECT_DIR$/src/main/java/com/vegusa/middleware/repository/SyncItemPriceRepository.java" dialect="GenericSQL" />

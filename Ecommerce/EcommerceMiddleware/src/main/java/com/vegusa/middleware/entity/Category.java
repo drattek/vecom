@@ -6,20 +6,13 @@ import org.hibernate.annotations.ColumnDefault;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "profitmargin")
-public class ProfitMargin {
+@Table(name = "Category")
+public class Category {
     @EmbeddedId
     private ProfitMarginId id;
 
     @Column(name = "Percentage", nullable = false, precision = 4, scale = 1)
     private BigDecimal percentage;
-
-    @ManyToOne(fetch = FetchType.LAZY, optional = false)
-    @JoinColumns({
-            @JoinColumn(name = "CategoryRefRecId", referencedColumnName = "RecId", nullable = false),
-            @JoinColumn(name = "CategoryName", referencedColumnName = "Name", nullable = false)
-    })
-    private ProfitMarginCategory profitmargincategory;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumns({
@@ -47,14 +40,6 @@ public class ProfitMargin {
 
     public void setPercentage(BigDecimal percentage) {
         this.percentage = percentage;
-    }
-
-    public ProfitMarginCategory getProfitmargincategory() {
-        return profitmargincategory;
-    }
-
-    public void setProfitmargincategory(ProfitMarginCategory profitmargincategory) {
-        this.profitmargincategory = profitmargincategory;
     }
 
     public Company getCompany() {

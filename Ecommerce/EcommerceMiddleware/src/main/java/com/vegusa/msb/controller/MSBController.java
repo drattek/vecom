@@ -1,7 +1,6 @@
 package com.vegusa.msb.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.vegusa.middleware.entity.SynchronizedPriceList;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
@@ -112,28 +111,28 @@ public class MSBController {
         }
     }
 
-    @PostMapping(value="/upload-price-list")
-    public String uploadPriceList(@RequestBody HashMap<String, String> requestBody) {
+    @PostMapping(value="/synchronize-price-list")
+    public String synchronizePriceList(@RequestBody HashMap<String, String> request) {
         try {
             SynchronizedPriceList priceList;
             String accessToken, merchantId, fullPriceListName, currencyId,
-                    dataAreaId = MWUtils.bodyValidation(requestBody.get("dataAreaId")),
-                    priceListName = MWUtils.bodyValidation(requestBody.get("priceListName")),
-                    description = MWUtils.bodyValidation(requestBody.get("priceListDescription")),
-                    marketplace = MWUtils.bodyValidation(requestBody.get("marketplace")),
-                    currencyCode = MWUtils.bodyValidation(requestBody.get("currencyCode")),
-                    itemsPerCall = MWUtils.bodyValidation(requestBody.get("itemsPerCall"));
+                    dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    priceListName = MWUtils.bodyValidation(request.get("priceListName")),
+                    description = MWUtils.bodyValidation(request.get("priceListDescription")),
+                    channel = MWUtils.bodyValidation(request.get("channel")),
+                    currencyCode = MWUtils.bodyValidation(request.get("currencyCode")),
+                    itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall"));
             itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
             accessToken = itemPriceSyncService.getAccessToken();
             merchantId = itemPriceSyncService.getMerchantId(accessToken);
-            fullPriceListName = dataAreaId + "_" + priceListName + "_" + marketplace;
+            fullPriceListName = dataAreaId + "_" + priceListName + "_" + channel + "_" + currencyCode;
             currencyId = itemPriceSyncService.getCurrencyId(currencyCode, accessToken, merchantId);
             priceList = itemPriceSyncService.getSyncPriceList(fullPriceListName, currencyId, dataAreaId);
             if(priceList == null){
-                JsonNode jsonNodePriceList =  itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, accessToken, merchantId);
-                priceList = itemPriceSyncService.savePriceListInfo(jsonNodePriceList, dataAreaId);
+                String createdPriceList = itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, accessToken, merchantId);
+                priceList = itemPriceSyncService.savePriceListInfo(createdPriceList, dataAreaId);
             }
-            return itemPriceSyncService.processPriceUpdate(priceList.getResponseId(), requestBody, Integer.parseInt(itemsPerCall), accessToken, dataAreaId);
+            return itemPriceSyncService.processPriceListSync(priceList.getResponseId(), request, Integer.parseInt(itemsPerCall), accessToken, dataAreaId);
         } catch(RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while creating the price list.");

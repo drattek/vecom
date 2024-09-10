@@ -1,7 +1,6 @@
 package com.vegusa.middleware.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
@@ -28,41 +27,38 @@ import java.util.*;
 
 @Service
 public class ItemPriceSyncService {
-    private final ItemInventLocationRepository itemInventory;
-    private final EndpointRepository endpoints;
-    private final AuthTokenRepository tokenInfo;
-    private final SyncPriceListRepository priceLists;
-    private final SyncItemPriceRepository itemPrices;
-    private final ProfitMarginCategoryRepository marginCategories;
-    private final ProfitMarginRepository profitMargin;
-    private final CompanyRepository companies;
-    private final SyncProductsRepository syncProducts;
+    private final SyncPriceListRepository priceListRepo;
+    private final SyncItemPriceRepository itemPriceRepo;
+    private final CategoryRepository profitMargin;
+    private final ItemInventLocationRepository itemInventoryRepo;
+    private final SyncProductsRepository syncItemRepo;
+    private final CompanyRepository companyRepo;
+    private final EndpointRepository endpointRepo;
+    private final AuthTokenRepository authTokenRepo;
     private final WebClient webClient;
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
     private String algorithm;
 
     @Autowired
-    private ItemPriceSyncService(ItemInventLocationRepository itemInventory,
-                                 EndpointRepository endpoints,
-                                 AuthTokenRepository tokenInfo,
-                                 SyncPriceListRepository priceLists,
-                                 SyncItemPriceRepository itemPrices,
-                                 ProfitMarginCategoryRepository marginCategories,
-                                 ProfitMarginRepository profitMargin,
-                                 CompanyRepository companies,
-                                 SyncProductsRepository syncProducts,
+    private ItemPriceSyncService(SyncPriceListRepository priceListRepo,
+                                 SyncItemPriceRepository itemPriceRepo,
+                                 CategoryRepository profitMargin,
+                                 ItemInventLocationRepository itemInventoryRepo,
+                                 SyncProductsRepository syncItemRepo,
+                                 CompanyRepository companyRepo,
+                                 EndpointRepository endpointRepo,
+                                 AuthTokenRepository authTokenRepo,
                                  WebClient webClient,
                                  Environment env){
-        this.itemInventory = itemInventory;
-        this.endpoints = endpoints;
-        this.tokenInfo = tokenInfo;
-        this.priceLists = priceLists;
-        this.itemPrices = itemPrices;
-        this.marginCategories = marginCategories;
+        this.priceListRepo = priceListRepo;
+        this.itemPriceRepo = itemPriceRepo;
         this.profitMargin = profitMargin;
-        this.companies = companies;
-        this.syncProducts = syncProducts;
+        this.itemInventoryRepo = itemInventoryRepo;
+        this.syncItemRepo = syncItemRepo;
+        this.companyRepo = companyRepo;
+        this.endpointRepo = endpointRepo;
+        this.authTokenRepo = authTokenRepo;
         this.webClient = webClient;
         this.env = env;
     }
@@ -72,66 +68,69 @@ public class ItemPriceSyncService {
         this.algorithm = algorithm;
     }
 
-    public String getAccessToken() throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException,
-            NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
-        return MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
+    public String getAccessToken() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+            IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
+        return MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm);
     }
 
     public String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
-        String url = endpoints.getEndpointUrl("GET_APP_INFORMATION", env.getProperty("integration.company.name"));
+        String url = endpointRepo.getEndpointUrl("GET_APP_INFORMATION", env.getProperty("integration.company.name"));
         String appInfo = MWUtils.getAppInfo(webClient, url, accessToken);
         return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
     }
 
     public SynchronizedPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
-        return priceLists.getSyncPriceList(name, currencyId, dataAreaId);
+        return priceListRepo.getSyncPriceList(name, currencyId, dataAreaId);
     }
 
-    public JsonNode createPriceList(String name, String description, String currencyId, String accessToken, String merchantId)
-            throws RuntimeException, JsonProcessingException {
-        String url = endpoints.getEndpointUrl("CREATE_PRICE_LIST", "MULTIVENDE").replace("{{merchant_id}}", merchantId);
-        HttpHeaders headers = MWUtils.getHeaders(accessToken);
-        MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
-        bodyValues.add("name", name);
-        bodyValues.add("description", description);
-        bodyValues.add("CurrencyId", currencyId);
-        return MWUtils.validateResponse("An error occurred while creating the price list.",
-                webClient.post()
-                .uri(url)
-                .headers(h -> h.addAll(headers))
-                .body(BodyInserters.fromFormData(bodyValues))
-                .retrieve()
-                .bodyToMono(String.class)
-                .block());
-    }
-
-    public SynchronizedPriceList savePriceListInfo(JsonNode response, String dataAreaId) throws RuntimeException {
+    public String createPriceList(String name, String description, String currencyId, String accessToken, String merchantId) {
         try {
-            Company company = companies.getCompany(dataAreaId);
+            String url = endpointRepo.getEndpointUrl("CREATE_PRICE_LIST", env.getProperty("integration.company.name")).replace("{{merchant_id}}", merchantId);
+            HttpHeaders headers = MWUtils.getHeaders(accessToken);
+            MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
+            bodyValues.add("name", name);
+            bodyValues.add("description", description);
+            bodyValues.add("CurrencyId", currencyId);
+            return webClient.post()
+                            .uri(url)
+                            .headers(h -> h.addAll(headers))
+                            .body(BodyInserters.fromFormData(bodyValues))
+                            .retrieve()
+                            .bodyToMono(String.class)
+                            .block();
+        }catch (RuntimeException e){
+            throw new RuntimeException("An error occurred while creating the price list: " + e.getMessage());
+        }
+    }
+
+    public SynchronizedPriceList savePriceListInfo(String response, String dataAreaId) throws RuntimeException {
+        try {
+            Company company = companyRepo.getCompany(dataAreaId);
             ObjectMapper objMapPriceList = new ObjectMapper();
-            SynchronizedPriceList priceList = objMapPriceList.readValue(response.toString(), SynchronizedPriceList.class);
+            SynchronizedPriceList priceList = objMapPriceList.readValue(response, SynchronizedPriceList.class);
             priceList.setCompany(company);
-            priceLists.save(priceList);
+            priceListRepo.save(priceList);
             return priceList;
         } catch (RuntimeException | JsonProcessingException e){
             throw new RuntimeException("An error occurred while saving information of price list created.");
         }
     }
 
-    public String getCurrencyId(String currencyCode, String accessToken, String merchantId) throws RuntimeException, JsonProcessingException {
-        String response, url;
-        JsonNode allCurrencies;
-        HttpHeaders headers = MWUtils.getHeaders(accessToken);
-        url = endpoints.getEndpointUrl("GET_CURRENCIES", "MULTIVENDE").replace("{{merchant_id}}", merchantId);
-        allCurrencies = MWUtils.validateResponse("",
-                webClient.get()
-                .uri(url)
-                .headers(h -> h.addAll(headers))
-                .retrieve()
-                .bodyToMono(String.class)
-                .block());
-        response = selectCurrencyId(currencyCode, allCurrencies.toString());
-        return response;
+    public String getCurrencyId(String currencyCode, String accessToken, String merchantId) {
+        try {
+            String url, allCurrencies;
+            HttpHeaders headers = MWUtils.getHeaders(accessToken);
+            url = endpointRepo.getEndpointUrl("GET_CURRENCIES", env.getProperty("integration.company.name")).replace("{{merchant_id}}", merchantId);
+            allCurrencies = webClient.get()
+                    .uri(url)
+                    .headers(h -> h.addAll(headers))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+            return selectCurrencyId(currencyCode, allCurrencies);
+        } catch (RuntimeException e){
+            throw new RuntimeException("An error occurred while obtaining the Currency Id for the given code: " + e.getMessage());
+        }
     }
 
     private String selectCurrencyId(String currencyCode, String allCurrencies) throws RuntimeException {
@@ -154,23 +153,22 @@ public class ItemPriceSyncService {
         return response;
     }
 
-    public String processPriceUpdate(String priceListId, HashMap<String, String> requestBody, int itemsPerCall, String accessToken, String dataAreaId)
+    public String processPriceListSync(String priceListId, HashMap<String, String> requestBody, int itemsPerCall, String accessToken, String dataAreaId)
             throws RuntimeException, JsonProcessingException {
         JSONObject response = new JSONObject();
-        Company company = companies.getCompany(dataAreaId);
-        String url = endpoints.getEndpointUrl("UPDATE_PRICE_BULK_SETs", "MULTIVENDE")
+        Company company = companyRepo.getCompany(dataAreaId);
+        String url = endpointRepo.getEndpointUrl("UPDATE_PRICE_BULK_SET", env.getProperty("integration.company.name"))
                 .replace("{{product_price_list_id}}", priceListId);
         List<JSONArray> bodyValues = getItemPrices(requestBody, itemsPerCall, dataAreaId);
-        JsonNode auxSyncPrices;
         for(JSONArray bodyValue: bodyValues){
             try {
-                auxSyncPrices = MWUtils.validateResponse("", updatePrices(accessToken, url, bodyValue));
-                updateSyncItemPriceDB(auxSyncPrices, priceListId, company);
-                response.accumulate("UpdatePrices", new JSONArray(auxSyncPrices.toString()));
-                System.out.println("Item Prices successfully updated.");
+                String updatedPrices = updatePrices(accessToken, url, bodyValue);
+                saveSyncPriceListInfo(updatedPrices, priceListId, company);
+                response.accumulate("UpdatePrices", new JSONArray(updatedPrices));
+                System.out.println("A part of the price list was successfully updated.");
             }catch (RuntimeException e){
                 response.accumulate("error", e.getMessage());
-                System.err.println("Error while updating item prices.");
+                System.err.println("An error occurred while updating a part of price list.");
             }
         }
         return response.toString();
@@ -180,16 +178,16 @@ public class ItemPriceSyncService {
         List<JSONArray> response = new ArrayList<>();
         JSONArray auxItemPrices = new JSONArray();
         float basePercentage = getBasePercentage(requestBody, dataAreaId), itemPercentage = 0, auxCost = 0;
-        HashMap<String, String> itemCost = getItemMap(itemInventory.getItemCost());
-        HashMap<String, String> itemCategory = getItemMap(itemInventory.getItemCategory());
-        SynchronizedProducts[] syncProducts = this.syncProducts.getSynchronizedProducts();
+        HashMap<String, String> itemCost = getItemMap(itemInventoryRepo.getItemCost());
+        HashMap<String, String> itemCategory = getItemMap(itemInventoryRepo.getItemCategory());
+        SynchronizedProducts[] syncProducts = this.syncItemRepo.getSynchronizedProducts();
         int countItemSyncProducts = 0, countItemArray = 0;
         for(SynchronizedProducts product : syncProducts){
             countItemSyncProducts++;
             try {
                if(itemCost.get(product.getInternalCode()) != null && itemCategory.get(product.getInternalCode()) != null ) {
                    countItemArray++;
-                   itemPercentage = profitMargin.getProfitMargin("CATEGORY", itemCategory.get(product.getInternalCode()), requestBody.get("currencyCode"), dataAreaId).getPercentage().floatValue();
+                   itemPercentage = profitMargin.getCategoryPercentage(itemCategory.get(product.getInternalCode()), requestBody.get("currencyCode"), dataAreaId).getPercentage().floatValue();
                     auxCost = (((basePercentage + itemPercentage) / 100) + 1) * Float.parseFloat(itemCost.get(product.getInternalCode()));
                     JSONObject itemPrice = new JSONObject();
                     itemPrice.put("ProductVersionId", product.getDefaultVersionId());
@@ -229,45 +227,49 @@ public class ItemPriceSyncService {
     }
 
     private float getBasePercentage(HashMap<String, String> requestBody, String dataAreaId) throws RuntimeException{
-        ProfitMarginCategory[] marginCategories = this.marginCategories.getProfitMarginCategory(false, true);
+     //   ProfitMarginCategory[] marginCategories = this.marginCategories.getProfitMarginCategory(false, true);
         HashMap<String, String> bodyReqRelation = MWUtils.getMarginCategoriesBodyRelation();
         String auxCategoryName = "";
         float response = 0;
-        for(ProfitMarginCategory category : marginCategories){
+    /*    for(ProfitMarginCategory category : marginCategories){
             auxCategoryName = category.getId().getName();
             response += profitMargin.getProfitMargin(auxCategoryName, requestBody.get(bodyReqRelation.get(auxCategoryName)),
                     requestBody.get("currencyCode"), dataAreaId).getPercentage().floatValue();
-        }
+        } */
         return response;
     }
 
-    private String updatePrices(String accessToken, String url, JSONArray bodyValues) throws RuntimeException {
-        HttpHeaders headers = MWUtils.getHeaders(accessToken);
-        return webClient.post()
-                .uri(url)
-                .headers(h -> h.addAll(headers))
-                .bodyValue(bodyValues.toString())
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+    private String updatePrices(String accessToken, String url, JSONArray bodyValues) {
+        try {
+            HttpHeaders headers = MWUtils.getHeaders(accessToken);
+            return webClient.post()
+                    .uri(url)
+                    .headers(h -> h.addAll(headers))
+                    .bodyValue(bodyValues.toString())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (RuntimeException e) {
+            throw new RuntimeException("An error occurred while updating Price List: " + e.getMessage());
+        }
     }
 
-    private void updateSyncItemPriceDB(JsonNode jsonNodeResp, String priceListId, Company company) throws RuntimeException {
-        JSONArray response = new JSONArray(jsonNodeResp.toString());
-        ObjectMapper objMapSyncIte = new ObjectMapper();
-        JSONObject auxSyncItemPriceObject;
-        SynchronizedItemPrice auxSyncItemPrice;
+    private void saveSyncPriceListInfo(String updatedPrices, String priceListId, Company company) throws RuntimeException {
+        JSONArray response = new JSONArray(updatedPrices);
+        ObjectMapper objMapSyncItemPrice = new ObjectMapper();
+        JSONObject auxSyncItemPriceObj;
+        SyncItemPrice auxSyncItemPrice;
         for(int it = 0; it < response.length(); it++){
             try {
-                auxSyncItemPriceObject = response.getJSONObject(it);
-                SynchronizedItemPrice syncItemPrice = objMapSyncIte.readValue(auxSyncItemPriceObject.toString(), SynchronizedItemPrice.class);
-                auxSyncItemPrice = itemPrices.getSyncItemPrice(priceListId, syncItemPrice.getProductVersionId(), company.getId().getDataAreaId());
+                auxSyncItemPriceObj = response.getJSONObject(it);
+                SyncItemPrice syncItemPrice = objMapSyncItemPrice.readValue(auxSyncItemPriceObj.toString(), SyncItemPrice.class);
+                auxSyncItemPrice = itemPriceRepo.getSyncItemPrice(priceListId, syncItemPrice.getProductVersionId(), company.getId().getDataAreaId());
                 syncItemPrice.setPriceListId(priceListId);
                 syncItemPrice.setCompany(company);
                 if(auxSyncItemPrice != null){
                     syncItemPrice.setId(auxSyncItemPrice.getId());
                 }
-                itemPrices.save(syncItemPrice);
+                itemPriceRepo.save(syncItemPrice);
             } catch (RuntimeException | JsonProcessingException e){
                 System.err.println("Error while saving synchronized item price info.");
             }

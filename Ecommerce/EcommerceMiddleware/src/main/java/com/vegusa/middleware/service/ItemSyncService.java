@@ -98,9 +98,9 @@ public class ItemSyncService {
         JSONObject response = new JSONObject();
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm);
         String merchantId = getMerchantId(accessToken);
-        String urlCreateProduct = endpointRepo.getEndpointUrl("CREATE_PRODUCT", "MULTIVENDE")
+        String urlCreateProduct = endpointRepo.getEndpointUrl("CREATE_PRODUCT", env.getProperty("integration.company.name"))
                 .replace("{{merchant_id}}", merchantId);
-        String urlUpdateProduct = endpointRepo.getEndpointUrl("UPDATE_PRODUCT", "MULTIVENDE");
+        String urlUpdateProduct = endpointRepo.getEndpointUrl("UPDATE_PRODUCT", env.getProperty("integration.company.name"));
         InterfaceProduct auxIProduct = new InterfaceProduct();
         List<String> itemIds = attributeValues.getItemIdList(dataAreaId);
         for(String itemId : itemIds){
@@ -196,9 +196,9 @@ public class ItemSyncService {
             VegEcomSynchronizedBrands syncBrandId = vegEcomSynchronizedBrandsRepository.getSynchronizedBrand(brand, "MSB");
             VegEcomSynchronizedCategories syncCategory = vegEcomSynchronizedCategoriesRepository.getSynchronizedCategory(category, "MSB");
             String brandId = syncBrandId != null ? syncBrandId.getIdEcom() : brand != null ?
-                    createCatalogValue("BRANDS", accessToken, merchantId, endpointRepo.getEndpointUrl("POST_BRAND", "MULTIVENDE"), brand) : null;
+                    createCatalogValue("BRANDS", accessToken, merchantId, endpointRepo.getEndpointUrl("POST_BRAND", env.getProperty("integration.company.name")), brand) : null;
             String categoryId = syncCategory != null ? syncCategory.getIdEcom() : category != null ?
-                    createCatalogValue("CATEGORIES", accessToken, merchantId, endpointRepo.getEndpointUrl("CREATE_PRODUCT_CATEGORY", "MULTIVENDE"), category) : null;
+                    createCatalogValue("CATEGORIES", accessToken, merchantId, endpointRepo.getEndpointUrl("CREATE_PRODUCT_CATEGORY", env.getProperty("integration.company.name")), category) : null;
             idCatalogs.put("brandId", brandId);
             idCatalogs.put("categoryId", categoryId);
             return idCatalogs;
@@ -322,7 +322,7 @@ public class ItemSyncService {
             NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
         JSONObject response = new JSONObject();
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfoRepository, encryptDecryptInterface, env, algorithm);
-        String urlUpdateProduct = endpointRepo.getEndpointUrl("UPDATE_PRODUCT", "MULTIVENDE");
+        String urlUpdateProduct = endpointRepo.getEndpointUrl("UPDATE_PRODUCT", env.getProperty("integration.company.name"));
         VwVegEcommScrapedAdditionalInfo[] additionalInfo = vwVegEcommScrapedAdditionalInfoRepository.getAdditionalProductsInfo();
         for(int it = 0; it < additionalInfo.length; it++){
             try {

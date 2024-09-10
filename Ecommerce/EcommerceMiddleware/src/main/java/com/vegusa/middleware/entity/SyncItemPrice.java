@@ -3,8 +3,8 @@ package com.vegusa.middleware.entity;
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "synchronizeditemprice")
-public class SynchronizedItemPrice {
+@Table(name = "SyncItemPrice")
+public class SyncItemPrice {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "RecId", nullable = false)

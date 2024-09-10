@@ -79,7 +79,7 @@ public class ItemInventorySyncService {
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
         String merchantId = getMerchantId(accessToken);
-        String url = endpointRepo.getEndpointUrl("CREATE_STORE_OR_WAREHOUSE", "MULTIVENDE")
+        String url = endpointRepo.getEndpointUrl("CREATE_STORE_OR_WAREHOUSE", env.getProperty("integration.company.name"))
                 .replace("{{merchant_id}}", merchantId);
         Company company = companies.getCompany(dataAreaId);
         SynchronizedWarehouse syncWarehouse;
@@ -135,7 +135,7 @@ public class ItemInventorySyncService {
         JSONObject response = new JSONObject();
         String accessToken = MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
         Company company = companies.getCompany(dataAreaId);
-        String url = endpointRepo.getEndpointUrl("BULK_UPDATE_STOCK", "MULTIVENDE"), auxUrl = "";
+        String url = endpointRepo.getEndpointUrl("BULK_UPDATE_STOCK", env.getProperty("integration.company.name")), auxUrl = "";
         SynchronizedWarehouse[] syncWarehouses = this.syncWarehouses.getSyncWarehouses();
         ItemInventLocation[] auxItemInventory;
         List<JSONArray> auxBodyRequest;
