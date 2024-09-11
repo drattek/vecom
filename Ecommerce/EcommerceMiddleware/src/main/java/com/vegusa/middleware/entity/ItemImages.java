@@ -11,10 +11,10 @@ import org.hibernate.annotations.Immutable;
  */
 @Entity
 @Immutable
-@Table(name = "vw_veg_images_by_product")
+@Table(name = "ItemImages")
 public class ItemImages {
     @EmbeddedId
-    private VwVegImagesByProductId id;
+    private ItemImagesId id;
 
     @Column(name = "internal_code", nullable = false, length = 50)
     private String internalCode;
@@ -25,11 +25,14 @@ public class ItemImages {
     @Column(name = "image_url", nullable = false, length = 250)
     private String imageUrl;
 
-    public VwVegImagesByProductId getId() {
+    @Column(name = "veg_business_unit", nullable = false, length = 20)
+    private String dataAreaId;
+
+    public ItemImagesId getId() {
         return id;
     }
 
-    public void setId(VwVegImagesByProductId id) {
+    public void setId(ItemImagesId id) {
         this.id = id;
     }
 
@@ -44,6 +47,8 @@ public class ItemImages {
     public String getImageUrl() {
         return imageUrl;
     }
+
+    public String getDataAreaId() { return dataAreaId; }
 
     protected ItemImages() {
     }

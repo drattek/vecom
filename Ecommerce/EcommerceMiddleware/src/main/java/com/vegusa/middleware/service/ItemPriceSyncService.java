@@ -89,7 +89,7 @@ public class ItemPriceSyncService {
         return companyRepo.getCompany(dataAreaId);
     }
 
-    public SynchronizedPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
+    public SyncPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
         return syncPriceListRepo.getSyncPriceList(name, currencyId, dataAreaId);
     }
 
@@ -113,10 +113,10 @@ public class ItemPriceSyncService {
         }
     }
 
-    public SynchronizedPriceList savePriceListInfo(String response, Company company) throws RuntimeException {
+    public SyncPriceList savePriceListInfo(String response, Company company) throws RuntimeException {
         try {
             ObjectMapper objMapPriceList = new ObjectMapper();
-            SynchronizedPriceList priceList = objMapPriceList.readValue(response, SynchronizedPriceList.class);
+            SyncPriceList priceList = objMapPriceList.readValue(response, SyncPriceList.class);
             priceList.setCompany(company);
             syncPriceListRepo.save(priceList);
             return priceList;
@@ -162,7 +162,7 @@ public class ItemPriceSyncService {
         return response;
     }
 
-    public String processPriceListSync(SynchronizedPriceList syncPriceList, String priceListName, String channel, String currencyCode, int itemsPerCall, String accessToken)
+    public String processPriceListUpdate(SyncPriceList syncPriceList, String priceListName, String channel, String currencyCode, int itemsPerCall, String accessToken)
             throws RuntimeException, JsonProcessingException {
         JSONObject response = new JSONObject();
         Company company = syncPriceList.getCompany();

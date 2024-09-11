@@ -1,7 +1,6 @@
 package com.vegusa.middleware.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
@@ -31,35 +30,35 @@ import java.util.Objects;
 
 @Service
 public class ItemInventorySyncService {
-    private final EndpointRepository endpointRepo;
-    private final ItemInventLocationRepository itemInventory;
-    private final AuthTokenRepository tokenInfo;
+    private final ItemInventLocationRepository itemInventLocRepo;
+    private final SyncItemInventoryRepository syncItemInventRepo;
+    private final SyncProductsRepository syncItemRepo;
+    private final SyncWarehouseRepository syncWarehouseRepo;
     private final CompanyRepository companyRepo;
-    private final SyncProductsRepository syncProducts;
-    private final SyncWarehouseRepository syncWarehouses;
-    private final SyncItemInventoryRepository syncItemInventory;
+    private final EndpointRepository endpointRepo;
+    private final AuthTokenRepository authTokenRepo;
     private final WebClient webClient;
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
     private String algorithm;
 
     @Autowired
-    public ItemInventorySyncService(EndpointRepository endpointRepo,
-                                    ItemInventLocationRepository itemInventory,
-                                    AuthTokenRepository tokenInfo,
+    public ItemInventorySyncService(ItemInventLocationRepository itemInventLocRepo,
+                                    SyncItemInventoryRepository syncItemInventRepo,
+                                    SyncProductsRepository syncItemRepo,
+                                    SyncWarehouseRepository syncWarehouseRepo,
                                     CompanyRepository companyRepo,
-                                    SyncProductsRepository syncProducts,
-                                    SyncWarehouseRepository syncWarehouses,
-                                    SyncItemInventoryRepository syncItemInventory,
+                                    EndpointRepository endpointRepo,
+                                    AuthTokenRepository authTokenRepo,
                                     WebClient webClient,
                                     Environment env){
-        this.endpointRepo = endpointRepo;
-        this.itemInventory = itemInventory;
-        this.tokenInfo = tokenInfo;
+        this.itemInventLocRepo = itemInventLocRepo;
+        this.syncItemInventRepo = syncItemInventRepo;
+        this.syncItemRepo = syncItemRepo;
+        this.syncWarehouseRepo = syncWarehouseRepo;
         this.companyRepo = companyRepo;
-        this.syncProducts = syncProducts;
-        this.syncWarehouses = syncWarehouses;
-        this.syncItemInventory = syncItemInventory;
+        this.endpointRepo = endpointRepo;
+        this.authTokenRepo = authTokenRepo;
         this.webClient = webClient;
         this.env = env;
     }
@@ -69,7 +68,12 @@ public class ItemInventorySyncService {
         this.algorithm = algorithm;
     }
 
-    private String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
+    public String getAccessToken() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+            IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
+        return MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm);
+    }
+
+    public String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
         String url = endpointRepo.getEndpointUrl("GET_APP_INFORMATION", env.getProperty("integration.company.name"));
         String appInfo = MWUtils.getAppInfo(webClient, url, accessToken);
         return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
@@ -79,25 +83,20 @@ public class ItemInventorySyncService {
         return companyRepo.getCompany(dataAreaId);
     }
 
-    public void uploadWarehouses(String dataAreaId) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public void uploadWarehouses(String authToken, String merchantId, Company company) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
-        String accessToken = MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
-        String merchantId = getMerchantId(accessToken);
         String url = endpointRepo.getEndpointUrl("CREATE_STORE_OR_WAREHOUSE", env.getProperty("integration.company.name"))
                 .replace("{{merchant_id}}", merchantId);
-        Company company = companyRepo.getCompany(dataAreaId);
-        SynchronizedWarehouse syncWarehouse;
-        JsonNode jsonNodeSyncWarehouses;
+        SyncWarehouse syncWarehouse;
         String auxWarehouse = "";
-        List<Object[]> warehouses = itemInventory.getWarehouses();
+        List<Object[]> warehouses = itemInventLocRepo.getWarehouse();
         for(Object[] warehouse : warehouses){
             try {
                 auxWarehouse = warehouse[0] != null ? warehouse[0].toString() : "";
-                syncWarehouse = syncWarehouses.getSyncWarehouse(auxWarehouse);
+                syncWarehouse = syncWarehouseRepo.getSyncWarehouse(auxWarehouse);
                 if(syncWarehouse == null){
-                    jsonNodeSyncWarehouses = MWUtils
-                            .validateResponse("", syncWarehouses(accessToken, url, warehouse));
-                    updateMiddlewareSyncWarehouses(jsonNodeSyncWarehouses, company);
+                    String createWarehouseResp = createWarehouse(authToken, url, warehouse);
+                    saveWarehouseInfo(createWarehouseResp, company);
                 }
             } catch (RuntimeException | JsonProcessingException e){
                 System.err.println("Error while uploading the warehouse " + auxWarehouse + " " + e.getMessage());
@@ -106,57 +105,59 @@ public class ItemInventorySyncService {
         System.out.println("The uploading of the warehouses is completed.");
     }
 
-    private String syncWarehouses(String accessToken, String url, Object[] warehouse) throws RuntimeException {
-        String name = warehouse[0] != null ? warehouse[0].toString() : "";
-        String description = warehouse[1] != null ? warehouse[1].toString() : "";
-        String address = warehouse[2] != null ? warehouse[2].toString() : "";
-        HttpHeaders headers = new HttpHeaders();
-        headers.add("Content-Type", "application/json");
-        headers.add("Authorization", "Bearer " + accessToken);
-        MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
-        bodyValues.add("name", name);
-        bodyValues.add("type", "warehouse");
-        bodyValues.add("description", description);
-        bodyValues.add("address", address);
-        return webClient.post()
-                .uri(url)
-                .headers(h -> h.addAll(headers))
-                .body(BodyInserters.fromFormData(bodyValues))
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+    private String createWarehouse(String accessToken, String url, Object[] warehouse) {
+        try {
+            String name = warehouse[0] != null ? warehouse[0].toString() : "";
+            String description = warehouse[1] != null ? warehouse[1].toString() : "";
+            String address = warehouse[2] != null ? warehouse[2].toString() : "";
+            HttpHeaders headers = new HttpHeaders();
+            headers.add("Content-Type", "application/json");
+            headers.add("Authorization", "Bearer " + accessToken);
+            MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
+            bodyValues.add("name", name);
+            bodyValues.add("type", "warehouse");
+            bodyValues.add("description", description);
+            bodyValues.add("address", address);
+            return webClient.post()
+                    .uri(url)
+                    .headers(h -> h.addAll(headers))
+                    .body(BodyInserters.fromFormData(bodyValues))
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (RuntimeException e) {
+            throw new RuntimeException("An error occurred while creating warehouse: " + e.getMessage());
+        }
     }
 
-    private void updateMiddlewareSyncWarehouses(JsonNode jsonNodeResp, Company company) throws RuntimeException, JsonProcessingException {
+    private void saveWarehouseInfo(String createWarehouseResp, Company company) throws RuntimeException, JsonProcessingException {
         ObjectMapper objMapSyncProducts = new ObjectMapper();
-        SynchronizedWarehouse syncWarehouse = objMapSyncProducts.readValue(jsonNodeResp.toString(), SynchronizedWarehouse.class);
+        SyncWarehouse syncWarehouse = objMapSyncProducts.readValue(createWarehouseResp, SyncWarehouse.class);
         syncWarehouse.setCompany(company);
-        syncWarehouses.save(syncWarehouse);
+        syncWarehouseRepo.save(syncWarehouse);
     }
 
-    public String processItemInventoryUpdate(String dataAreaId, int itemsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String processItemInventoryUpdate(String authToken, int itemsPerCall, Company company) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
-        String accessToken = MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, env, algorithm);
-        Company company = companyRepo.getCompany(dataAreaId);
         String url = endpointRepo.getEndpointUrl("BULK_UPDATE_STOCK", env.getProperty("integration.company.name")), auxUrl = "";
-        SynchronizedWarehouse[] syncWarehouses = this.syncWarehouses.getSyncWarehouses();
+        SyncWarehouse[] syncWarehouses = this.syncWarehouseRepo.getSyncWarehouse();
         ItemInventLocation[] auxItemInventory;
-        List<JSONArray> auxBodyRequest;
-        JsonNode auxSyncStock;
-        for(SynchronizedWarehouse syncWarehouse : syncWarehouses){
+        List<JSONArray> auxRequest;
+        String updateStockResp;
+        for(SyncWarehouse syncWarehouse : syncWarehouses){
             try{
                 auxUrl = url.replace("{{warehouse_id}}", syncWarehouse.getIdEcom());
-                auxItemInventory = itemInventory.getItemInventLocation(syncWarehouse.getName());
-                auxBodyRequest = getBodyReqInventoryUpdate(auxItemInventory, syncWarehouse.getName(), itemsPerCall);
-                for (JSONArray itemsStock : auxBodyRequest) {
+                auxItemInventory = itemInventLocRepo.getItemInventLocation(syncWarehouse.getName());
+                auxRequest = getRequestItemInventory(auxItemInventory, syncWarehouse.getName(), itemsPerCall);
+                for (JSONArray itemsStock : auxRequest) {
                     try {
-                        auxSyncStock = MWUtils.validateResponse("", synStock(accessToken, auxUrl, itemsStock));
-                        updateSyncItemStockDB(auxSyncStock, company);
-                        response.accumulate("UpdateAnswer", new JSONArray(auxSyncStock.toString()));
+                        updateStockResp = updateStock(authToken, auxUrl, itemsStock);
+                        saveStockInfo(updateStockResp, company);
+                        response.accumulate("update", new JSONArray(updateStockResp));
                         System.out.println("Stock successfully updated to " + syncWarehouse.getName());
                     } catch (RuntimeException | JsonProcessingException e){
-                        response.accumulate("error", "Error while updating stock to " + syncWarehouse.getName() + " - " + e.getMessage());
+                        response.accumulate("error", "Error while updating stock to " + syncWarehouse.getName() + " " + e.getMessage());
                         System.err.println("Error while updating stock to " + syncWarehouse.getName() + " - " + e.getMessage());
                     }
                 }
@@ -167,62 +168,66 @@ public class ItemInventorySyncService {
         return response.toString();
     }
 
-    private List<JSONArray> getBodyReqInventoryUpdate(ItemInventLocation[] itemInventLocation, String warehouse, int itemsPerCall) throws RuntimeException{
+    private List<JSONArray> getRequestItemInventory(ItemInventLocation[] itemInventLocation, String warehouse, int itemsPerCall) throws RuntimeException {
         List<JSONArray> response = new ArrayList<JSONArray>();
         JSONArray auxItemInventoryArray = new JSONArray();
         JSONObject auxItemInventoryObj;
         SynchronizedProducts auxSyncProduct;
-        int auxCountItemArray = 0, auxItemInventory = 0;
+        int countItemArray = 0, countItemInventory = 0;
         for (ItemInventLocation itemInventory : itemInventLocation) {
             try{
-                auxItemInventory++;
-                auxSyncProduct = syncProducts.getSyncItem(itemInventory.getId().getArticulo());
+                countItemInventory++;
+                auxSyncProduct = syncItemRepo.getSyncItem(itemInventory.getId().getArticulo());
                 if (auxSyncProduct != null) {
-                    auxCountItemArray++;
+                    countItemArray++;
                     auxItemInventoryObj = new JSONObject();
                     auxItemInventoryObj.put("code", auxSyncProduct.getDefaultVersionId());
                     auxItemInventoryObj.put("amount", itemInventory.getDisponible());
                     auxItemInventoryArray.put(auxItemInventoryObj);
-                    if (auxCountItemArray % itemsPerCall == 0) {
+                    if (countItemArray % itemsPerCall == 0) {
                         response.add(auxItemInventoryArray);
                         auxItemInventoryArray = new JSONArray();
-                        auxCountItemArray = 0;
+                        countItemArray = 0;
                     }
                 }
-                if(auxItemInventory == itemInventLocation.length && !auxItemInventoryArray.isEmpty()){
+                if(countItemInventory == itemInventLocation.length && !auxItemInventoryArray.isEmpty()){
                     response.add(auxItemInventoryArray);
                 }
             }catch(RuntimeException e){
-                System.err.println("An error occurred while obtaining body request value to " + itemInventory.getId().getArticulo() + " / " + warehouse);
+                System.err.println("An error occurred while obtaining request value to " + itemInventory.getId().getArticulo() + " / " + warehouse);
             }
         }
         return response;
     }
 
-    private String synStock(String accessToken, String url, JSONArray bodyValues) throws RuntimeException{
-        HttpHeaders headers = new HttpHeaders();
-        headers.add("Content-Type", "application/json");
-        headers.add("Authorization", "Bearer " + accessToken);
-        return webClient.post()
-                .uri(url)
-                .headers(h -> h.addAll(headers))
-                .bodyValue(bodyValues.toString())
-                .retrieve()
-                .bodyToMono(String.class)
-                .block();
+    private String updateStock(String accessToken, String url, JSONArray itemsStock) {
+        try {
+            HttpHeaders headers = new HttpHeaders();
+            headers.add("Content-Type", "application/json");
+            headers.add("Authorization", "Bearer " + accessToken);
+            return webClient.post()
+                    .uri(url)
+                    .headers(h -> h.addAll(headers))
+                    .bodyValue(itemsStock.toString())
+                    .retrieve()
+                    .bodyToMono(String.class)
+                    .block();
+        } catch (RuntimeException e) {
+            throw new RuntimeException("An error occurred while updating stock: " + e.getMessage());
+        }
     }
 
-    private void updateSyncItemStockDB(JsonNode jsonNodeResp, Company company) throws RuntimeException, JsonProcessingException {
-        JSONArray response = new JSONArray(jsonNodeResp.toString());
-        SynchronizedItemInventory syncItemInventory, auxSyncItemInventory;
-        SyncItemInventory readItemInventory = new SyncItemInventory();
+    private void saveStockInfo(String updateStockInfo, Company company) throws RuntimeException, JsonProcessingException {
+        JSONArray response = new JSONArray(updateStockInfo);
+        SyncItemInventory syncItemInventory, auxSyncItemInventory;
+        SyncItemInventoryReader readItemInventory = new SyncItemInventoryReader();
         ObjectMapper objMapSyncStock = new ObjectMapper();
-        JSONObject auxSyncStockObject;
+        JSONObject syncStockObject;
         String auxProdRelId = "", auxProdRelAmount = "", auxProdRelType = "", auxProdRelCategoryId = "", auxAvailableProdStockId = "", auxAvailableProdStockAmount = "";
         for (int it = 0; it < response.length(); it++){
             try {
-                auxSyncStockObject = response.getJSONObject(it);
-                readItemInventory = objMapSyncStock.readValue(auxSyncStockObject.toString(), SyncItemInventory.class);
+                syncStockObject = response.getJSONObject(it);
+                readItemInventory = objMapSyncStock.readValue(syncStockObject.toString(), SyncItemInventoryReader.class);
                 if(!Objects.equals(readItemInventory.getProductRelocation().asText(), "null")){
                     auxProdRelId = readItemInventory.getProductRelocation().get("_id").asText();
                     auxProdRelAmount = readItemInventory.getProductRelocation().get("amount").asText();
@@ -233,8 +238,8 @@ public class ItemInventorySyncService {
                     auxAvailableProdStockId = readItemInventory.getAvailableProductStock().get("_id").asText();
                     auxAvailableProdStockAmount = readItemInventory.getAvailableProductStock().get("amount").asText();
                 }
-                auxSyncItemInventory =  this.syncItemInventory.getSyncItemInventory(readItemInventory.getIdEcom());
-                syncItemInventory = auxSyncItemInventory == null ? new SynchronizedItemInventory() : auxSyncItemInventory;
+                auxSyncItemInventory =  syncItemInventRepo.getSyncItemInventory(readItemInventory.getIdEcom());
+                syncItemInventory = auxSyncItemInventory == null ? new SyncItemInventory() : auxSyncItemInventory;
                 syncItemInventory.setCode(readItemInventory.getCode());
                 syncItemInventory.setSuccess(readItemInventory.getSuccess());
                 if (Objects.equals(readItemInventory.getSuccess(), "true")) {
@@ -251,7 +256,7 @@ public class ItemInventorySyncService {
                     syncItemInventory.setErrorMessage(readItemInventory.getError());
                 }
                 syncItemInventory.setCompany(company);
-                this.syncItemInventory.save(syncItemInventory);
+                this.syncItemInventRepo.save(syncItemInventory);
             } catch (RuntimeException e){
                 System.err.println("Error while saving synchronized item inventory info for " +  readItemInventory.getCode());
             }

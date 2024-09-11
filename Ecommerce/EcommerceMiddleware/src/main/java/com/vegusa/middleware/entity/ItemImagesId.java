@@ -8,7 +8,7 @@ import java.io.Serializable;
 import java.util.Objects;
 
 @Embeddable
-public class VwVegImagesByProductId implements Serializable {
+public class ItemImagesId implements Serializable {
     private static final long serialVersionUID = -3452604487885388751L;
     @Column(name = "sync_products_id", nullable = false)
     private Long syncProductsId;
@@ -28,7 +28,7 @@ public class VwVegImagesByProductId implements Serializable {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || Hibernate.getClass(this) != Hibernate.getClass(o)) return false;
-        VwVegImagesByProductId entity = (VwVegImagesByProductId) o;
+        ItemImagesId entity = (ItemImagesId) o;
         return Objects.equals(this.scrapedImagesId, entity.scrapedImagesId) &&
                 Objects.equals(this.syncProductsId, entity.syncProductsId);
     }

@@ -2,7 +2,7 @@ package com.vegusa.msb.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.vegusa.middleware.entity.Company;
-import com.vegusa.middleware.entity.SynchronizedPriceList;
+import com.vegusa.middleware.entity.SyncPriceList;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -61,21 +61,6 @@ public class MSBController {
         }
     }
 
-    @PostMapping(value="/synchronize-images")
-    public String synchronizeImages(@RequestBody HashMap<String, String> request) {
-        try {
-            String itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall")), authToken, merchantId;
-            imageSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            authToken = imageSyncService.getAccessToken();
-            merchantId = imageSyncService.getMerchantId(authToken);
-            return imageSyncService.processImagesSync(new AtomicReference<>(authToken), merchantId, Integer.parseInt(itemsPerCall));
-        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
-                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
-            System.err.println("An error occurred while uploading the images.");
-            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
-        }
-    }
-
     @PostMapping(value="/update-products-control-table")
     public String updateProductsControlTable(@RequestBody HashMap<String, String> request){
         try{
@@ -113,13 +98,15 @@ public class MSBController {
     @PostMapping(value="/upload-item-inventory")
     public String uploadItemInventory(@RequestBody HashMap<String, String> request){
         try {
-            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+            String authToken, merchantId, dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
                     itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall"));
             Company company = itemInventService.getCompany(dataAreaId);
             assert company != null : "The company provided doesn't exist.";
             itemInventService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            itemInventService.uploadWarehouses(dataAreaId);
-            return itemInventService.processItemInventoryUpdate(dataAreaId, Integer.parseInt(itemsPerCall));
+            authToken = itemInventService.getAccessToken();
+            merchantId = itemInventService.getMerchantId(authToken);
+            itemInventService.uploadWarehouses(authToken, merchantId, company);
+            return itemInventService.processItemInventoryUpdate(authToken, Integer.parseInt(itemsPerCall), company);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while uploading item inventory.");
@@ -127,11 +114,11 @@ public class MSBController {
         }
     }
 
-    @PostMapping(value="/synchronize-price-list")
-    public String synchronizePriceList(@RequestBody HashMap<String, String> request) {
+    @PostMapping(value="/update-price-list")
+    public String updatePriceList(@RequestBody HashMap<String, String> request) {
         try {
-            SynchronizedPriceList priceList;
-            String accessToken, merchantId, fullPriceListName, currencyId,
+            SyncPriceList priceList;
+            String authToken, merchantId, fullPriceListName, currencyId,
                     dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
                     priceListName = MWUtils.bodyValidation(request.get("priceListName")),
                     description = MWUtils.bodyValidation(request.get("priceListDescription")),
@@ -141,19 +128,38 @@ public class MSBController {
             Company company = itemPriceSyncService.getCompany(dataAreaId);
             assert company != null : "The company provided doesn't exist.";
             itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            accessToken = itemPriceSyncService.getAccessToken();
-            merchantId = itemPriceSyncService.getMerchantId(accessToken);
+            authToken = itemPriceSyncService.getAccessToken();
+            merchantId = itemPriceSyncService.getMerchantId(authToken);
             fullPriceListName = dataAreaId + "_" + priceListName + "_" + channel + "_" + currencyCode;
-            currencyId = itemPriceSyncService.getCurrencyId(currencyCode, accessToken, merchantId);
+            currencyId = itemPriceSyncService.getCurrencyId(currencyCode, authToken, merchantId);
             priceList = itemPriceSyncService.getSyncPriceList(fullPriceListName, currencyId, dataAreaId);
             if(priceList == null){
-                String createdPriceList = itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, accessToken, merchantId);
+                String createdPriceList = itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, authToken, merchantId);
                 priceList = itemPriceSyncService.savePriceListInfo(createdPriceList, company);
             }
-            return itemPriceSyncService.processPriceListSync(priceList, priceListName, channel, currencyCode, Integer.parseInt(itemsPerCall), accessToken);
+            return itemPriceSyncService.processPriceListUpdate(priceList, priceListName, channel, currencyCode, Integer.parseInt(itemsPerCall), authToken);
         } catch(RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while creating the price list.");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
+        }
+    }
+
+    @PostMapping(value="/upload-images")
+    public String uploadImages(@RequestBody HashMap<String, String> request) {
+        try {
+            String itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall")),
+                    dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    authToken, merchantId;
+            Company company = imageSyncService.getCompany(dataAreaId);
+            assert company != null : "The company provided doesn't exist.";
+            imageSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            authToken = imageSyncService.getAccessToken();
+            merchantId = imageSyncService.getMerchantId(authToken);
+            return imageSyncService.processImagesSync(new AtomicReference<>(authToken), merchantId, dataAreaId, Integer.parseInt(itemsPerCall));
+        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
+                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
+            System.err.println("An error occurred while uploading the images.");
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }

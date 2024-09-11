@@ -2,10 +2,8 @@ package com.vegusa.middleware.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vegusa.middleware.repository.AuthTokenRepository;
-import com.vegusa.middleware.repository.SyncImageRepository;
-import com.vegusa.middleware.repository.EndpointRepository;
-import com.vegusa.middleware.repository.ItemImagesRepository;
+import com.vegusa.middleware.entity.Company;
+import com.vegusa.middleware.repository.*;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.entity.SyncImage;
 import com.vegusa.middleware.entity.ItemImages;
@@ -35,6 +33,7 @@ import java.util.stream.Stream;
 public class ImageSyncService {
     private final ItemImagesRepository itemImagesRepo;
     private final SyncImageRepository syncImageRepo;
+    private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
     private final AuthTokenRepository authTokenRepo;
     private final EntityManager entityManager;
@@ -46,6 +45,7 @@ public class ImageSyncService {
     @Autowired
     public ImageSyncService(ItemImagesRepository itemImagesRepo,
                             SyncImageRepository syncImageRepo,
+                            CompanyRepository companyRepo,
                             EndpointRepository endpointRepo,
                             AuthTokenRepository authTokenRepo,
                             EntityManager entityManager,
@@ -53,6 +53,7 @@ public class ImageSyncService {
                             Environment env){
         this.itemImagesRepo = itemImagesRepo;
         this.syncImageRepo = syncImageRepo;
+        this.companyRepo = companyRepo;
         this.endpointRepo = endpointRepo;
         this.authTokenRepo = authTokenRepo;
         this.entityManager = entityManager;
@@ -76,14 +77,18 @@ public class ImageSyncService {
         return MWUtils.getJsonNodeResponse(appInfo, "MerchantId");
     }
 
+    public Company getCompany(String dataAreaId) throws RuntimeException {
+        return companyRepo.getCompany(dataAreaId);
+    }
+
     @Transactional(readOnly = false)
-    public String processImagesSync(AtomicReference<String> authToken, String merchantId, int maxNumOfItemsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String processImagesSync(AtomicReference<String> authToken, String merchantId, String dataAreaId, int maxNumOfItemsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
         String url = endpointRepo.getEndpointUrl("UPLOAD_PICTURE_TO_PRODUCT_BY_URL", env.getProperty("integration.company.name"))
                 .replace("{{merchant_id}}", merchantId) .replace("{{product-pictures-set-id}}", "default");
-        Supplier<Stream<ItemImages>> itemImages = itemImagesRepo::getItemImages;
-        AtomicReference<String> auxPreviousItem = new AtomicReference<>(itemImagesRepo.getFstItemImageId());
+        Supplier<Stream<ItemImages>> itemImages = itemImagesRepo.getItemImages(dataAreaId);
+        AtomicReference<String> auxPreviousItem = new AtomicReference<>(itemImagesRepo.getFstItemImageId(dataAreaId));
         JSONArray request =  new JSONArray();
         ArrayList<String> images = new ArrayList<>();
         AtomicLong auxItemProcessed = new AtomicLong(1), auxRowProcessed = new AtomicLong(1);

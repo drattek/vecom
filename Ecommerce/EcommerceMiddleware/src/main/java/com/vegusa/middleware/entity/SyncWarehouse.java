@@ -6,19 +6,19 @@ import jakarta.persistence.*;
 import java.util.Date;
 
 @Entity
-@Table(name = "synchronizedpricelist")
-public class SynchronizedPriceList {
+@Table(name = "SyncWarehouse")
+public class SyncWarehouse {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "RecId", nullable = false)
     private Long id;
 
     @JsonProperty("_id")
-    @Column(name = "ResponseId", length = 100)
-    private String responseId;
+    @Column(name = "IdEcom", length = 100)
+    private String idEcom;
 
     @JsonProperty("status")
-    @Column(name = "Status", length = 20)
+    @Column(name = "Status", length = 50)
     private String status;
 
     @JsonProperty("name")
@@ -29,13 +29,33 @@ public class SynchronizedPriceList {
     @Column(name = "Description", length = 100)
     private String description;
 
-    @JsonProperty("CurrencyId")
-    @Column(name = "CurrencyId", length = 100)
-    private String currencyId;
+    @JsonProperty("address")
+    @Column(name = "Address", length = 250)
+    private String address;
 
-    @JsonProperty("isDefault")
-    @Column(name = "IsDefault", length = 10)
-    private String isDefault;
+    @JsonProperty("type")
+    @Column(name = "Type", length = 50)
+    private String type;
+
+    @JsonProperty("phoneAreaCode")
+    @Column(name = "PhoneAreaCode", length = 20)
+    private String phoneAreaCode;
+
+    @JsonProperty("phoneNumber")
+    @Column(name = "PhoneNumber", length = 20)
+    private String phoneNumber;
+
+    @JsonProperty("latitude")
+    @Column(name = "Latitude", length = 20)
+    private String latitude;
+
+    @JsonProperty("longitude")
+    @Column(name = "Longitude", length = 20)
+    private String longitude;
+
+    @JsonProperty("openHours")
+    @Column(name = "OpenHours", length = 20)
+    private String openHours;
 
     @JsonProperty("CreatedById")
     @Column(name = "CreatedById", length = 100)
@@ -50,15 +70,15 @@ public class SynchronizedPriceList {
     private String merchantId;
 
     @JsonProperty("position")
-    @Column(name = "Position", length = 10)
+    @Column(name = "Position", length = 20)
     private String position;
 
     @JsonProperty("createdAt")
-    @Column(name = "CreatedAt")
+    @Column(name = "created_at")
     private Date createdAt;
 
     @JsonProperty("updatedAt")
-    @Column(name = "UpdatedAt")
+    @Column(name = "updated_at")
     private Date updatedAt;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -76,12 +96,12 @@ public class SynchronizedPriceList {
         this.id = id;
     }
 
-    public String getResponseId() {
-        return responseId;
+    public String getIdEcom() {
+        return idEcom;
     }
 
-    public void setResponseId(String responseId) {
-        this.responseId = responseId;
+    public void setIdEcom(String idEcom) {
+        this.idEcom = idEcom;
     }
 
     public String getStatus() {
@@ -108,20 +128,60 @@ public class SynchronizedPriceList {
         this.description = description;
     }
 
-    public String getCurrencyId() {
-        return currencyId;
+    public String getAddress() {
+        return address;
     }
 
-    public void setCurrencyId(String currencyId) {
-        this.currencyId = currencyId;
+    public void setAddress(String address) {
+        this.address = address;
     }
 
-    public String getIsDefault() {
-        return isDefault;
+    public String getType() {
+        return type;
     }
 
-    public void setIsDefault(String isDefault) {
-        this.isDefault = isDefault;
+    public void setType(String type) {
+        this.type = type;
+    }
+
+    public String getPhoneAreaCode() {
+        return phoneAreaCode;
+    }
+
+    public void setPhoneAreaCode(String phoneAreaCode) {
+        this.phoneAreaCode = phoneAreaCode;
+    }
+
+    public String getPhoneNumber() {
+        return phoneNumber;
+    }
+
+    public void setPhoneNumber(String phoneNumber) {
+        this.phoneNumber = phoneNumber;
+    }
+
+    public String getLatitude() {
+        return latitude;
+    }
+
+    public void setLatitude(String latitude) {
+        this.latitude = latitude;
+    }
+
+    public String getLongitude() {
+        return longitude;
+    }
+
+    public void setLongitude(String longitude) {
+        this.longitude = longitude;
+    }
+
+    public String getOpenHours() {
+        return openHours;
+    }
+
+    public void setOpenHours(String openHours) {
+        this.openHours = openHours;
     }
 
     public String getCreatedById() {
