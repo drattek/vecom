@@ -33,7 +33,7 @@ public class ItemPriceSyncService {
     private final ChannelRepository channelRepo;
     private final PriceListRepository priceListRepo;
     private final ItemInventLocationRepository itemInventoryRepo;
-    private final SyncProductsRepository syncItemRepo;
+    private final SyncItemRepository syncItemRepo;
     private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
     private final AuthTokenRepository authTokenRepo;
@@ -49,7 +49,7 @@ public class ItemPriceSyncService {
                                  ChannelRepository channelRepo,
                                  PriceListRepository priceListRepo,
                                  ItemInventLocationRepository itemInventoryRepo,
-                                 SyncProductsRepository syncItemRepo,
+                                 SyncItemRepository syncItemRepo,
                                  CompanyRepository companyRepo,
                                  EndpointRepository endpointRepo,
                                  AuthTokenRepository authTokenRepo,
@@ -190,9 +190,9 @@ public class ItemPriceSyncService {
                 auxItemPercentage = 0, auxCost = 0;
         HashMap<String, String> itemCostMap = getItemMap(itemInventoryRepo.getItemCost());
         HashMap<String, String> itemCategoryMap = getItemMap(itemInventoryRepo.getItemCategory());
-        SynchronizedProducts[] syncItems = this.syncItemRepo.getSyncItem();
+        SyncItem[] syncItems = this.syncItemRepo.getSyncItem();
         int countSyncItems = 0, countItemArray = 0;
-        for(SynchronizedProducts product : syncItems){
+        for(SyncItem product : syncItems){
             countSyncItems++;
             try {
                if(itemCostMap.get(product.getInternalCode()) != null && itemCategoryMap.get(product.getInternalCode()) != null) {

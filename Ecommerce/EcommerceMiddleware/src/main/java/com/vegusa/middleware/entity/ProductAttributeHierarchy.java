@@ -22,7 +22,7 @@ public class ProductAttributeHierarchy {
             @JoinColumn(name = "InterfaceRefRecId", referencedColumnName = "RecId", nullable = false),
             @JoinColumn(name = "InterfaceId", referencedColumnName = "InterfaceId", nullable = false)
     })
-    private InterfaceDS interfaceField;
+    private Interface interfaceField;
 
     @Column(name = "Priority", nullable = false)
     private Integer priority;
@@ -43,11 +43,11 @@ public class ProductAttributeHierarchy {
         this.productattribute = productattribute;
     }
 
-    public InterfaceDS getInterfaceField() {
+    public Interface getInterfaceField() {
         return interfaceField;
     }
 
-    public void setInterfaceField(InterfaceDS interfaceField) {
+    public void setInterfaceField(Interface interfaceField) {
         this.interfaceField = interfaceField;
     }
 

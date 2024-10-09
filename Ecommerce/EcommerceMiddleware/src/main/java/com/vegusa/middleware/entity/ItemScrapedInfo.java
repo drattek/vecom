@@ -6,7 +6,7 @@ import java.time.Instant;
 
 @Entity
 @Table(name = "ItemScrapedInformation")
-public class ProductAdditionalInfo {
+public class ItemScrapedInfo {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)

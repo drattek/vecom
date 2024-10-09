@@ -3,9 +3,9 @@ package com.vegusa.middleware.service;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.middleware.entity.Company;
+import com.vegusa.middleware.entity.SyncImage;
 import com.vegusa.middleware.repository.*;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
-import com.vegusa.middleware.entity.SyncImage;
 import com.vegusa.middleware.entity.ItemImages;
 import com.vegusa.middleware.utils.MWUtils;
 import jakarta.persistence.EntityManager;
@@ -15,7 +15,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
@@ -24,10 +23,6 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.concurrent.atomic.AtomicLong;
-import java.util.concurrent.atomic.AtomicReference;
-import java.util.function.Supplier;
-import java.util.stream.Stream;
 
 @Service
 public class ImageSyncService {
@@ -36,7 +31,6 @@ public class ImageSyncService {
     private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
     private final AuthTokenRepository authTokenRepo;
-    private final EntityManager entityManager;
     private final WebClient webClient;
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
@@ -56,7 +50,6 @@ public class ImageSyncService {
         this.companyRepo = companyRepo;
         this.endpointRepo = endpointRepo;
         this.authTokenRepo = authTokenRepo;
-        this.entityManager = entityManager;
         this.webClient = webClient;
         this.env = env;
     }
@@ -81,48 +74,46 @@ public class ImageSyncService {
         return companyRepo.getCompany(dataAreaId);
     }
 
-    @Transactional(readOnly = false)
-    public String processImagesSync(AtomicReference<String> authToken, String merchantId, String dataAreaId, int maxNumOfItemsPerCall) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String processImagesUpload(int maxNumOfItemsPerCall, String authToken, String merchantId, String dataAreaId, Company company) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
         String url = endpointRepo.getEndpointUrl("UPLOAD_PICTURE_TO_PRODUCT_BY_URL", env.getProperty("integration.company.name"))
                 .replace("{{merchant_id}}", merchantId) .replace("{{product-pictures-set-id}}", "default");
-        Supplier<Stream<ItemImages>> itemImages = itemImagesRepo.getItemImages(dataAreaId);
-        AtomicReference<String> auxPreviousItem = new AtomicReference<>(itemImagesRepo.getFstItemImageId(dataAreaId));
+        ItemImages[] itemImages = itemImagesRepo.getItemImages(dataAreaId);
+        String auxPreviousItem = itemImages[0].getMvItemId();
         JSONArray request =  new JSONArray();
         ArrayList<String> images = new ArrayList<>();
-        AtomicLong auxItemProcessed = new AtomicLong(1), auxRowProcessed = new AtomicLong(1);
-        long streamSize = itemImages.get().count();
-        itemImages.get().forEach(imageByProduct -> {
+        long auxItemProcessed = (long)1, auxRowProcessed = (long)1, streamSize = itemImages.length;
+        for(ItemImages imageByProduct: itemImages){
             try {
-                if(!imageByProduct.getIdMv().equals(auxPreviousItem.get())){
-                    insertItemImagesNode(request, images, auxPreviousItem.get());
-                    if(auxItemProcessed.get() % maxNumOfItemsPerCall == 0){
-                        String uploadResponse = uploadItemImages(authToken.get(), url, request);
-                        JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse);
+                if(!imageByProduct.getMvItemId().equals(auxPreviousItem)){
+                    insertItemImagesNode(request, images, auxPreviousItem);
+                    if(auxItemProcessed % maxNumOfItemsPerCall == 0){
+                        String uploadResponse = uploadItemImages(authToken, url, request);
+                        JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse, company);
                         response.accumulate("ok", saveInfoResponse);
                     }
-                    auxItemProcessed.getAndIncrement();
+                    auxItemProcessed++;
                 }
                 images.add(imageByProduct.getImageUrl());
-                auxPreviousItem.set(imageByProduct.getIdMv());
-                if(auxRowProcessed.get() == streamSize){
-                    insertItemImagesNode(request, images, imageByProduct.getIdMv());
-                    String uploadResponse = uploadItemImages(authToken.get(), url, request);
-                    JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse);
+                auxPreviousItem = imageByProduct.getMvItemId();
+                if(auxRowProcessed == streamSize){
+                    insertItemImagesNode(request, images, imageByProduct.getMvItemId());
+                    String uploadResponse = uploadItemImages(authToken, url, request);
+                    JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse, company);
                     response.accumulate("ok", saveInfoResponse);
                 }
             } catch (RuntimeException e) {
-                System.err.println("An error occurred processing product images of: " + imageByProduct.getInternalCode());
+                System.err.println("An error occurred processing product images of: " + imageByProduct.getItemId());
                 if(e.getMessage().contains("401")){
-                    authToken.set(MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm,
-                            "Authorization token was not found in Middleware data base."));
+                    authToken = MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm,
+                            "An error occurred while renewing unauthorized token.");
                 }
-                response.accumulate("error", e.getMessage());
+                response.accumulate("error", "An error occurred processing product images of: " + imageByProduct.getItemId() + " " + e.getMessage());
             }
-            auxRowProcessed.getAndIncrement();
-            entityManager.detach(imageByProduct);
-        });
+            auxRowProcessed++;
+            System.out.println("Image synchronization ended to " + imageByProduct.getItemId());
+        }
         return response.toString();
     }
 
@@ -154,7 +145,7 @@ public class ImageSyncService {
         }
     }
 
-    private JSONArray saveSyncImagesInfo(String uploadResponse) {
+    private JSONArray saveSyncImagesInfo(String uploadResponse, Company company) {
         try {
             JSONArray response = new JSONArray();
             JSONArray uploadRespArray = new JSONArray(uploadResponse);
@@ -163,12 +154,15 @@ public class ImageSyncService {
                     JSONObject joUpImageInfo = uploadRespArray.optJSONObject(it);
                     JSONArray jaUpImageInfo = joUpImageInfo.getJSONArray("imagesProcess");
                     for(int i = 0; i < jaUpImageInfo.length(); i++){
+                        JSONObject imageInfoResponse = new JSONObject();
                         JSONObject upImageInfo = jaUpImageInfo.optJSONObject(i);
                         ObjectMapper objMapUpImageInfo = new ObjectMapper();
-                        SyncImage vegEcommSynchronizedImage = objMapUpImageInfo
+                        SyncImage syncImage = objMapUpImageInfo
                                 .readValue(upImageInfo.toString(), SyncImage.class);
-                        syncImageRepo.save(vegEcommSynchronizedImage);
-                        response.put(new JSONObject(vegEcommSynchronizedImage.getProductId(), vegEcommSynchronizedImage.getUrl()));
+                        syncImage.setCompany(company);
+                        syncImageRepo.save(syncImage);
+                        imageInfoResponse.put(syncImage.getProductId(), syncImage.getUrl());
+                        response.put(imageInfoResponse);
                     }
                 } catch (RuntimeException e) {
                     System.err.println("An error occurred while saving uploaded image info to: " + uploadRespArray.optJSONObject(it));

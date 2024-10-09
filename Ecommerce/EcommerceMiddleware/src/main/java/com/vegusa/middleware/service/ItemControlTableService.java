@@ -7,29 +7,26 @@ import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import java.util.HashMap;
 import java.util.Map;
-import java.util.Objects;
 
 @Service
 public class ItemControlTableService {
-
-    private final InterfaceDSRepository interfaces;
-    private final InterfaceProductRepository interfaceProducts;
-    private final ProductAttributeRepository attributes;
-    private final ProductAttributeValueRepository attributeValues;
+    private final InterfaceRepository interfaceRepo;
+    private final InterfaceItemsRepository interfaceItemsRepo;
+    private final ProductAttributeRepository attributeRepo;
+    private final ProductAttributeValueRepository attributeValuesRepo;
     private final CompanyRepository companyRepo;
 
     @Autowired
-    public ItemControlTableService(InterfaceDSRepository interfaces,
-                                   InterfaceProductRepository interfaceProducts,
-                                   ProductAttributeRepository attributes,
-                                   ProductAttributeValueRepository attributeValues,
+    public ItemControlTableService(InterfaceRepository interfaceRepo,
+                                   InterfaceItemsRepository interfaceItemsRepo,
+                                   ProductAttributeRepository attributeRepo,
+                                   ProductAttributeValueRepository attributeValuesRepo,
                                    CompanyRepository companyRepo){
-        this.interfaces = interfaces;
-        this.interfaceProducts = interfaceProducts;
-        this.attributes = attributes;
-        this.attributeValues = attributeValues;
+        this.interfaceRepo = interfaceRepo;
+        this.interfaceItemsRepo = interfaceItemsRepo;
+        this.attributeRepo = attributeRepo;
+        this.attributeValuesRepo = attributeValuesRepo;
         this.companyRepo = companyRepo;
     }
 
@@ -37,32 +34,26 @@ public class ItemControlTableService {
         return companyRepo.getCompany(dataAreaId);
     }
 
-    public String processAndSaveInterfaceInfo(String interfaceId, String dataAreaId) throws RuntimeException {
+    public String updateControlTableInfo(String interfaceId, String dataAreaId) throws RuntimeException {
         JSONObject response = new JSONObject();
-        InterfaceDS interfaceDS = interfaces.getInterface(interfaceId);
-        if(!Objects.equals(interfaceDS.getCompany().getId().getDataAreaId(), dataAreaId)){
-            throw new RuntimeException("The dataAreaId or interfaceId contains invalid information.");
-        }
-        InterfaceProduct[] interfaceProducts = this.interfaceProducts.getInterfaceProductsInfo(interfaceId, dataAreaId);
-        for(InterfaceProduct iProduct : interfaceProducts){
+        Interface itf = interfaceRepo.getInterface(interfaceId, dataAreaId);
+        if(itf == null){throw new RuntimeException("The interfaceId provided doesn't exist."); }
+        InterfaceItems[] interfaceProducts = interfaceItemsRepo.getInterfaceProductsInfo(interfaceId, dataAreaId);
+        for(InterfaceItems iProduct : interfaceProducts){
             try {
-                HashMap<String, String> uploadedInfo = new HashMap<>();
                 Map<String, String> attributeValuesMap = getAttributeValuesMap(iProduct);
-                saveInterfaceProduct(iProduct, attributeValuesMap);
-                uploadedInfo.put("ok", iProduct.getItemId() + " uploaded successfully.");
-                response.accumulate("uploaded", uploadedInfo);
+                saveControlTableProduct(iProduct, attributeValuesMap, interfaceId, dataAreaId);
+                response.accumulate("ok", iProduct.getItemId() + " uploaded successfully.");
                 System.out.println(iProduct.getItemId() + " saved successfully.");
             } catch (RuntimeException e){
-                HashMap<String, String> errorInfo = new HashMap<>();
-                errorInfo.put("error", "Error when uploading the product " + iProduct.getItemId());
-                response.accumulate("noUploaded", errorInfo);
+                response.accumulate("error", "Error when uploading the product " + iProduct.getItemId());
                 System.err.println("Error while uploading the product " + iProduct.getItemId());
             }
         }
         return response.toString();
     }
 
-    private static Map<String, String> getAttributeValuesMap(InterfaceProduct iProduct) {
+    private static Map<String, String> getAttributeValuesMap(InterfaceItems iProduct) {
         String auxAvailable = iProduct.getAvailable() == null ? null : iProduct.getAvailable().toString();
         String auxCost = iProduct.getAvailable() == null ? null : iProduct.getCost().toString();
         Map<String, String> attributeValuesMap = MWUtils.getControlTableAttributes();
@@ -79,14 +70,13 @@ public class ItemControlTableService {
         return attributeValuesMap;
     }
 
-    private void saveInterfaceProduct(InterfaceProduct interfaceProduct, Map<String, String> attributeValuesMap) throws RuntimeException {
+    private void saveControlTableProduct(InterfaceItems interfaceProduct, Map<String, String> attributeValuesMap, String interfaceId, String dataAreaId) throws RuntimeException {
         for (Map.Entry<String, String> attrValue : attributeValuesMap.entrySet()) {
             try {
-                String itemId = interfaceProduct.getItemId(), interfaceId = interfaceProduct.getInterfaceField().getId().getInterfaceId(),
-                        dataAreaId = interfaceProduct.getCompany().getId().getDataAreaId();
-                ProductAttributeValue auxAttrValue = attributeValues.getProductAttributeValue(attrValue.getKey(), itemId, interfaceId, dataAreaId);
+                String itemId = interfaceProduct.getItemId();
+                ProductAttributeValue auxAttrValue = attributeValuesRepo.getProductAttributeValue(attrValue.getKey(), itemId, interfaceId, dataAreaId);
                 if(attrValue.getValue() != null) {
-                    ProductAttribute productAttribute = attributes.getProductAttribute(attrValue.getKey(), interfaceProduct.getCompany().getId().getDataAreaId());
+                    ProductAttribute productAttribute = attributeRepo.getProductAttribute(attrValue.getKey(), dataAreaId);
                     ProductAttributeValue attributeValue = auxAttrValue == null ? new ProductAttributeValue() : auxAttrValue;
                     attributeValue.setItemId(interfaceProduct.getItemId());
                     attributeValue.setInterfaceField(interfaceProduct.getInterfaceField());
@@ -97,9 +87,9 @@ public class ItemControlTableService {
                     attributeValue.setUpdatedAt(interfaceProduct.getUpdatedAt());
                     attributeValue.setCompany(interfaceProduct.getCompany());
                     attributeValue.setProductRefRec(interfaceProduct);
-                    attributeValues.save(attributeValue);
+                    attributeValuesRepo.save(attributeValue);
                 } else if(auxAttrValue != null){
-                    attributeValues.deleteProductAttributeValue(attrValue.getKey(), itemId, interfaceId, dataAreaId);
+                    attributeValuesRepo.deleteProductAttributeValue(attrValue.getKey(), itemId, interfaceId, dataAreaId);
                 }
             } catch (RuntimeException e) {
                 System.err.println("Error while saving ProductAttributeValue to " + interfaceProduct.getItemId() + "-" + attrValue.getKey());

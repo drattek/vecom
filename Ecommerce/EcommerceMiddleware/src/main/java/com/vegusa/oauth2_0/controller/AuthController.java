@@ -60,7 +60,6 @@ public class AuthController implements ApplicationRunner {
                 IllegalBlockSizeException | NoSuchAlgorithmException |  BadPaddingException | ParseException | InvalidKeyException e) {
             System.err.println("An error occurred while saving the token.");
             System.err.println("StackTrace: ");
-            e.printStackTrace();
         }
 
     }
@@ -87,7 +86,6 @@ public class AuthController implements ApplicationRunner {
                 BadPaddingException | InvalidKeyException | JsonProcessingException | InterruptedException | ParseException e){
             System.err.println("An error occurred while refreshing the token.");
             System.err.println("StackTrace: ");
-            e.printStackTrace();
         }
     }
 

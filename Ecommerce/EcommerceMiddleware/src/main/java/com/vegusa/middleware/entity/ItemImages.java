@@ -16,38 +16,43 @@ public class ItemImages {
     @EmbeddedId
     private ItemImagesId id;
 
-    @Column(name = "internal_code", nullable = false, length = 50)
-    private String internalCode;
+    @Column(name = "ItemId", nullable = false, length = 50)
+    private String itemId;
 
-    @Column(name = "id_mv", nullable = false, length = 100)
-    private String idMv;
+    @Column(name = "MvItemId", nullable = false, length = 100)
+    private String mvItemId;
 
-    @Column(name = "image_url", nullable = false, length = 250)
+    @Column(name = "ImageUrl", nullable = false, length = 250)
     private String imageUrl;
 
-    @Column(name = "veg_business_unit", nullable = false, length = 20)
+    @Column(name = "PartNumberSearched", length = 100)
+    private String partNumberSearched;
+
+    @Column(name = "PartNumberFound", length = 100)
+    private String partNumberFound;
+
+    @Column(name = "InterfaceId", length = 20)
+    private String interfaceId;
+
+    @Column(name = "DataAreaId", nullable = false, length = 20)
     private String dataAreaId;
 
+    //getters
     public ItemImagesId getId() {
         return id;
     }
-
-    public void setId(ItemImagesId id) {
-        this.id = id;
+    public String getItemId() {
+        return itemId;
     }
-
-    public String getInternalCode() {
-        return internalCode;
+    public String getMvItemId() {
+        return mvItemId;
     }
-
-    public String getIdMv() {
-        return idMv;
-    }
-
     public String getImageUrl() {
         return imageUrl;
     }
-
+    public String getPartNumberSearched(){ return partNumberSearched; }
+    public String getPartNumberFound(){ return partNumberFound; }
+    public String getInterfaceId(){ return interfaceId; }
     public String getDataAreaId() { return dataAreaId; }
 
     protected ItemImages() {

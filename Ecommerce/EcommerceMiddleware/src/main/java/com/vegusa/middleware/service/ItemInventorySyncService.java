@@ -32,7 +32,7 @@ import java.util.Objects;
 public class ItemInventorySyncService {
     private final ItemInventLocationRepository itemInventLocRepo;
     private final SyncItemInventoryRepository syncItemInventRepo;
-    private final SyncProductsRepository syncItemRepo;
+    private final SyncItemRepository syncItemRepo;
     private final SyncWarehouseRepository syncWarehouseRepo;
     private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
@@ -45,7 +45,7 @@ public class ItemInventorySyncService {
     @Autowired
     public ItemInventorySyncService(ItemInventLocationRepository itemInventLocRepo,
                                     SyncItemInventoryRepository syncItemInventRepo,
-                                    SyncProductsRepository syncItemRepo,
+                                    SyncItemRepository syncItemRepo,
                                     SyncWarehouseRepository syncWarehouseRepo,
                                     CompanyRepository companyRepo,
                                     EndpointRepository endpointRepo,
@@ -137,7 +137,7 @@ public class ItemInventorySyncService {
         syncWarehouseRepo.save(syncWarehouse);
     }
 
-    public String processItemInventoryUpdate(String authToken, int itemsPerCall, Company company) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String processItemInventoryUpdate(int itemsPerCall, String authToken, String dataAreaId, Company company) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
         String url = endpointRepo.getEndpointUrl("BULK_UPDATE_STOCK", env.getProperty("integration.company.name")), auxUrl = "";
@@ -149,7 +149,7 @@ public class ItemInventorySyncService {
             try{
                 auxUrl = url.replace("{{warehouse_id}}", syncWarehouse.getIdEcom());
                 auxItemInventory = itemInventLocRepo.getItemInventLocation(syncWarehouse.getName());
-                auxRequest = getRequestItemInventory(auxItemInventory, syncWarehouse.getName(), itemsPerCall);
+                auxRequest = getRequestItemInventory(auxItemInventory, syncWarehouse.getName(), itemsPerCall, dataAreaId);
                 for (JSONArray itemsStock : auxRequest) {
                     try {
                         updateStockResp = updateStock(authToken, auxUrl, itemsStock);
@@ -168,16 +168,16 @@ public class ItemInventorySyncService {
         return response.toString();
     }
 
-    private List<JSONArray> getRequestItemInventory(ItemInventLocation[] itemInventLocation, String warehouse, int itemsPerCall) throws RuntimeException {
+    private List<JSONArray> getRequestItemInventory(ItemInventLocation[] itemInventLocation, String warehouse, int itemsPerCall, String dataAreaId) throws RuntimeException {
         List<JSONArray> response = new ArrayList<JSONArray>();
         JSONArray auxItemInventoryArray = new JSONArray();
         JSONObject auxItemInventoryObj;
-        SynchronizedProducts auxSyncProduct;
+        SyncItem auxSyncProduct;
         int countItemArray = 0, countItemInventory = 0;
         for (ItemInventLocation itemInventory : itemInventLocation) {
             try{
                 countItemInventory++;
-                auxSyncProduct = syncItemRepo.getSyncItem(itemInventory.getId().getArticulo());
+                auxSyncProduct = syncItemRepo.getSyncItem(itemInventory.getId().getArticulo(), dataAreaId);
                 if (auxSyncProduct != null) {
                     countItemArray++;
                     auxItemInventoryObj = new JSONObject();

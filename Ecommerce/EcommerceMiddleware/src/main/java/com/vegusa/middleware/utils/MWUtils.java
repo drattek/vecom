@@ -54,13 +54,15 @@ public class MWUtils {
         }
     }
 
-    public static String getDecryptedAccessToken(AuthTokenRepository tokenInfoRepository, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm, String ExcMessage) {
+    public static String getDecryptedAccessToken(AuthTokenRepository authTokenRepo, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm, String ExcMessage) {
         try {
-            AuthToken tokenInfo =  tokenInfoRepository.getAuthToken(env.getProperty("integration.company.name"));
+            AuthToken tokenInfo =  authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
             if(tokenInfo != null) {
                 SecretKey key = MWUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
                 IvParameterSpec ivParameterSpec = MWUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
                 return encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherAccessToken(), key, ivParameterSpec);
+            } else {
+                System.err.println("Authorization token was not found in Middleware data base.");
             }
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException e){

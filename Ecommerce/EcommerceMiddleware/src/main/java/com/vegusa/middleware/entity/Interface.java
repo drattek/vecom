@@ -4,9 +4,9 @@ import jakarta.persistence.*;
 
 @Entity
 @Table(name = "interface")
-public class InterfaceDS {
+public class Interface {
     @EmbeddedId
-    private InterfaceDSId id;
+    private InterfaceId id;
 
     @Column(name = "Name", length = 100)
     private String name;
@@ -18,11 +18,11 @@ public class InterfaceDS {
     })
     private Company company;
 
-    public InterfaceDSId getId() {
+    public InterfaceId getId() {
         return id;
     }
 
-    public void setId(InterfaceDSId id) {
+    public void setId(InterfaceId id) {
         this.id = id;
     }
 

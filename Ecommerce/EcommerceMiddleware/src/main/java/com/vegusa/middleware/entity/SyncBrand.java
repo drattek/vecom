@@ -2,12 +2,11 @@ package com.vegusa.middleware.entity;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
-
 import java.util.Date;
 
 @Entity
-@Table(name = "veg_ecom_synchronized_categories")
-public class VegEcomSynchronizedCategories {
+@Table(name = "SyncBrand")
+public class SyncBrand {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "id", nullable = false)
@@ -17,14 +16,17 @@ public class VegEcomSynchronizedCategories {
     @JsonProperty("_id")
     private String idEcom;
 
-    @Column(name = "name", length = 250)
+    @Column(name = "name", length = 150)
     private String name;
 
-    @Column(name = "branch", length = 250)
-    private String branch;
+    @Column(name = "code", length = 100)
+    private String code;
 
     @Column(name = "description", length = 150)
     private String description;
+
+    @Column(name = "tags", length = 100)
+    private String tags;
 
     @Column(name = "status_ecom", length = 100)
     @JsonProperty("status")
@@ -77,12 +79,12 @@ public class VegEcomSynchronizedCategories {
         this.name = name;
     }
 
-    public String getBranch() {
-        return branch;
+    public String getCode() {
+        return code;
     }
 
-    public void setBranch(String branch) {
-        this.branch = branch;
+    public void setCode(String code) {
+        this.code = code;
     }
 
     public String getDescription() {
@@ -91,6 +93,14 @@ public class VegEcomSynchronizedCategories {
 
     public void setDescription(String description) {
         this.description = description;
+    }
+
+    public String getTags() {
+        return tags;
+    }
+
+    public void setTags(String tags) {
+        this.tags = tags;
     }
 
     public String getStatusEcom() {

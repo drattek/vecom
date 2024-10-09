@@ -1,5 +1,6 @@
 package com.vegusa.middleware.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
@@ -7,264 +8,129 @@ import java.util.Date;
 
 @Entity
 @Table(name = "SyncImage")
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class SyncImage {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
-    private Long id;
+    @Column(name = "RecId")
+    private Long recId;
 
-    @Column(name = "product_id", length = 100)
+    @Column(name = "ProductId")
     @JsonProperty("ProductId")
     private String productId;
 
-    @Column(name = "url", length = 250)
+    @Column(name = "Url")
+    @JsonProperty("url")
     private String url;
 
-    @Column(name = "id_ecomm", length = 100)
+    @Column(name = "ResponseId")
     @JsonProperty("_id")
-    private String idEcomm;
+    private String responseId;
 
-    @Column(name = "status", length = 50)
+    @Column(name = "Status")
+    @JsonProperty("status")
     private String status;
 
-    @Column(name = "provider", length = 50)
+    @Column(name = "Provider")
+    @JsonProperty("provider")
     private String provider;
 
-    @Column(name = "storage_url", length = 250)
+    @Column(name = "StorageUrl")
     @JsonProperty("storageUrl")
     private String storageUrl;
 
-    @Column(name = "file_key", length = 250)
+    @Column(name = "FileKey")
     @JsonProperty("fileKey")
     private String fileKey;
 
-    @Column(name = "file_size", length = 50)
+    @Column(name = "FileSize")
     @JsonProperty("fileSize")
     private String fileSize;
 
-    @Column(name = "file_type", length = 50)
+    @Column(name = "FileType")
     @JsonProperty("fileType")
     private String fileType;
 
-    @Column(name = "original_server_path", length = 250)
+    @Column(name = "OriginalServerPath")
     @JsonProperty("originalServerPath")
     private String originalServerPath;
 
-    @Column(name = "original_file_name", length = 250)
+    @Column(name = "OriginalFileName")
     @JsonProperty("originalFileName")
     private String originalFileName;
 
-    @Column(name = "position")
-    private Integer position;
+    @Column(name = "Position")
+    @JsonProperty("position")
+    private int position;
 
-    @Column(name = "merchant_id", length = 100)
+    @Column(name = "MerchantId")
     @JsonProperty("MerchantId")
     private String merchantId;
 
-    @Column(name = "created_by_id", length = 100)
+    @Column(name = "CreatedById")
     @JsonProperty("CreatedById")
     private String createdById;
 
-    @Column(name = "updated_by_id", length = 100)
+    @Column(name = "UpdatedById")
     @JsonProperty("UpdatedById")
     private String updatedById;
 
-    @Column(name = "product_picture_set_id", length = 100)
+    @Column(name = "ProductPictureSetId")
     @JsonProperty("ProductPictureSetId")
     private String productPictureSetId;
 
-    @Column(name = "updated_at")
+    @Column(name = "UpdatedAt")
     @JsonProperty("updatedAt")
     private Date updatedAt;
 
-    @Column(name = "created_at")
+    @Column(name = "CreatedAt")
     @JsonProperty("createdAt")
     private Date createdAt;
 
-    @Column(name = "product_id_error", length = 100)
+    @Column(name = "ProductIdError")
     @JsonProperty("productId")
     private String productIdError;
 
-    @Column(name = "image_error", length = 250)
+    @Column(name = "ImageError")
     @JsonProperty("image")
     private String imageError;
 
-    @Column(name = "error", length = 500)
+    @Column(name = "Error")
     private String error;
-    public Long getId() {
-        return id;
-    }
 
-    public void setId(Long id) {
-        this.id = id;
-    }
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumns({
+            @JoinColumn(name = "CompanyRefRecId", referencedColumnName = "RecId", nullable = false),
+            @JoinColumn(name = "DataAreaId", referencedColumnName = "DataAreaId", nullable = false)
+    })
+    private Company company;
 
-    public String getProductId() {
-        return productId;
-    }
+    //getters
+    public String getProductId(){ return productId; }
+    public String getUrl(){ return url; }
+    public String getResponseId(){ return responseId; }
+    public String getStatus(){ return status; }
+    public String getProvider(){ return provider; }
+    public String getStorageUrl(){ return storageUrl;}
+    public String getFileKey(){ return fileKey; }
+    public String getFileSize(){ return fileSize; }
+    public String getFileType(){ return fileType; }
+    public String getOriginalServerPath(){ return originalServerPath; }
+    public String getOriginalFileName(){ return originalFileName; }
+    public int getPosition(){ return position; }
+    public String getMerchantId(){ return merchantId; }
+    public String getCreatedById(){ return createdById; }
+    public String getUpdatedById(){ return updatedById; }
+    public String getProductPictureSetId(){ return productPictureSetId; }
+    public Date getUpdatedAt(){ return updatedAt; }
+    public Date getCreatedAt(){ return createdAt; }
+    public String getProductIdError(){ return productIdError; }
+    public String getImageError(){ return imageError; }
+    public String getError(){ return error; }
+    public Company getCompany() { return company; }
 
-    public void setProductId(String productId) {
-        this.productId = productId;
+    //setters
+    public void setCompany(Company company) {
+        this.company = company;
     }
-
-    public String getUrl() {
-        return url;
-    }
-
-    public void setUrl(String url) {
-        this.url = url;
-    }
-
-    public String getIdEcomm() {
-        return idEcomm;
-    }
-
-    public void setIdEcomm(String idEcomm) {
-        this.idEcomm = idEcomm;
-    }
-
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
-    }
-
-    public String getProvider() {
-        return provider;
-    }
-
-    public void setProvider(String provider) {
-        this.provider = provider;
-    }
-
-    public String getStorageUrl() {
-        return storageUrl;
-    }
-
-    public void setStorageUrl(String storageUrl) {
-        this.storageUrl = storageUrl;
-    }
-
-    public String getFileKey() {
-        return fileKey;
-    }
-
-    public void setFileKey(String fileKey) {
-        this.fileKey = fileKey;
-    }
-
-    public String getFileSize() {
-        return fileSize;
-    }
-
-    public void setFileSize(String fileSize) {
-        this.fileSize = fileSize;
-    }
-
-    public String getFileType() {
-        return fileType;
-    }
-
-    public void setFileType(String fileType) {
-        this.fileType = fileType;
-    }
-
-    public String getOriginalServerPath() {
-        return originalServerPath;
-    }
-
-    public void setOriginalServerPath(String originalServerPath) {
-        this.originalServerPath = originalServerPath;
-    }
-
-    public String getOriginalFileName() {
-        return originalFileName;
-    }
-
-    public void setOriginalFileName(String originalFileName) {
-        this.originalFileName = originalFileName;
-    }
-
-    public Integer getPosition() {
-        return position;
-    }
-
-    public void setPosition(Integer position) {
-        this.position = position;
-    }
-
-    public String getMerchantId() {
-        return merchantId;
-    }
-
-    public void setMerchantId(String merchantId) {
-        this.merchantId = merchantId;
-    }
-
-    public String getCreatedById() {
-        return createdById;
-    }
-
-    public void setCreatedById(String createdById) {
-        this.createdById = createdById;
-    }
-
-    public String getUpdatedById() {
-        return updatedById;
-    }
-
-    public void setUpdatedById(String updatedById) {
-        this.updatedById = updatedById;
-    }
-
-    public String getProductPictureSetId() {
-        return productPictureSetId;
-    }
-
-    public void setProductPictureSetId(String productPictureSetId) {
-        this.productPictureSetId = productPictureSetId;
-    }
-
-    public Date getUpdatedAt() {
-        return updatedAt;
-    }
-
-    public void setUpdatedAt(Date updatedAt) {
-        this.updatedAt = updatedAt;
-    }
-
-    public Date getCreatedAt() {
-        return createdAt;
-    }
-
-    public void setCreatedAt(Date createdAt) {
-        this.createdAt = createdAt;
-    }
-
-    public String getImageError() {
-        return imageError;
-    }
-
-    public void setImageError(String imageError) {
-        this.imageError = imageError;
-    }
-
-    public String getError() {
-        return error;
-    }
-
-    public void setError(String error) {
-        this.error = error;
-    }
-
-    public String getProductIdError() {
-        return productIdError;
-    }
-
-    public void setProductIdError(String productIdError) {
-        this.productIdError = productIdError;
-    }
-
 }

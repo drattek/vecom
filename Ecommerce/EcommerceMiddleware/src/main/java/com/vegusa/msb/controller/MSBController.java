@@ -16,7 +16,6 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
-import java.util.concurrent.atomic.AtomicReference;
 
 @RestController
 @RequestMapping("msb-ecommerce-middleware")
@@ -27,6 +26,7 @@ public class MSBController {
     private final ItemInventorySyncService itemInventService;
     private final ItemPriceSyncService itemPriceSyncService;
     private final ImageSyncService imageSyncService;
+
     private final WebScraperService webScraperService;
 
     @Autowired
@@ -46,14 +46,16 @@ public class MSBController {
         this.webScraperService = webScraperService;
     }
 
-    @PostMapping(value = "/synchronize-products")
-    public String uploadProducts(@RequestBody HashMap<String, String> request) {
+    @PostMapping(value = "/update-products")
+    public String updateProducts(@RequestBody HashMap<String, String> request) {
         try {
-            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId"));
+            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")), authToken, merchantId;
             Company company = itemSyncService.getCompany(dataAreaId);
-            assert company != null : "The company provided doesn't exist.";
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             itemSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
-            return itemSyncService.processAndUploadProducts(dataAreaId);
+            authToken = itemSyncService.getAccessToken();
+            merchantId = imageSyncService.getMerchantId(authToken);
+            return itemSyncService.processProductsUpdate(authToken, merchantId, dataAreaId, company);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                 NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while synchronizing the products.");
@@ -61,33 +63,33 @@ public class MSBController {
         }
     }
 
-    @PostMapping(value="/update-products-control-table")
-    public String updateProductsControlTable(@RequestBody HashMap<String, String> request){
+    @PostMapping(value="/update-control-table-products-information")
+    public String updateControlTableInfo(@RequestBody HashMap<String, String> request){
         try{
             String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
                     interfaceId =  MWUtils.bodyValidation(request.get("interfaceId"));
             Company company = ctrlTableService.getCompany(dataAreaId);
-            assert company != null : "The company provided doesn't exist.";
-            return ctrlTableService.processAndSaveInterfaceInfo(interfaceId, dataAreaId);
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
+            return ctrlTableService.updateControlTableInfo(interfaceId, dataAreaId);
         } catch (RuntimeException e){
             System.err.println("An error occurred while updating product control table.");
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
 
-    @PostMapping(value="/update-interface-information")
+    @PostMapping(value="/update-interface-products-information")
     public String updateInterfaceInfo(@RequestBody HashMap<String, String> request){
         try {
             String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
                     interfaceId = MWUtils.bodyValidation(request.get("interfaceId"));
             Company company = interfaceInfoService.getCompany(dataAreaId);
-            assert company != null : "The company provided doesn't exist.";
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             return switch (interfaceId) {
                 case "DYN" ->
-                        interfaceInfoService.updateDYNInterfaceInfo(dataAreaId, interfaceId);
+                        interfaceInfoService.updateDYNInterfaceInfo(interfaceId, dataAreaId, company);
                 case "UCA", "TVH" ->
-                        interfaceInfoService.updateInterfaceInfo(dataAreaId, interfaceId);
-                default -> throw new RuntimeException("The interfaceId sent doesn't exist.");
+                        interfaceInfoService.updateInterfaceInfo(interfaceId, dataAreaId, company);
+                default -> throw new RuntimeException("The interfaceId provided doesn't exist.");
             };
         } catch (RuntimeException e){
             System.err.println("An error occurred while updating interface information.");
@@ -95,18 +97,18 @@ public class MSBController {
         }
     }
 
-    @PostMapping(value="/upload-item-inventory")
-    public String uploadItemInventory(@RequestBody HashMap<String, String> request){
+    @PostMapping(value="/update-item-inventory")
+    public String updateItemInventory(@RequestBody HashMap<String, String> request){
         try {
             String authToken, merchantId, dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
                     itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall"));
             Company company = itemInventService.getCompany(dataAreaId);
-            assert company != null : "The company provided doesn't exist.";
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             itemInventService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
             authToken = itemInventService.getAccessToken();
             merchantId = itemInventService.getMerchantId(authToken);
             itemInventService.uploadWarehouses(authToken, merchantId, company);
-            return itemInventService.processItemInventoryUpdate(authToken, Integer.parseInt(itemsPerCall), company);
+            return itemInventService.processItemInventoryUpdate(Integer.parseInt(itemsPerCall), authToken, dataAreaId, company);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while uploading item inventory.");
@@ -126,14 +128,14 @@ public class MSBController {
                     currencyCode = MWUtils.bodyValidation(request.get("currencyCode")),
                     itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall"));
             Company company = itemPriceSyncService.getCompany(dataAreaId);
-            assert company != null : "The company provided doesn't exist.";
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
             authToken = itemPriceSyncService.getAccessToken();
             merchantId = itemPriceSyncService.getMerchantId(authToken);
             fullPriceListName = dataAreaId + "_" + priceListName + "_" + channel + "_" + currencyCode;
             currencyId = itemPriceSyncService.getCurrencyId(currencyCode, authToken, merchantId);
             priceList = itemPriceSyncService.getSyncPriceList(fullPriceListName, currencyId, dataAreaId);
-            if(priceList == null){
+            if (priceList == null) {
                 String createdPriceList = itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, authToken, merchantId);
                 priceList = itemPriceSyncService.savePriceListInfo(createdPriceList, company);
             }
@@ -152,11 +154,11 @@ public class MSBController {
                     dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
                     authToken, merchantId;
             Company company = imageSyncService.getCompany(dataAreaId);
-            assert company != null : "The company provided doesn't exist.";
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             imageSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
             authToken = imageSyncService.getAccessToken();
             merchantId = imageSyncService.getMerchantId(authToken);
-            return imageSyncService.processImagesSync(new AtomicReference<>(authToken), merchantId, dataAreaId, Integer.parseInt(itemsPerCall));
+            return imageSyncService.processImagesUpload(Integer.parseInt(itemsPerCall), authToken, merchantId, dataAreaId, company);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
             System.err.println("An error occurred while uploading the images.");
@@ -164,6 +166,7 @@ public class MSBController {
         }
     }
 
+    /*
     @PostMapping(value="/add-tvh-additional-info")
     public String uploadTVHAdditionalInfo() {
         try{
@@ -185,7 +188,7 @@ public class MSBController {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
-
+  */
     @PostMapping(value="/tvh-products-info-scraper")
     public String tvhWebScraperProductsInfo(@RequestBody HashMap<String, String> userCredentials) {
         try {
@@ -197,6 +200,7 @@ public class MSBController {
         }
     }
 
+    /*
     @PostMapping(value="/uca-search-additional-info")
     public String getUCAAdditionalProductsInfo() {
         try {
@@ -207,5 +211,7 @@ public class MSBController {
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }
+    */
+
 
 }

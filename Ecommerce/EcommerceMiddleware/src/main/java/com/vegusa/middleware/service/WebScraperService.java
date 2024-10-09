@@ -1,7 +1,9 @@
 package com.vegusa.middleware.service;
 
-import com.vegusa.msb.entity.MSBProduct;
-import com.vegusa.msb.repository.MSBProductRepository;
+import com.vegusa.middleware.repository.ItemScrapedInfoRepository;
+import com.vegusa.middleware.repository.ScrapedImageRepository;
+import com.vegusa.msb.entity.DYNProduct;
+import com.vegusa.msb.repository.DYNProductRepository;
 import jakarta.persistence.EntityManager;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -15,14 +17,20 @@ import org.springframework.web.reactive.function.client.WebClientResponseExcepti
 @Service
 public class WebScraperService {
 
-    private final MSBProductRepository dynProducts;
+    private final DYNProductRepository dynProducts;
+    private final ScrapedImageRepository scrapedImageRepo;
+    private final ItemScrapedInfoRepository itemScrapedInfoRepo;
     private final WebClient webClient;
 
     @Autowired
-    public WebScraperService(MSBProductRepository dynProducts,
+    public WebScraperService(DYNProductRepository dynProducts,
+                             ScrapedImageRepository scrapedImageRepo,
+                             ItemScrapedInfoRepository itemScrapedInfoRepo,
                              EntityManager entityManager,
                              WebClient webClient){
         this.dynProducts = dynProducts;
+        this.scrapedImageRepo = scrapedImageRepo;
+        this.itemScrapedInfoRepo = itemScrapedInfoRepo;
         this.webClient = webClient;
     }
 
@@ -33,15 +41,15 @@ public class WebScraperService {
         request.put("userPass", userPass);
         JSONArray productsArray = new JSONArray();
         String art, desc, numParte;
-        MSBProduct[] dataSourceInfo = dynProducts.getDYNProducts();
-        for (MSBProduct ecomProduct : dataSourceInfo) {
+        DYNProduct[] dataSourceInfo = dynProducts.getDYNProducts();
+        for (DYNProduct ecomProduct : dataSourceInfo) {
             art = ecomProduct.getArticulo() != null ? ecomProduct.getArticulo() : "";
             desc = ecomProduct.getDescripcion() != null ? ecomProduct.getDescripcion() : "";
             numParte = ecomProduct.getNumParte() != null ? ecomProduct.getNumParte() : "";
             JSONObject product = new JSONObject();
-            product.put("internalProductId", art);
+            product.put("itemId", art);
             product.put("productName", desc);
-            product.put("productId", numParte);
+            product.put("partNumber", numParte);
             productsArray.put(product);
         }
         request.put("products",productsArray);
@@ -106,4 +114,5 @@ public class WebScraperService {
                 .bodyToMono(String.class)
                 .block();
     }
+
 }

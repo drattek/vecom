@@ -9,6 +9,6 @@ import java.util.List;
 
 @Repository
 public interface InterfaceHierarchyRepository extends JpaRepository<InterfaceHierarchy, Long> {
-    @Query(value = "select InterfaceId from interfacehierarchy ih where ih.DataAreaId = ?1 order by ih.Priority", nativeQuery = true)
+    @Query(value = "select InterfaceId from interfacehierarchy where DataAreaId = ?1 order by Priority", nativeQuery = true)
     List<String> getInterfaceHierarchy(String dataAreaId);
 }

@@ -10,18 +10,18 @@ import java.util.Objects;
 @Embeddable
 public class ItemImagesId implements Serializable {
     private static final long serialVersionUID = -3452604487885388751L;
-    @Column(name = "sync_products_id", nullable = false)
-    private Long syncProductsId;
+    @Column(name = "SyncItemRecId", nullable = false)
+    private Long syncItemRecId;
 
-    @Column(name = "scraped_images_id", nullable = false)
-    private Long scrapedImagesId;
+    @Column(name = "ScrapedImageRecId", nullable = false)
+    private Long scrapedImageRecId;
 
-    public Long getSyncProductsId() {
-        return syncProductsId;
+    public Long getSyncItemRecId() {
+        return syncItemRecId;
     }
 
-    public Long getScrapedImagesId() {
-        return scrapedImagesId;
+    public Long getScrapedImageRecId() {
+        return scrapedImageRecId;
     }
 
     @Override
@@ -29,13 +29,13 @@ public class ItemImagesId implements Serializable {
         if (this == o) return true;
         if (o == null || Hibernate.getClass(this) != Hibernate.getClass(o)) return false;
         ItemImagesId entity = (ItemImagesId) o;
-        return Objects.equals(this.scrapedImagesId, entity.scrapedImagesId) &&
-                Objects.equals(this.syncProductsId, entity.syncProductsId);
+        return Objects.equals(this.scrapedImageRecId, entity.scrapedImageRecId) &&
+                Objects.equals(this.syncItemRecId, entity.syncItemRecId);
     }
 
     @Override
     public int hashCode() {
-        return Objects.hash(scrapedImagesId, syncProductsId);
+        return Objects.hash(scrapedImageRecId, syncItemRecId);
     }
 
 }

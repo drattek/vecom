@@ -7,14 +7,10 @@ import jakarta.persistence.*;
 import java.util.Date;
 
 @Entity
-@Table(name = "veg_ecomm_synchronized_products")
+@Table(name = "SyncItem")
 @JsonIgnoreProperties(ignoreUnknown = true)
-public class SynchronizedProducts {
-
-    @Column(name = "default_version_id", length = 100)
-    private String defaultVersionId;
-
-    public SynchronizedProducts(){}
+public class SyncItem {
+    public SyncItem(){}
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     //@Column(name = "id", nullable = false)
@@ -112,13 +108,22 @@ public class SynchronizedProducts {
     @Column(name = "product_type_Id")
     @JsonProperty("ProductTypeId")
     private String productTypeId;
+
     @Column(nullable = false)
     private String integration_company;
-    @Column(name = "veg_business_unit", nullable = false)
-    private String vegBusinessUnit;
 
     @Column(name = "veg_sync_status")
     private String vegSyncStatus;
+
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumns({
+            @JoinColumn(name = "CompanyRefRecId", referencedColumnName = "RecId", nullable = false),
+            @JoinColumn(name = "DataAreaId", referencedColumnName = "DataAreaId", nullable = false)
+    })
+    private Company company;
+
+    @Column(name = "default_version_id", length = 100)
+    private String defaultVersionId;
 
     public String getDefaultVersionId() {
         return defaultVersionId;
@@ -317,11 +322,13 @@ public class SynchronizedProducts {
         this.productTypeId = productTypeId;
     }
 
-    public String getVegBusinessUnit() { return vegBusinessUnit; }
-    public void setVegBusinessUnit(String vegBusinessUnit) { this.vegBusinessUnit = vegBusinessUnit; }
     public String getIntegrationCompany(){ return this.integration_company; }
     public void setIntegrationCompany(String integration_company){ this.integration_company = integration_company; }
     public String getVegSyncStatus(){ return this.vegSyncStatus; }
     public void setVegSyncStatus(String vegSyncStatus){ this.vegSyncStatus = vegSyncStatus; }
 
+    public Company getCompany() { return company; }
+    public void setCompany(Company company) {
+        this.company = company;
+    }
 }

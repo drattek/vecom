@@ -21,7 +21,7 @@ public class ProductAttributeValue {
             @JoinColumn(name = "InterfaceRefRecId", referencedColumnName = "RecId", nullable = false),
             @JoinColumn(name = "InterfaceId", referencedColumnName = "InterfaceId", nullable = false)
     })
-    private InterfaceDS interfaceField;
+    private Interface interfaceField;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumns({
@@ -53,7 +53,7 @@ public class ProductAttributeValue {
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumn(name = "ProductRefRecId", nullable = false)
-    private InterfaceProduct productRefRec;
+    private InterfaceItems productRefRec;
 
     public Long getId() {
         return id;
@@ -71,11 +71,11 @@ public class ProductAttributeValue {
         this.itemId = itemId;
     }
 
-    public InterfaceDS getInterfaceField() {
+    public Interface getInterfaceField() {
         return interfaceField;
     }
 
-    public void setInterfaceField(InterfaceDS interfaceField) {
+    public void setInterfaceField(Interface interfaceField) {
         this.interfaceField = interfaceField;
     }
 
@@ -127,11 +127,11 @@ public class ProductAttributeValue {
         this.company = company;
     }
 
-    public InterfaceProduct getProductRefRec() {
+    public InterfaceItems getProductRefRec() {
         return productRefRec;
     }
 
-    public void setProductRefRec(InterfaceProduct productRefRec) {
+    public void setProductRefRec(InterfaceItems productRefRec) {
         this.productRefRec = productRefRec;
     }
 

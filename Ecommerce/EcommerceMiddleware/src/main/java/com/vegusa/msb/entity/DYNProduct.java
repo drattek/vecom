@@ -16,7 +16,7 @@ import java.util.Date;
 @Entity
 @Immutable
 @Table(name = "ECOMProducts")
-public class MSBProduct {
+public class DYNProduct {
     @Nationalized
     @Column(name = "Articulo", nullable = false, length = 20)
     private String articulo;
@@ -118,6 +118,6 @@ public class MSBProduct {
         return marca;
     }
 
-    protected MSBProduct() {
+    protected DYNProduct() {
     }
 }

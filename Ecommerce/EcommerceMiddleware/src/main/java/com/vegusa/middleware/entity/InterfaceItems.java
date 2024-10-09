@@ -7,7 +7,7 @@ import java.util.Date;
 
 @Entity
 @Table(name = "product")
-public class InterfaceProduct {
+public class InterfaceItems {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "RecId", nullable = false)
@@ -59,7 +59,7 @@ public class InterfaceProduct {
             @JoinColumn(name = "InterfaceRefRecId", referencedColumnName = "RecId", nullable = false),
             @JoinColumn(name = "InterfaceId", referencedColumnName = "InterfaceId", nullable = false)
     })
-    private InterfaceDS interfaceField;
+    private Interface interfaceField;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumns({
@@ -180,11 +180,11 @@ public class InterfaceProduct {
         this.skipNull = skipNull;
     }
 
-    public InterfaceDS getInterfaceField() {
+    public Interface getInterfaceField() {
         return interfaceField;
     }
 
-    public void setInterfaceField(InterfaceDS interfaceField) {
+    public void setInterfaceField(Interface interfaceField) {
         this.interfaceField = interfaceField;
     }
 
