@@ -10,54 +10,54 @@ public class AuthToken
 {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    private int id;
-    @Column(nullable = false)
-    private String id_mv;
-    @Column(nullable = false)
+    @Column(name = "RecId")
+    private long recId;
+    @Column(name = "ResponseId", nullable = false)
+    private String responseId;
+    @Column(name = "Status", nullable = false)
     private String status;
-    @Column(nullable = false, length = 3000)
-    private String cipher_access_token;
-    @Column(nullable = false)
-    private Date access_token_expires_at;
-    @Column(nullable = false)
-    private String cipher_refresh_token;
-    @Column(nullable = false)
-    private Date refresh_token_expires_at;
-    @Column(nullable = false)
-    private String secret_key;
-    @Column(nullable = false)
-    private String initialization_vector;
-    @Column(nullable = false)
-    private Date updated_at;
-    @Column(nullable = false)
-    private String integration_company;
-
-    @Column(nullable = false)
-    private Date created_at;
+    @Column(name = "CipherAccessToken", nullable = false, length = 3000)
+    private String cipherAccessToken;
+    @Column(name = "AccessTokenExpiresAt", nullable = false)
+    private Date accessTokenExpiresAt;
+    @Column(name = "CipherRefreshToken", nullable = false)
+    private String cipherRefreshToken;
+    @Column(name = "RefreshTokenExpiresAt", nullable = false)
+    private Date refreshTokenExpiresAt;
+    @Column(name = "SecretKey", nullable = false)
+    private String secretKey;
+    @Column(name = "InitializationVector", nullable = false)
+    private String initializationVector;
+    @Column(name = "CreatedAt", nullable = false)
+    private Date createdAt;
+    @Column(name = "UpdatedAt", nullable = false)
+    private Date updatedAt;
+    @Column(name = "IntegrationCompany", nullable = false)
+    private String integrationCompany;
 
     //getters
-    public String getIdMv(){ return this.id_mv; }
+    public String getResponseId(){ return this.responseId; }
     public String getStatus(){ return this.status; }
-    public String getCipherAccessToken(){ return this.cipher_access_token; }
-    public Date getAccessTokenExpiresAt(){ return this.access_token_expires_at; }
-    public String getCipherRefreshToken(){ return this.cipher_refresh_token; }
-    public Date getRefreshTokenExpiresAt(){ return this.refresh_token_expires_at; }
-    public String getSecretKey(){ return this.secret_key; }
-    public String getInitializationVector(){ return this.initialization_vector; }
-    public Date getUpdatedAt(){ return this.updated_at; }
-    public Date getCreatedAt(){ return this.created_at; }
-    public String getIntegrationCompany(){ return this.integration_company; }
+    public String getCipherAccessToken(){ return this.cipherAccessToken; }
+    public Date getAccessTokenExpiresAt(){ return this.accessTokenExpiresAt; }
+    public String getCipherRefreshToken(){ return this.cipherRefreshToken; }
+    public Date getRefreshTokenExpiresAt(){ return this.refreshTokenExpiresAt; }
+    public String getSecretKey(){ return this.secretKey; }
+    public String getInitializationVector(){ return this.initializationVector; }
+    public Date getUpdatedAt(){ return this.updatedAt; }
+    public Date getCreatedAt(){ return this.createdAt; }
+    public String getIntegrationCompany(){ return this.integrationCompany; }
 
     //setters
-    public void setIdMv(String id_mv){ this.id_mv = id_mv; }
+    public void setResponseId(String responseId){ this.responseId = responseId; }
     public void setStatus(String status){ this.status = status; }
-    public void setCipherAccessToken(String cipher_access_token){ this.cipher_access_token = cipher_access_token; }
-    public void setAccessTokenExpiresAt(Date access_token_expires_at){ this.access_token_expires_at = access_token_expires_at; }
-    public void setCipherRefreshToken(String cipher_refresh_token){ this.cipher_refresh_token = cipher_refresh_token; }
-    public void setRefreshTokenExpiresAt(Date refresh_token_expires_at){ this.refresh_token_expires_at = refresh_token_expires_at; }
-    public void setSecretKey(String secret_key){ this.secret_key = secret_key; }
-    public void setInitializationVector(String initialization_vector){ this.initialization_vector = initialization_vector; }
-    public void setUpdatedAt(Date updated_at){ this.updated_at = updated_at; }
-    public void setCreatedAt(Date created_at){ this.created_at = created_at; }
-    public void setIntegrationCompany(String integration_company){ this.integration_company = integration_company; }
+    public void setCipherAccessToken(String cipherAccessToken){ this.cipherAccessToken = cipherAccessToken; }
+    public void setAccessTokenExpiresAt(Date accessTokenExpiresAt){ this.accessTokenExpiresAt = accessTokenExpiresAt; }
+    public void setCipherRefreshToken(String cipherRefreshToken){ this.cipherRefreshToken = cipherRefreshToken; }
+    public void setRefreshTokenExpiresAt(Date refreshTokenExpiresAt){ this.refreshTokenExpiresAt = refreshTokenExpiresAt; }
+    public void setSecretKey(String secretKey){ this.secretKey = secretKey; }
+    public void setInitializationVector(String initializationVector){ this.initializationVector = initializationVector; }
+    public void setUpdatedAt(Date updatedAt){ this.updatedAt = updatedAt; }
+    public void setCreatedAt(Date createdAt){ this.createdAt = createdAt; }
+    public void setIntegrationCompany(String integrationCompany){ this.integrationCompany = integrationCompany; }
 }

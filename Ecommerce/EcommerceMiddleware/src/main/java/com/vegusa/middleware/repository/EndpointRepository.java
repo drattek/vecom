@@ -8,6 +8,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface EndpointRepository extends JpaRepository<Endpoint, Long>
 {
-    @Query(value = "select url from Endpoint where endpt_name = ?1 and integration_company = ?2", nativeQuery = true)
-    String getEndpointUrl(String endPointName, String integrationCompany);
+    @Query(value = "select Url from Endpoint where Name = ?1 and IntegrationCompany = ?2", nativeQuery = true)
+    String getEndpointUrl(String endpointName, String integrationCompany);
 }

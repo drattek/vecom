@@ -4,7 +4,7 @@ import com.vegusa.oauth2_0.service.AuthService;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vegusa.middleware.repository.msb.VegEcommGralParameterRepository;
+import com.vegusa.middleware.repository.SystemParameterRepository;
 import com.vegusa.middleware.utils.MWUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
@@ -22,15 +22,15 @@ import java.text.ParseException;
 @Component
 public class AuthController implements ApplicationRunner {
     private final AuthService authService;
-    private int attemptsToeGetRefreshToken = 1;
+    private int attemptsToGetRefreshToken = 1;
     //Middleware - Repository - msb
-    private final VegEcommGralParameterRepository vegEcommGralParameterRepository;
+    private final SystemParameterRepository sysParameterRepo;
 
     @Autowired
-    public AuthController(AuthService authService, VegEcommGralParameterRepository vegEcommGralParameterRepository)
+    public AuthController(AuthService authService, SystemParameterRepository sysParameterRepo)
     {
         this.authService = authService;
-        this.vegEcommGralParameterRepository = vegEcommGralParameterRepository;
+        this.sysParameterRepo = sysParameterRepo;
         this.authService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface());
     }
 
@@ -46,22 +46,21 @@ public class AuthController implements ApplicationRunner {
             JsonNode jsonNode = objectMapper.readTree(authService.fetchAccessToken());
             if(jsonNode.has("error")) {
                 System.out.println("Error generating Token Info: " + jsonNode.get("error").asText());
-                if(attemptNumber < vegEcommGralParameterRepository
-                        .getMiddlewareGeneralParameter("ATTEMPS_ACCESS_TOKEN").getIntValue()) {
-                    Thread.sleep(vegEcommGralParameterRepository
-                            .getMiddlewareGeneralParameter("ATTEMP_ACCESS_TOKEN_SLEEP_VALUE").getIntValue());
+                if(attemptNumber < sysParameterRepo
+                        .getSystemParameter("ATTEMPTS_ACCESS_TOKEN").getIntValue()) {
+                    Thread.sleep(sysParameterRepo
+                            .getSystemParameter("ATTEMPT_ACCESS_TOKEN_SLEEP_VALUE").getIntValue());
                     generateToken(attemptNumber + 1);
                 }
             } else {
                 System.out.println("Token Info successfully obtained!");
                 authService.saveTokenInfo(jsonNode);
             }
-        }catch (JsonProcessingException | InterruptedException | InvalidAlgorithmParameterException | NoSuchPaddingException |
+        } catch (JsonProcessingException | InterruptedException | InvalidAlgorithmParameterException | NoSuchPaddingException |
                 IllegalBlockSizeException | NoSuchAlgorithmException |  BadPaddingException | ParseException | InvalidKeyException e) {
             System.err.println("An error occurred while saving the token.");
             System.err.println("StackTrace: ");
         }
-
     }
 
     @Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "${fixedDelayRefreshToken.in.milliseconds}")
@@ -71,18 +70,18 @@ public class AuthController implements ApplicationRunner {
             JsonNode jsonNode = objectMapper.readTree(this.authService.refreshAccessToken());
             if(jsonNode.has("error")) {
                 System.err.println("Refresh token periodically method: " + jsonNode.get("error").asText());
-                if(attemptsToeGetRefreshToken < vegEcommGralParameterRepository
-                        .getMiddlewareGeneralParameter("ATTEMPS_REFRESH_TOKEN").getIntValue()) {
-                    attemptsToeGetRefreshToken++;
-                    Thread.sleep(vegEcommGralParameterRepository
-                            .getMiddlewareGeneralParameter("ATTEMP_REFRESH_TOKEN_SLEEP_VALUE").getIntValue());
+                if(attemptsToGetRefreshToken < sysParameterRepo
+                        .getSystemParameter("ATTEMPTS_REFRESH_TOKEN").getIntValue()) {
+                    attemptsToGetRefreshToken++;
+                    Thread.sleep(sysParameterRepo
+                            .getSystemParameter("ATTEMPT_REFRESH_TOKEN_SLEEP_VALUE").getIntValue());
                     refreshTokenPeriodically();
                 }
             } else {
                 System.out.println("Refresh token periodically method: Access token refreshed successfully.");
                 this.authService.saveTokenInfo(jsonNode);
             }
-        } catch (InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
+        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException | InterruptedException | ParseException e){
             System.err.println("An error occurred while refreshing the token.");
             System.err.println("StackTrace: ");

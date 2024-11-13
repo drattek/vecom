@@ -2,11 +2,9 @@ package com.vegusa.middleware.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vegusa.middleware.entity.Company;
-import com.vegusa.middleware.entity.SyncImage;
+import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
-import com.vegusa.middleware.entity.ItemImages;
 import com.vegusa.middleware.utils.MWUtils;
 import jakarta.persistence.EntityManager;
 import org.json.JSONArray;
@@ -26,7 +24,8 @@ import java.util.ArrayList;
 
 @Service
 public class ImageSyncService {
-    private final ItemImagesRepository itemImagesRepo;
+    private final ProductImagesViewRepository productImagesViewRepo;
+    private final SyncItemRepository syncItemRepo;
     private final SyncImageRepository syncImageRepo;
     private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
@@ -37,7 +36,8 @@ public class ImageSyncService {
     private String algorithm;
 
     @Autowired
-    public ImageSyncService(ItemImagesRepository itemImagesRepo,
+    public ImageSyncService(ProductImagesViewRepository productImagesViewRepo,
+                            SyncItemRepository syncItemRepo,
                             SyncImageRepository syncImageRepo,
                             CompanyRepository companyRepo,
                             EndpointRepository endpointRepo,
@@ -45,7 +45,8 @@ public class ImageSyncService {
                             EntityManager entityManager,
                             WebClient webClient,
                             Environment env){
-        this.itemImagesRepo = itemImagesRepo;
+        this.productImagesViewRepo = productImagesViewRepo;
+        this.syncItemRepo = syncItemRepo;
         this.syncImageRepo = syncImageRepo;
         this.companyRepo = companyRepo;
         this.endpointRepo = endpointRepo;
@@ -79,49 +80,67 @@ public class ImageSyncService {
         JSONObject response = new JSONObject();
         String url = endpointRepo.getEndpointUrl("UPLOAD_PICTURE_TO_PRODUCT_BY_URL", env.getProperty("integration.company.name"))
                 .replace("{{merchant_id}}", merchantId) .replace("{{product-pictures-set-id}}", "default");
-        ItemImages[] itemImages = itemImagesRepo.getItemImages(dataAreaId);
-        String auxPreviousItem = itemImages[0].getMvItemId();
+        ProductImagesView[] productImages = productImagesViewRepo.getProductImagesView(dataAreaId);
+        String auxPreviousItem = productImages[0].getSyncItemResponseId();
         JSONArray request =  new JSONArray();
         ArrayList<String> images = new ArrayList<>();
-        long auxItemProcessed = (long)1, auxRowProcessed = (long)1, streamSize = itemImages.length;
-        for(ItemImages imageByProduct: itemImages){
+        long auxItemProcessed = (long)1, auxRowProcessed = (long)1, streamSize = productImages.length;
+        for(ProductImagesView imageByProduct: productImages){
             try {
-                if(!imageByProduct.getMvItemId().equals(auxPreviousItem)){
-                    insertItemImagesNode(request, images, auxPreviousItem);
-                    if(auxItemProcessed % maxNumOfItemsPerCall == 0){
+                if(!imageByProduct.getSyncItemResponseId().equals(auxPreviousItem)){
+                    boolean imagesIsEmpty = images.isEmpty();
+                    insertItemImagesNode(request, images, auxPreviousItem, imagesIsEmpty);
+                    if(auxItemProcessed % maxNumOfItemsPerCall == 0 && !imagesIsEmpty){
                         String uploadResponse = uploadItemImages(authToken, url, request);
                         JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse, company);
                         response.accumulate("ok", saveInfoResponse);
                     }
-                    auxItemProcessed++;
+                    if(!imagesIsEmpty){
+                        auxItemProcessed++;
+                    }
                 }
-                images.add(imageByProduct.getImageUrl());
-                auxPreviousItem = imageByProduct.getMvItemId();
+                insertImage(images, imageByProduct);
+                auxPreviousItem = imageByProduct.getSyncItemResponseId();
                 if(auxRowProcessed == streamSize){
-                    insertItemImagesNode(request, images, imageByProduct.getMvItemId());
-                    String uploadResponse = uploadItemImages(authToken, url, request);
-                    JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse, company);
-                    response.accumulate("ok", saveInfoResponse);
+                    boolean imagesIsEmpty = images.isEmpty();
+                    insertItemImagesNode(request, images, auxPreviousItem, imagesIsEmpty);
+                    if(!request.isEmpty()){
+                        String uploadResponse = uploadItemImages(authToken, url, request);
+                        JSONArray saveInfoResponse = saveSyncImagesInfo(uploadResponse, company);
+                        response.accumulate("ok", saveInfoResponse);
+                    }
                 }
             } catch (RuntimeException e) {
-                System.err.println("An error occurred processing product images of: " + imageByProduct.getItemId());
+                System.err.println("An error occurred processing product images: " + e.getMessage());
                 if(e.getMessage().contains("401")){
                     authToken = MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm,
                             "An error occurred while renewing unauthorized token.");
                 }
-                response.accumulate("error", "An error occurred processing product images of: " + imageByProduct.getItemId() + " " + e.getMessage());
+                response.accumulate("error", "An error occurred processing product images: " + e.getMessage());
             }
             auxRowProcessed++;
-            System.out.println("Image synchronization ended to " + imageByProduct.getItemId());
+            System.out.println(imageByProduct.getItemId() + "/" + imageByProduct.getBlobName() + " processed.");
+        }
+        if(response.isEmpty()){
+            response.accumulate("ok", "The process ended, there are no new images to synchronize.");
         }
         return response.toString();
     }
 
-    private void insertItemImagesNode(JSONArray request, ArrayList<String> images, String productId) throws RuntimeException {
-        JSONObject productImages =  new JSONObject();
-        productImages.put("productId", productId);
-        productImages.put("images", images);
-        request.put(productImages);
+    private void insertImage(ArrayList<String> images, ProductImagesView imageByProduct) throws RuntimeException{
+        SyncImage syncImage = syncImageRepo.getSyncImage(imageByProduct.getBlobName());
+        if(syncImage == null) {
+            images.add(imageByProduct.getImageUrl());
+        }
+    }
+
+    private void insertItemImagesNode(JSONArray request, ArrayList<String> images, String productId, boolean imagesIsEmpty) throws RuntimeException {
+        if(!imagesIsEmpty){
+            JSONObject productImages =  new JSONObject();
+            productImages.put("productId", productId);
+            productImages.put("images", images);
+            request.put(productImages);
+        }
         images.clear();
     }
 
@@ -138,8 +157,7 @@ public class ImageSyncService {
                     .bodyToMono(String.class)
                     .block();
         } catch (RuntimeException e){
-            System.err.println("An error occurred while uploading item images." + e.getMessage());
-            throw new RuntimeException("An error occurred while uploading item images." + e.getMessage());
+            throw new RuntimeException("An error occurred while uploading item images to " + bodyRequest  + " " + e.getMessage());
         } finally {
             bodyRequest.clear();
         }
@@ -148,6 +166,12 @@ public class ImageSyncService {
     private JSONArray saveSyncImagesInfo(String uploadResponse, Company company) {
         try {
             JSONArray response = new JSONArray();
+
+            //test
+            JSONObject jsonObject = new JSONObject();
+            jsonObject.put("uploadResponse", uploadResponse);
+            response.put(jsonObject);
+
             JSONArray uploadRespArray = new JSONArray(uploadResponse);
             for(int it = 0; it < uploadRespArray.length(); it++){
                 try {
@@ -170,8 +194,7 @@ public class ImageSyncService {
             }
             return response;
         } catch (RuntimeException | JsonProcessingException e) {
-            System.err.println("Error occurred while saving uploaded images info to Middleware data base: " + "\r" + e.getMessage());
-            throw new RuntimeException("An error occurred while saving uploaded images info to Middleware data base: " + e.getMessage());
+            throw new RuntimeException("An error occurred while saving uploaded images info to Middleware data base " +  e.getMessage());
         }
     }
 

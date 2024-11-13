@@ -23,6 +23,7 @@ import javax.crypto.NoSuchPaddingException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.text.DecimalFormat;
 import java.util.*;
 
 @Service
@@ -31,7 +32,9 @@ public class ItemPriceSyncService {
     private final SyncItemPriceRepository itemPriceRepo;
     private final CategoryRepository categoryRepo;
     private final ChannelRepository channelRepo;
+    private final PriceListParameterRepository priceListParameterRepo;
     private final PriceListRepository priceListRepo;
+    private final ProductCategoryRepository productCategoryRepo;
     private final ItemInventLocationRepository itemInventoryRepo;
     private final SyncItemRepository syncItemRepo;
     private final CompanyRepository companyRepo;
@@ -41,13 +44,18 @@ public class ItemPriceSyncService {
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
     private String algorithm;
+    private PriceListParameter lowerLimitAddFixedCost;
+    private PriceListParameter centralLimitAddFixedCost;
+    private PriceListParameter upperLimitAddFixedCost;
 
     @Autowired
     private ItemPriceSyncService(SyncPriceListRepository syncPriceListRepo,
                                  SyncItemPriceRepository itemPriceRepo,
                                  CategoryRepository categoryRepo,
                                  ChannelRepository channelRepo,
+                                 PriceListParameterRepository priceListParameterRepo,
                                  PriceListRepository priceListRepo,
+                                 ProductCategoryRepository productCategoryRepo,
                                  ItemInventLocationRepository itemInventoryRepo,
                                  SyncItemRepository syncItemRepo,
                                  CompanyRepository companyRepo,
@@ -59,7 +67,9 @@ public class ItemPriceSyncService {
         this.itemPriceRepo = itemPriceRepo;
         this.categoryRepo = categoryRepo;
         this.channelRepo = channelRepo;
+        this.priceListParameterRepo = priceListParameterRepo;
         this.priceListRepo = priceListRepo;
+        this.productCategoryRepo = productCategoryRepo;
         this.itemInventoryRepo = itemInventoryRepo;
         this.syncItemRepo = syncItemRepo;
         this.companyRepo = companyRepo;
@@ -91,6 +101,16 @@ public class ItemPriceSyncService {
 
     public SyncPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
         return syncPriceListRepo.getSyncPriceList(name, currencyId, dataAreaId);
+    }
+
+    public void setAddFixedCostParameters(String lowerLimitName, String centralLimitName, String upperLimitName, String dataAreaId) {
+       try{
+           this.lowerLimitAddFixedCost = priceListParameterRepo.getPriceListParameter(lowerLimitName, dataAreaId);
+           this.centralLimitAddFixedCost = priceListParameterRepo.getPriceListParameter(centralLimitName, dataAreaId);
+           this.upperLimitAddFixedCost = priceListParameterRepo.getPriceListParameter(upperLimitName, dataAreaId);
+       } catch (RuntimeException e){
+           throw new RuntimeException("An error occurred while obtaining the parameters for calculate the fixed cost: " + e.getMessage());
+       }
     }
 
     public String createPriceList(String name, String description, String currencyId, String accessToken, String merchantId) {
@@ -186,25 +206,33 @@ public class ItemPriceSyncService {
     private List<JSONArray> getItemPrices(String priceListName, String channel, String currencyCode, int itemsPerCall, String dataAreaId) throws RuntimeException {
         List<JSONArray> response = new ArrayList<>();
         JSONArray itemPriceArray = new JSONArray();
+        PriceListParameter shippingCostParameter = priceListParameterRepo.getPriceListParameter("SHIPPING_COST", dataAreaId);
         float basePercentage = getBasePercentage(priceListName, channel, currencyCode, dataAreaId),
-                auxItemPercentage = 0, auxCost = 0;
+                shippingCost = shippingCostParameter != null ? shippingCostParameter.getDecValue().floatValue() : 0,
+                auxItemPercentage = 0, auxCost = 0, finalCost = 0;
         HashMap<String, String> itemCostMap = getItemMap(itemInventoryRepo.getItemCost());
-        HashMap<String, String> itemCategoryMap = getItemMap(itemInventoryRepo.getItemCategory());
+        HashMap<String, String> itemCategoryMap = getItemMap(productCategoryRepo.getItemCategory(dataAreaId));
         SyncItem[] syncItems = this.syncItemRepo.getSyncItem();
+        DecimalFormat costFmt = new DecimalFormat("0.00");
         int countSyncItems = 0, countItemArray = 0;
         for(SyncItem product : syncItems){
             countSyncItems++;
             try {
-               if(itemCostMap.get(product.getInternalCode()) != null && itemCategoryMap.get(product.getInternalCode()) != null) {
-                   countItemArray++;
-                   auxItemPercentage = categoryRepo.getCategory(itemCategoryMap.get(product.getInternalCode()), currencyCode, dataAreaId).getPercentage().floatValue();
+                if(itemCostMap.get(product.getInternalCode()) == null && itemCategoryMap.get(product.getInternalCode()) == null){
+                    System.out.println("Entra a esta parte!");
+                }
+               if(itemCostMap.get(product.getInternalCode()) != null && itemCategoryMap.get(product.getInternalCode()) != null
+               && product.getDefaultVersionId() != null) {
+                    countItemArray++;
+                    auxItemPercentage = getCategoryPercentage(itemCategoryMap.get(product.getInternalCode()));
                     auxCost = (((basePercentage + auxItemPercentage) / 100) + 1) * Float.parseFloat(itemCostMap.get(product.getInternalCode()));
+                    finalCost = getAdditionalFixedCost(auxCost) + shippingCost;
                     JSONObject itemPrice = new JSONObject();
                     itemPrice.put("ProductVersionId", product.getDefaultVersionId());
-                    itemPrice.put("gross", "");
-                    itemPrice.put("priceWithDiscount", "");
-                    itemPrice.put("tax", "");
-                    itemPrice.put("net", auxCost);
+                    itemPrice.put("gross", costFmt.format(finalCost));
+                    itemPrice.put("priceWithDiscount", costFmt.format(finalCost));
+                    itemPrice.put("tax", 16);
+                    itemPrice.put("net", costFmt.format(finalCost));
                     itemPriceArray.put(itemPrice);
                    if (countItemArray % itemsPerCall == 0) {
                        response.add(itemPriceArray);
@@ -226,7 +254,9 @@ public class ItemPriceSyncService {
         HashMap<String, String> response = new HashMap<>();
         for(Object[] itemValue: itemValues){
             try {
-                response.put(itemValue[0].toString(), itemValue[1].toString());
+                if(itemValue[0] != null && itemValue[1] != null) {
+                    response.put(itemValue[0].toString(), itemValue[1].toString());
+                }
             }catch (RuntimeException e){
                 System.err.println("An error occurred while saving item value map.");
             }
@@ -234,11 +264,50 @@ public class ItemPriceSyncService {
         return response;
     }
 
-    private float getBasePercentage(String priceListName, String channel, String currencyCode, String dataAreaId) throws RuntimeException {
-        float priceListPercentage = priceListRepo.getPriceList(priceListName, currencyCode, dataAreaId).getPercentage().floatValue();
-        float channelPercentage = channelRepo.getChannel(channel, currencyCode, dataAreaId).getPercentage().floatValue();
-        return priceListPercentage + channelPercentage;
+    private float getBasePercentage(String priceListName, String channel, String currencyCode, String dataAreaId) {
+        try {
+            float priceListPercentage = priceListRepo.getPriceList(priceListName, currencyCode, dataAreaId).getPercentage().floatValue();
+            float channelPercentage = channelRepo.getChannel(channel, currencyCode, dataAreaId).getPercentage().floatValue();
+            return priceListPercentage + channelPercentage;
+        } catch (RuntimeException e){
+            throw new RuntimeException("An error occurred while obtaining the base percentage: " + e);
+        }
     }
+
+    private float getCategoryPercentage(String recId) throws RuntimeException {
+        float percentage = 0;
+        int level = 0;
+        Category category;
+        boolean hasPercentage = false;
+        Long auxParentCategory = Long.parseLong(recId);
+        do{
+            category = categoryRepo.getCategory(auxParentCategory);
+            level = category.getLevel();
+            auxParentCategory = category.getParentCategory();
+            percentage = category.getPercentage().floatValue();
+            if(percentage != 0){
+                hasPercentage = true;
+            }
+        }while (auxParentCategory != 0 && level != 1 && !hasPercentage);
+        return percentage;
+    }
+
+    private float getAdditionalFixedCost(float cost) {
+        float response = 0;
+        if(this.lowerLimitAddFixedCost != null && this.centralLimitAddFixedCost != null && this.upperLimitAddFixedCost != null) {
+            if(cost < this.lowerLimitAddFixedCost.getIntValue()){
+                response = cost + this.lowerLimitAddFixedCost.getIntValue() - cost + this.lowerLimitAddFixedCost.getDecValue().floatValue();
+            } else if (cost < this.centralLimitAddFixedCost.getIntValue()) {
+                response = cost + this.lowerLimitAddFixedCost.getDecValue().floatValue();
+            } else if (cost < this.upperLimitAddFixedCost.getIntValue()) {
+                response = cost + this.centralLimitAddFixedCost.getDecValue().floatValue();
+            } else {
+                response = cost + this.upperLimitAddFixedCost.getDecValue().floatValue();
+            }
+        }
+        return response;
+    }
+
 
     private String updatePrices(String accessToken, String url, JSONArray bodyValues) {
         try {
@@ -272,7 +341,7 @@ public class ItemPriceSyncService {
                 }
                 itemPriceRepo.save(syncItemPrice);
             } catch (RuntimeException | JsonProcessingException e){
-                System.err.println("Error while saving synchronized item price info.");
+             //   System.err.println("Error while saving synchronized item price info.");
             }
         }
     }

@@ -9,8 +9,8 @@ import java.util.Objects;
 
 @Embeddable
 public class CategoryId implements Serializable {
-    private static final long serialVersionUID = 5432202972518392453L;
-    @Column(name = "RecId", columnDefinition = "int UNSIGNED not null")
+    private static final long serialVersionUID = -5430477375766415573L;
+    @Column(name = "RecId", nullable = false)
     private Long recId;
 
     @Column(name = "Name", nullable = false, length = 50)

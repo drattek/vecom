@@ -4,8 +4,8 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.entity.AuthToken;
-import com.vegusa.middleware.entity.AuthTokenParameters;
-import com.vegusa.middleware.repository.AuthTokenParametersRepository;
+import com.vegusa.middleware.entity.AuthTokenParameter;
+import com.vegusa.middleware.repository.AuthTokenParameterRepository;
 import com.vegusa.middleware.repository.AuthTokenRepository;
 import com.vegusa.middleware.repository.EndpointRepository;
 import com.vegusa.middleware.utils.MWUtils;
@@ -31,24 +31,25 @@ import java.util.Base64;
 
 @Service
 public class AuthService {
-    private final WebClient webClient;
     //Middleware - Repository
-    private final AuthTokenRepository tokenInfoRepository;
-    private final AuthTokenParametersRepository tokenInfoParametersRepository;
-    private final EndpointRepository endptsRepository;
+    private final AuthTokenParameterRepository authTokenParametersRepo;
+    private final AuthTokenRepository authTokenRepo;
+    private final EndpointRepository endpointRepo;
     private EncryptDecryptInterface encryptDecryptInterface;
     private final Environment env;
 
+    private final WebClient webClient;
+
     @Autowired
-    public AuthService(WebClient webClient,
-                       AuthTokenRepository tokenInfoRepository,
-                       AuthTokenParametersRepository tokenInfoParametersRepository,
-                       EndpointRepository endptsRepository,
+    public AuthService(AuthTokenParameterRepository authTokenParametersRepo,
+                       AuthTokenRepository authTokenRepo,
+                       EndpointRepository endpointRepo,
+                       WebClient webClient,
                        Environment env) {
+        this.authTokenRepo = authTokenRepo;
+        this.authTokenParametersRepo = authTokenParametersRepo;
+        this.endpointRepo = endpointRepo;
         this.webClient = webClient;
-        this.tokenInfoRepository = tokenInfoRepository;
-        this.tokenInfoParametersRepository = tokenInfoParametersRepository;
-        this.endptsRepository = endptsRepository;
         this.env = env;
     }
 
@@ -56,9 +57,9 @@ public class AuthService {
         this.encryptDecryptInterface = encryptDecryptInterface;
     }
 
-    private MultiValueMap<String, String> getTokenInfoParameters(String origin) {
+    private MultiValueMap<String, String> getTokenInfoParameters(String origin) throws RuntimeException {
         MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
-        AuthTokenParameters tokenInfoParameters = tokenInfoParametersRepository
+        AuthTokenParameter tokenInfoParameters = authTokenParametersRepo
                 .getTokenInfoParameters(env.getProperty("integration.company.name"));
         if(tokenInfoParameters != null) {
             bodyValues.add("client_id", tokenInfoParameters.getClientId());
@@ -85,13 +86,13 @@ public class AuthService {
     public String fetchAccessToken() {
         try {
             return webClient.post()
-                    .uri(endptsRepository.getEndpointUrl("AUTHENTICATE_OAUTH2", "MULTIVENDE"))
+                    .uri(endpointRepo.getEndpointUrl("AUTHENTICATE_OAUTH2", "MULTIVENDE"))
                     .body(BodyInserters.fromFormData(getTokenInfoParameters("authorization_code")))
                     .retrieve()
                     .bodyToMono(String.class)
                     .block();
-        } catch (WebClientResponseException e) {
-            return MWUtils.getSimpleJSONResponse("error", e.getStatusCode() + " " + e.getMessage());
+        } catch (RuntimeException e) {
+            return MWUtils.getSimpleJSONResponse("error", e.getMessage());
         }
     }
 
@@ -105,10 +106,10 @@ public class AuthService {
         String cipherRefreshToken = encryptDecryptInterface.encrypt(algorithm, jsonNode.get("refreshToken").asText(), key, ivParameterSpec);
         SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'");
 
-        AuthToken auxTokenInfo = tokenInfoRepository.getAuthToken(env.getProperty("integration.company.name"));
+        AuthToken auxTokenInfo = authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
         AuthToken tokenInfo =  (auxTokenInfo != null) ? auxTokenInfo : new AuthToken();
 
-        tokenInfo.setIdMv(jsonNode.get("_id").asText());
+        tokenInfo.setResponseId(jsonNode.get("_id").asText());
         tokenInfo.setStatus(jsonNode.get("status").asText());
         tokenInfo.setCipherAccessToken(cipherAccessToken);
         tokenInfo.setAccessTokenExpiresAt(formatter.parse(jsonNode.get("refreshTokenExpiresAt").asText()));
@@ -119,7 +120,7 @@ public class AuthService {
         tokenInfo.setUpdatedAt(formatter.parse(jsonNode.get("updatedAt").asText()));
         tokenInfo.setCreatedAt(formatter.parse(jsonNode.get("createdAt").asText()));
         tokenInfo.setIntegrationCompany(env.getProperty("integration.company.name"));
-        tokenInfoRepository.save(tokenInfo);
+        authTokenRepo.save(tokenInfo);
         System.out.println("Token Info saved successfully.");
     }
 
@@ -134,27 +135,25 @@ public class AuthService {
     }
 
     public String refreshAccessToken()
-            throws InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
+            throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
                     BadPaddingException, InvalidKeyException, JsonProcessingException {
-        AuthToken tokenInfo = tokenInfoRepository.getAuthToken(env.getProperty("integration.company.name"));
+        AuthToken tokenInfo = authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
         if(tokenInfo != null) {
             SecretKey key = MWUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
             IvParameterSpec ivParameterSpec = MWUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
             String algorithm = "AES/CBC/PKCS5Padding";
             String refreshToken = encryptDecryptInterface.decrypt(algorithm, tokenInfo.getCipherRefreshToken(), key, ivParameterSpec);
-
             MultiValueMap<String, String> bodyValues = getTokenInfoParameters("refresh_token");
             bodyValues.add("refresh_token", refreshToken);
-
             try {
                 return webClient.post()
-                        .uri(endptsRepository.getEndpointUrl("REFRESH_TOKEN_OAUTH2", "MULTIVENDE"))
+                        .uri(endpointRepo.getEndpointUrl("REFRESH_TOKEN_OAUTH2", "MULTIVENDE"))
                         .body(BodyInserters.fromFormData(bodyValues))
                         .retrieve()
                         .bodyToMono(String.class)
                         .block();
-            } catch (WebClientResponseException e) {
-                return MWUtils.getSimpleJSONResponse("error", e.getStatusCode() + " " + e.getMessage());
+            } catch (RuntimeException e) {
+                return MWUtils.getSimpleJSONResponse("error", e.getMessage());
             }
         } else {
             return MWUtils.getSimpleJSONResponse("error", "Token info to generate the refresh token was not found.");

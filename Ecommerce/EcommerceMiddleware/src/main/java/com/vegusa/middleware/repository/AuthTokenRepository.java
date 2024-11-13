@@ -8,6 +8,6 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface AuthTokenRepository extends JpaRepository<AuthToken, Integer>
 {
-    @Query(value = "select * from AuthToken where integration_company = ?1",nativeQuery = true)
+    @Query(value = "select * from AuthToken where IntegrationCompany = ?1",nativeQuery = true)
     AuthToken getAuthToken(String integrationCompany);
 }

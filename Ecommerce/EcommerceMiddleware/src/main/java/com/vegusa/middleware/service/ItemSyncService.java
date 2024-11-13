@@ -6,6 +6,7 @@ import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.utils.MWUtils;
+import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -21,11 +22,9 @@ import javax.crypto.NoSuchPaddingException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.text.ParseException;
+import java.text.DecimalFormat;
 import java.text.SimpleDateFormat;
-import java.util.Date;
-import java.util.HashMap;
-import java.util.List;
+import java.util.*;
 
 @Service
 public class ItemSyncService {
@@ -34,9 +33,12 @@ public class ItemSyncService {
     private final InterfaceHierarchyRepository iHierarchyRepo;
     private final ProductAttributeRepository attributeRepo;
     private final ProductAttributeHierarchyRepository attributeHierarchyRepo;
+    private final ProductCategoryRepository productCategoryRepo;
+    private final CategoryRepository categoryRepo;
     private final SyncItemRepository syncItemRepo;
     private final SyncBrandRepository syncBrandRepo;
     private final SyncCategoryRepository syncCategoryRepo;
+    private final SyncTagRepository syncTagRepo;
     private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
     private final AuthTokenRepository authTokenRepo;
@@ -51,9 +53,12 @@ public class ItemSyncService {
                            InterfaceHierarchyRepository iHierarchyRepo,
                            ProductAttributeRepository attributeRepo,
                            ProductAttributeHierarchyRepository attributeHierarchyRepo,
+                           ProductCategoryRepository productCategoryRepo,
+                           CategoryRepository categoryRepo,
                            SyncItemRepository syncItemRepo,
                            SyncBrandRepository syncBrandRepo,
                            SyncCategoryRepository syncCategoryRepo,
+                           SyncTagRepository syncTagRepo,
                            CompanyRepository companyRepo,
                            EndpointRepository endpointRepo,
                            AuthTokenRepository authTokenRepo,
@@ -64,9 +69,12 @@ public class ItemSyncService {
         this.iHierarchyRepo = iHierarchyRepo;
         this.attributeRepo = attributeRepo;
         this.attributeHierarchyRepo = attributeHierarchyRepo;
+        this.productCategoryRepo = productCategoryRepo;
+        this.categoryRepo = categoryRepo;
         this.syncItemRepo = syncItemRepo;
         this.syncBrandRepo = syncBrandRepo;
         this.syncCategoryRepo = syncCategoryRepo;
+        this.syncTagRepo = syncTagRepo;
         this.companyRepo = companyRepo;
         this.endpointRepo = endpointRepo;
         this.authTokenRepo = authTokenRepo;
@@ -108,11 +116,13 @@ public class ItemSyncService {
                 getProductToUpdate(auxIProduct, itemId, dataAreaId);
                 SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                 String url = (syncItem == null) ? urlCreateProduct :
-                        (formatter.parse(auxIProduct.getUpdatedAt().toString()).after(formatter.parse(syncItem.getUpdatedAtMv().toString())))
-                                ? urlUpdateProduct.replace("{{product_id}}", syncItem.getIdMvd()) : "not synchronize";
+                        (1 > 0)
+                       // (formatter.parse(auxIProduct.getUpdatedAt().toString()).after(formatter.parse(syncItem.getUpdatedAt().toString())))
+                                ? urlUpdateProduct.replace("{{product_id}}", syncItem.getResponseId()) : "not synchronize";
                 if(!url.equals("not synchronize")){
-                    HashMap<String, String> idCatalogs = getCatalogs(authToken, merchantId, dataAreaId, auxIProduct.getBrand(), auxIProduct.getCategory());
-                    String syncResponse = updateProduct(authToken, syncItem, url, auxIProduct, idCatalogs);
+                    String brandId = getBrandID(auxIProduct.getBrand(), authToken, merchantId, dataAreaId, company);
+                    ArrayList<List<String>> categoryIDs = getCategoryIDs(itemId, authToken, merchantId, dataAreaId, company);
+                    String syncResponse = updateProduct(authToken, syncItem, url, auxIProduct, brandId, categoryIDs);
                     saveSyncProductsInfo(syncResponse, syncItem, company);
                     response.accumulate("ok", "The product " + itemId + " was updated successfully.");
                     System.out.println("The product " + itemId + " was updated successfully.");
@@ -120,7 +130,7 @@ public class ItemSyncService {
                     response.accumulate("synchronized", "The product " + itemId + " doesn't require to be updated.");
                     System.out.println("The product " + itemId + " doesn't require to be synchronized.");
                 }
-            } catch  (RuntimeException  | ParseException | JsonProcessingException e) {
+            } catch  (RuntimeException |/* ParseException |*/ JsonProcessingException e) {
                 System.err.println("An error occurred while synchronizing the product " + itemId);
                 response.accumulate("error", "An error occurred while updating the product " + itemId + " " + e.getMessage());
                 if(e.getMessage().contains("401")){
@@ -135,12 +145,13 @@ public class ItemSyncService {
     private void getProductToUpdate(InterfaceItems iProduct, String itemId, String dataAreaId) throws RuntimeException {
         List<String> attributes = attributeRepo.getProductAttributeId(dataAreaId);
         HashMap<String, String> attrValueMap = MWUtils.getControlTableAttributes();
+        Date updatedAt = attributeValueRepo.getUpdatedDate(itemId, dataAreaId);
         List<String> auxHierarchies;
         String auxAttributeValue = "";
         for (String attribute : attributes){
             try {
                 auxHierarchies = attributeHierarchyRepo.getAttributeHierarchy(attribute, dataAreaId);
-                if (auxHierarchies == null) {
+                if (auxHierarchies.isEmpty()) {
                     auxHierarchies = iHierarchyRepo.getInterfaceHierarchy(dataAreaId);
                 }
                 auxAttributeValue = getAttributeValue(auxHierarchies, attribute, itemId, dataAreaId);
@@ -149,7 +160,7 @@ public class ItemSyncService {
                 System.err.println("Error finding value for attribute " + attribute + " of Item Id " + itemId);
             }
         }
-        setProductToUploadValues(iProduct, attrValueMap);
+        setProductToUploadValues(iProduct, attrValueMap, updatedAt);
     }
 
     private String getAttributeValue(List<String> hierarchies, String attribute, String itemId, String dataAreaId) throws RuntimeException {
@@ -168,7 +179,7 @@ public class ItemSyncService {
         return response;
     }
 
-    private void setProductToUploadValues(InterfaceItems iProduct, HashMap<String, String> values){
+    private void setProductToUploadValues(InterfaceItems iProduct, HashMap<String, String> values, Date updatedAt) throws RuntimeException {
         iProduct.setItemId(values.get("ITEM_ID"));
         iProduct.setProductName(values.get("PRODUCT_NAME"));
         iProduct.setPartNumber(values.get("PART_NUMBER"));
@@ -177,35 +188,76 @@ public class ItemSyncService {
         iProduct.setCategory(values.get("CATEGORY_ID"));
         iProduct.setWeight(values.get("WEIGHT"));
         iProduct.setUnitOfMeasurement(values.get("UNIT_OF_MEASUREMENT"));
-        iProduct.setAvailable(Double.parseDouble(values.get("AVAILABLE")));
-        iProduct.setCost(Double.parseDouble(values.get("COST")));
+        if(values.get("AVAILABLE") != null){
+            iProduct.setAvailable(Double.parseDouble(values.get("AVAILABLE")));
+        }
+        if(values.get("COST") != null){
+            iProduct.setCost(Double.parseDouble(values.get("COST")));
+        }
+        iProduct.setLength(values.get("LENGTH"));
+        iProduct.setHeight(values.get("HEIGHT"));
+        iProduct.setWidth(values.get("WIDTH"));
+        iProduct.setCrossReferences(values.get("CROSS_REFERENCES"));
+        iProduct.setUpdatedAt(updatedAt);
     }
 
-    private HashMap<String, String> getCatalogs(String accessToken, String merchantId, String dataAreaId, String brand, String category){
+    private String getBrandID(String brand, String accessToken, String merchantId, String dataAreaId, Company company){
         try {
-            HashMap<String, String> idCatalogs = new HashMap<>();
             SyncBrand syncBrandId = syncBrandRepo.getSyncBrand(brand, dataAreaId);
-            SyncCategory syncCategory = syncCategoryRepo.getSyncCategory(category, dataAreaId);
-            String brandId = syncBrandId != null ? syncBrandId.getIdEcom() : brand != null ?
-                    createCatalogValue("BRANDS", accessToken, merchantId, endpointRepo.getEndpointUrl("POST_BRAND", env.getProperty("integration.company.name")), brand) : null;
-            String categoryId = syncCategory != null ? syncCategory.getIdEcom() : category != null ?
-                    createCatalogValue("CATEGORIES", accessToken, merchantId, endpointRepo.getEndpointUrl("CREATE_PRODUCT_CATEGORY", env.getProperty("integration.company.name")), category) : null;
-            idCatalogs.put("brandId", brandId);
-            idCatalogs.put("categoryId", categoryId);
-            return idCatalogs;
+            return syncBrandId != null ? syncBrandId.getResponseId() : brand != null ?
+                    createCatalogValue("BRANDS", accessToken, merchantId, endpointRepo.getEndpointUrl("POST_BRAND", env.getProperty("integration.company.name")), brand, company) : null;
         } catch (RuntimeException | JsonProcessingException e){
-            throw new RuntimeException("An error occurred while obtaining the catalog IDs." + e.getMessage());
+            throw new RuntimeException("An error occurred while obtaining Brand ID." + e.getMessage());
         }
     }
 
-    private String createCatalogValue(String catalog, String accessToken, String merchantId, String url, String value) throws RuntimeException, JsonProcessingException {
+    private ArrayList<List<String>> getCategoryIDs(String itemId, String accessToken, String merchantId, String dataAreaId, Company company){
+        try {
+            ArrayList<List<String>> response = new ArrayList<List<String>>();
+            List<String> categories = new ArrayList<>() , tags = new ArrayList<>();
+            ProductCategory productCategory = productCategoryRepo.getProductCategory(itemId, dataAreaId);
+            String categoryName = "", categoryId = "", tagId = "";
+            Long auxCategoryRefRecId = productCategory != null ? productCategory.getCategory().getId().getRecId() : null;
+            Category category;
+            SyncCategory syncCategory;
+            SyncTag syncTag;
+            if(productCategory != null){
+                do{
+                    try {
+                        category = categoryRepo.getCategory(auxCategoryRefRecId);
+                        categoryName = category.getId().getName();
+                        syncCategory = syncCategoryRepo.getSyncCategory(categoryName, dataAreaId);
+                        categoryId = syncCategory != null ? syncCategory.getResponseId() : categoryName != null ?
+                                createCatalogValue("CATEGORIES", accessToken, merchantId, endpointRepo.getEndpointUrl("CREATE_PRODUCT_CATEGORY", env.getProperty("integration.company.name")), categoryName, company) : null;
+                        if(categoryId != null){
+                            categories.add(categoryId);
+                        }
+                        syncTag = syncTagRepo.getSyncTag(categoryName, dataAreaId);
+                        tagId = syncTag != null ? syncTag.getResponseId() : categoryName != null ?
+                                createCatalogValue("TAGS", accessToken, merchantId, endpointRepo.getEndpointUrl("CREATE_TAGS", env.getProperty("integration.company.name")), categoryName, company) : null;;
+                        if(tagId != null){
+                            tags.add(tagId);
+                        }
+                        auxCategoryRefRecId = category.getParentCategory();
+                    } catch (RuntimeException e) {
+                        System.out.println("An error occurred while obtaining the Category ID. " + e.getMessage());
+                    }
+                } while(auxCategoryRefRecId != 0);
+            }
+            response.add(categories);
+            response.add(tags);
+            return response;
+        } catch (RuntimeException | JsonProcessingException e){
+            throw new RuntimeException("An error occurred while obtaining Category IDs. " + e.getMessage());
+        }
+    }
+
+    private String createCatalogValue(String catalog, String accessToken, String merchantId, String url, String value, Company company) throws RuntimeException, JsonProcessingException {
         String catalogValue = "";
-        HttpHeaders headers = new HttpHeaders();
+        HttpHeaders headers = MWUtils.getHeaders(accessToken);
         MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
         ObjectMapper objMapSyncCatalogValue = new ObjectMapper();
         String createdCatalogValue;
-        headers.add("Content-Type", "application/json");
-        headers.add("Authorization", "Bearer " + accessToken);
         bodyValues.add("name", value);
         bodyValues.add("description", value);
         createdCatalogValue = webClient.post()
@@ -218,43 +270,38 @@ public class ItemSyncService {
         MWUtils.validateResponse("An error occurred while creating the catalog ID value to " + value + " in " + catalog, createdCatalogValue);
         switch(catalog) {
             case "BRANDS":
-                SyncBrand vegEcomSynchronizedBrands = objMapSyncCatalogValue.readValue(createdCatalogValue, SyncBrand.class);
-                vegEcomSynchronizedBrands.setVegCompany("MSB");
-                syncBrandRepo.save(vegEcomSynchronizedBrands);
-                catalogValue = vegEcomSynchronizedBrands.getIdEcom();
+                SyncBrand syncBrand = objMapSyncCatalogValue.readValue(createdCatalogValue, SyncBrand.class);
+                syncBrand.setCompany(company);
+                syncBrandRepo.save(syncBrand);
+                catalogValue = syncBrand.getResponseId();
                 break;
             case "CATEGORIES":
-                SyncCategory vegEcomSynchronizedCategories = objMapSyncCatalogValue.readValue(createdCatalogValue, SyncCategory.class);
-                vegEcomSynchronizedCategories.setVegCompany("MSB");
-                syncCategoryRepo.save(vegEcomSynchronizedCategories);
-                catalogValue = vegEcomSynchronizedCategories.getIdEcom();
+                SyncCategory syncCategory = objMapSyncCatalogValue.readValue(createdCatalogValue, SyncCategory.class);
+                syncCategory.setCompany(company);
+                syncCategoryRepo.save(syncCategory);
+                catalogValue = syncCategory.getResponseId();
                 break;
+            case "TAGS":
+                SyncTag syncTag = objMapSyncCatalogValue.readValue(createdCatalogValue, SyncTag.class);
+                syncTag.setCompany(company);
+                syncTagRepo.save(syncTag);
+                catalogValue = syncTag.getResponseId();
             default:
                 // code block
         }
         return catalogValue;
     }
 
-    private String updateProduct(String accessToken, SyncItem synchronizedProduct, String url, InterfaceItems product, HashMap<String, String> idCatalogs) {
+    private String updateProduct(String accessToken, SyncItem syncItem, String url, InterfaceItems product, String brandId, ArrayList<List<String>> categoryIDs) {
         try {
-            HttpHeaders headers = new HttpHeaders();
-            headers.add("Content-Type", "application/json");
-            headers.add("Authorization", "Bearer " + accessToken);
-            MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
-            bodyValues.add("name", product.getProductName());
-            bodyValues.add("alias", product.getPartNumber());
-            bodyValues.add("model", product.getPartNumber());
-            bodyValues.add("description", product.getShortDescription());
-            bodyValues.add("code", product.getPartNumber());
-            bodyValues.add("internalCode", product.getItemId());
-            bodyValues.add("InventoryTypeId", "791a6654-c5f2-11e6-aad6-2c56dc130c0d");
-            if(idCatalogs.get("brandId") != null){ bodyValues.add("BrandId", idCatalogs.get("brandId")); }
-            if(idCatalogs.get("categoryId") != null){ bodyValues.add("ProductCategoryId", idCatalogs.get("categoryId")); }
-            if (synchronizedProduct == null) {
+            HttpHeaders headers = MWUtils.getHeaders(accessToken);
+            List<String> categories = categoryIDs.getFirst(), tags = categoryIDs.getLast();
+            JSONObject bodyValues = getUpdateProductBodyValues(syncItem, product, brandId, categories, tags);
+            if (syncItem == null) {
                 return webClient.post()
                         .uri(url)
                         .headers(h -> h.addAll(headers))
-                        .body(BodyInserters.fromFormData(bodyValues))
+                        .bodyValue(bodyValues.toString())
                         .retrieve()
                         .bodyToMono(String.class)
                         .block();
@@ -262,7 +309,7 @@ public class ItemSyncService {
                 return webClient.put()
                         .uri(url)
                         .headers(h -> h.addAll(headers))
-                        .body(BodyInserters.fromFormData(bodyValues))
+                        .bodyValue(bodyValues.toString())
                         .retrieve()
                         .bodyToMono(String.class)
                         .block();
@@ -272,17 +319,105 @@ public class ItemSyncService {
         }
     }
 
+    private static JSONObject getUpdateProductBodyValues(SyncItem syncItem, InterfaceItems product, String brandId, List<String> categories, List<String> tags) throws RuntimeException {
+        JSONObject bodyValues = new JSONObject();
+        JSONArray otherCategoriesArray = new JSONArray();
+        JSONArray tagsArray = new JSONArray();
+        String shortDescription = getShortDescription(product.getShortDescription(), product.getProductName()),
+                description = shortDescription + getCrossReferences(product.getCrossReferences()),
+                name = !Objects.equals(product.getShortDescription(), "") ? product.getShortDescription() : product.getPartNumber();
+        JSONArray productVersionsArray = new JSONArray();
+        bodyValues.put("name", name);
+        bodyValues.put("alias", product.getProductName());
+        bodyValues.put("model", product.getPartNumber());
+        bodyValues.put("description", description);
+        bodyValues.put("shortDescription", shortDescription);
+        bodyValues.put("code", product.getPartNumber());
+        bodyValues.put("internalCode", product.getItemId());
+        bodyValues.put("WarrantyId", "4b93c926-0e32-4681-aba4-ea1a15c89045");
+        bodyValues.put("InventoryTypeId", "791a6654-c5f2-11e6-aad6-2c56dc130c0d");
+        if(brandId != null){ bodyValues.put("BrandId", brandId); }
+        if(!categories.isEmpty()){
+            bodyValues.put("ProductCategoryId", categories.getFirst());
+            categories.removeFirst();
+            for(String category : categories){
+                otherCategoriesArray.put(category);
+            }
+            if(!otherCategoriesArray.isEmpty()){
+                bodyValues.put("otherProductCategories", otherCategoriesArray);
+            }
+        }
+        if(!tags.isEmpty()){
+            for (String tag : tags) {
+                JSONObject tagsObj = new JSONObject();
+                tagsObj.put("_id", tag);
+                tagsArray.put(tagsObj);
+            }
+            if (!tagsArray.isEmpty()) {
+                bodyValues.put("tags", tagsArray);
+            }
+        }
+        if(syncItem.getDefaultVersionId() != null && (!Objects.equals(product.getWeight(), "") || !Objects.equals(product.getLength(), "") ||
+                !Objects.equals(product.getHeight(), "") || !Objects.equals(product.getWidth(), ""))){
+            JSONObject productVersionObj = getProductVersionObj(syncItem, product);
+            productVersionsArray.put(productVersionObj);
+            bodyValues.put("ProductVersions", productVersionsArray);
+        }
+        return bodyValues;
+    }
+
+    private static String getShortDescription(String description01, String description02) throws RuntimeException {
+        String shortDescription = "";
+        if(!Objects.equals(description01, "") && !Objects.equals(description02, "")) {
+            shortDescription = description01 + " - " + description02 + ". ";
+        } else if (!Objects.equals(description01, "")) {
+            shortDescription = description01 + ". ";
+        } else if (!Objects.equals(description02, "")) {
+            shortDescription = description02 + ". ";
+        }
+        return shortDescription;
+    }
+
+    private static String getCrossReferences(String crossReferences) throws RuntimeException {
+        String response = "";
+        if(!Objects.equals(crossReferences, "")){
+            response = "Equivalente con: " + crossReferences;
+        }
+        return response;
+    }
+
+    private static JSONObject getProductVersionObj(SyncItem syncItem, InterfaceItems product) {
+        JSONObject productVersionObj = new JSONObject();
+        DecimalFormat weightFmt = new DecimalFormat("0.00");
+        productVersionObj.put("_id", syncItem.getDefaultVersionId());
+        if(!Objects.equals(product.getWeight(), "")){
+            productVersionObj.put("weight", weightFmt.format(Float.parseFloat(product.getWeight()) / 2.20462));
+        }
+        if(!Objects.equals(product.getLength(), "")){
+            productVersionObj.put("length", weightFmt.format(Float.parseFloat(product.getLength())));
+        }
+        if(!Objects.equals(product.getHeight(), "")){
+            productVersionObj.put("height", weightFmt.format(Float.parseFloat(product.getHeight())));
+        }
+        if(!Objects.equals(product.getWidth(), "")){
+            productVersionObj.put("width", weightFmt.format(Float.parseFloat(product.getWidth())));
+        }
+        productVersionObj.put("InventoryTypeId", "791a6654-c5f2-11e6-aad6-2c56dc130c0d");
+        return productVersionObj;
+    }
+
     private void saveSyncProductsInfo(String syncResponse, SyncItem synchronizedProduct, Company company) throws JsonProcessingException {
         try {
             ObjectMapper objMapSyncProducts = new ObjectMapper();
-            SyncItem vegMvSynchronizedProduct = objMapSyncProducts.readValue(syncResponse, SyncItem.class);
-            vegMvSynchronizedProduct.setCompany(company);
-            vegMvSynchronizedProduct.setIntegrationCompany(env.getProperty("integration.company.name"));
-            vegMvSynchronizedProduct.setVegSyncStatus("synchronized");
+            SyncItem syncItem = objMapSyncProducts.readValue(syncResponse, SyncItem.class);
+            syncItem.setCompany(company);
+            syncItem.setIntegrationCompany(env.getProperty("integration.company.name"));
+            syncItem.setVegSyncStatus("synchronized");
             if(synchronizedProduct != null) {
-                vegMvSynchronizedProduct.setId(synchronizedProduct.getId());
+                syncItem.setRecId(synchronizedProduct.getRecId());
+                syncItem.setDefaultVersionId(synchronizedProduct.getDefaultVersionId());
             }
-            syncItemRepo.save(vegMvSynchronizedProduct);
+            syncItemRepo.save(syncItem);
         } catch (RuntimeException | JsonProcessingException e) {
             updateMiddlewareSynchronizedProductsWithError(syncResponse, synchronizedProduct, company);
             throw new RuntimeException(e.getMessage());
@@ -293,14 +428,14 @@ public class ItemSyncService {
         try {
             SyncItem vegMvSynchronizedProduct = new SyncItem();
             if(synchronizedProduct != null){
-                vegMvSynchronizedProduct.setId(synchronizedProduct.getId());
+                vegMvSynchronizedProduct.setRecId(synchronizedProduct.getRecId());
             }
-            vegMvSynchronizedProduct.setIdMvd(MWUtils.getJsonNodeResponse(syncResponse, "_id"));
+            vegMvSynchronizedProduct.setResponseId(MWUtils.getJsonNodeResponse(syncResponse, "_id"));
             vegMvSynchronizedProduct.setInternalCode(MWUtils.getJsonNodeResponse(syncResponse,"internalCode"));
             vegMvSynchronizedProduct.setCompany(company);
             vegMvSynchronizedProduct.setIntegrationCompany(env.getProperty("integration.company.name"));
             vegMvSynchronizedProduct.setVegSyncStatus("error");
-            vegMvSynchronizedProduct.setUpdatedAtMv(new Date(0));
+            vegMvSynchronizedProduct.setUpdatedAt(new Date(0));
             syncItemRepo.save(vegMvSynchronizedProduct);
             System.err.println("The product " + MWUtils.getJsonNodeResponse(syncResponse,"internalCode") + " with error status was saved in Middleware table.");
         } catch (RuntimeException | JsonProcessingException e) {

@@ -6,7 +6,7 @@ import org.hibernate.annotations.ColumnDefault;
 import java.math.BigDecimal;
 
 @Entity
-@Table(name = "Category")
+@Table(name = "category")
 public class Category {
     @EmbeddedId
     private CategoryId id;
@@ -25,6 +25,18 @@ public class Category {
     @Lob
     @Column(name = "CurrencyCode", nullable = false)
     private String currencyCode;
+
+    @ColumnDefault("'1'")
+    @Lob
+    @Column(name = "IsActive", nullable = false)
+    private String isActive;
+
+    @Column(name = "Level")
+    private int level;
+
+    @ColumnDefault("'0'")
+    @Column(name = "ParentCategory", columnDefinition = "int UNSIGNED not null")
+    private Long parentCategory;
 
     public CategoryId getId() {
         return id;
@@ -56,6 +68,30 @@ public class Category {
 
     public void setCurrencyCode(String currencyCode) {
         this.currencyCode = currencyCode;
+    }
+
+    public String getIsActive() {
+        return isActive;
+    }
+
+    public void setIsActive(String isActive) {
+        this.isActive = isActive;
+    }
+
+    public int getLevel() {
+        return level;
+    }
+
+    public void setLevel(int level) {
+        this.level = level;
+    }
+
+    public Long getParentCategory() {
+        return parentCategory;
+    }
+
+    public void setParentCategory(Long parentCategory) {
+        this.parentCategory = parentCategory;
     }
 
 }

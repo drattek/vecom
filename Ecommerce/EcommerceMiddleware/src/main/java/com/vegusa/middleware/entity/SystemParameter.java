@@ -1,40 +1,40 @@
-package com.vegusa.middleware.entity.msb;
+package com.vegusa.middleware.entity;
 
 import jakarta.persistence.*;
 
 @Entity
-@Table(name = "veg_ecomm_gral_parameters")
-public class VegEcommGralParameter {
+@Table(name = "SystemParameter")
+public class SystemParameter {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
-    private Long id;
+    @Column(name = "RecId", nullable = false)
+    private Long recId;
 
-    @Column(name = "parameter_name", nullable = false, length = 50)
+    @Column(name = "Name", nullable = false, length = 50)
     private String parameterName;
 
     @Lob
-    @Column(name = "data_type")
+    @Column(name = "DataType")
     private String dataType;
 
-    @Column(name = "str_value", length = 250)
+    @Column(name = "StrValue", length = 250)
     private String strValue;
 
-    @Column(name = "int_value")
+    @Column(name = "IntValue")
     private Integer intValue;
 
-    @Column(name = "description", length = 250)
+    @Column(name = "Description", length = 250)
     private String description;
 
-    @Column(name = "integration_company", nullable = false, length = 50)
+    @Column(name = "IntegrationCompany", nullable = false, length = 50)
     private String integrationCompany;
 
-    public Long getId() {
-        return id;
+    public Long getRecId() {
+        return recId;
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    public void setRecId(Long recId) {
+        this.recId = recId;
     }
 
     public String getParameterName() {

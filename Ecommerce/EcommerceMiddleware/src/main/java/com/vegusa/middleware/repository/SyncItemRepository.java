@@ -8,10 +8,10 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface SyncItemRepository extends JpaRepository<SyncItem, Long>
 {
-    @Query(value = "select * from SyncItem where internal_code = ?1 and dataAreaId = ?2", nativeQuery = true)
+    @Query(value = "select * from SyncItem where InternalCode = ?1 and DataAreaId = ?2", nativeQuery = true)
     SyncItem getSyncItem(String itemId, String dataAreaId);
 
-    @Query(value = "select * from SyncItem order by internal_code", nativeQuery = true)
+    @Query(value = "select * from SyncItem order by InternalCode", nativeQuery = true)
     SyncItem[] getSyncItem();
 
 

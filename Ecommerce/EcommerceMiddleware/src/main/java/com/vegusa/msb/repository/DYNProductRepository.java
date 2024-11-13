@@ -7,6 +7,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface DYNProductRepository extends JpaRepository<DYNProduct, Long> {
-    @Query(value = "select * from ecomproducts where articulo like 'MSB-_______' and Marca = 'BOBCAT' order by articulo", nativeQuery = true)
+    @Query(value = "select * from ecomproducts where articulo like 'MSB-_______' order by articulo", nativeQuery = true)
     DYNProduct[] getDYNProducts();
 }

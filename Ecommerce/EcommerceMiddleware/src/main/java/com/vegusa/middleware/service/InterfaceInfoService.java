@@ -23,6 +23,7 @@ public class InterfaceInfoService {
     private final ItemExtraInfoRepository itemExtraInfoRepo;
     private final InterfaceRepository interfaceRepo;
     private final InterfaceItemsRepository interfaceItemsRepo;
+    private final SystemParameterRepository sysParameterRepo;
     private final CompanyRepository companyRepo;
     private final Environment env;
 
@@ -31,12 +32,14 @@ public class InterfaceInfoService {
                                 ItemExtraInfoRepository itemExtraInfoRepo,
                                 InterfaceRepository interfaceRepo,
                                 InterfaceItemsRepository interfaceItemsRepo,
+                                SystemParameterRepository sysParameterRepo,
                                 CompanyRepository companyRepo,
                                 Environment env){
         this.dynProductRepo = dynProductRepo;
         this.itemExtraInfoRepo = itemExtraInfoRepo;
         this.interfaceRepo = interfaceRepo;
         this.interfaceItemsRepo = interfaceItemsRepo;
+        this.sysParameterRepo = sysParameterRepo;
         this.companyRepo = companyRepo;
         this.env = env;
     }
@@ -52,7 +55,8 @@ public class InterfaceInfoService {
         DYNProduct[] dynProducts = dynProductRepo.getDYNProducts();
         for (DYNProduct dynProduct : dynProducts) {
             try {
-                ZonedDateTime zdt = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of(Objects.requireNonNull(env.getProperty("zoned.date.time"))));
+                ZonedDateTime zdt = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of(sysParameterRepo
+                        .getSystemParameter("ZONE_ID").getStrValue()));
                 Date date = Date.from(zdt.toInstant());
                 InterfaceItems auxIProduct = interfaceItemsRepo.getInterfaceProduct(dynProduct.getArticulo(), interfaceId, dataAreaId);
                 InterfaceItems product = auxIProduct == null ? new InterfaceItems() : auxIProduct;
@@ -89,7 +93,8 @@ public class InterfaceInfoService {
         ItemExtraInfo[] scrapedProducts = itemExtraInfoRepo.getItemExtraInfo(interfaceId, dataAreaId);
         for (ItemExtraInfo scrapedProduct : scrapedProducts) {
             try {
-                ZonedDateTime zdt = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of(Objects.requireNonNull(env.getProperty("zoned.date.time"))));
+                ZonedDateTime zdt = ZonedDateTime.of(LocalDateTime.now(), ZoneId.of(sysParameterRepo
+                        .getSystemParameter("ZONE_ID").getStrValue()));
                 Date date = Date.from(zdt.toInstant());
                 InterfaceItems auxProduct = interfaceItemsRepo.getInterfaceProduct(scrapedProduct.getItemId(), interfaceId, dataAreaId);
                 InterfaceItems product = auxProduct == null ? new InterfaceItems() : auxProduct;
@@ -111,7 +116,7 @@ public class InterfaceInfoService {
                 response.accumulate("ok", scrapedProduct.getItemId() + " updated successfully.");
                 System.out.println(scrapedProduct.getItemId() + " updated successfully.");
             } catch (RuntimeException e) {
-                response.accumulate("error", "Error when updating the product " + scrapedProduct.getItemId());
+                response.accumulate("error", "Error when updating the product " + scrapedProduct.getItemId() + " " + e.getMessage());
                 System.err.println(scrapedProduct.getItemId() + " error while saving.");
             }
         }

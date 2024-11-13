@@ -18,7 +18,4 @@ public interface ItemInventLocationRepository extends JpaRepository<ItemInventLo
 
     @Query(value = "select Articulo, [Costo promedio] from ItemInventLocation group by Articulo, [Costo promedio] order by Articulo", nativeQuery = true)
     List<Object[]> getItemCost();
-
-    @Query(value = "select Articulo, Cateogría from ItemInventLocation group by Articulo, Cateogría order by Articulo", nativeQuery = true)
-    List<Object[]> getItemCategory();
 }

@@ -110,9 +110,7 @@ public class ItemInventorySyncService {
             String name = warehouse[0] != null ? warehouse[0].toString() : "";
             String description = warehouse[1] != null ? warehouse[1].toString() : "";
             String address = warehouse[2] != null ? warehouse[2].toString() : "";
-            HttpHeaders headers = new HttpHeaders();
-            headers.add("Content-Type", "application/json");
-            headers.add("Authorization", "Bearer " + accessToken);
+            HttpHeaders headers = MWUtils.getHeaders(accessToken);
             MultiValueMap<String, String> bodyValues = new LinkedMultiValueMap<>();
             bodyValues.add("name", name);
             bodyValues.add("type", "warehouse");

@@ -2,38 +2,39 @@ package com.vegusa.middleware.entity;
 
 import jakarta.persistence.*;
 @Entity
-@Table(name = "Endpoints")
+@Table(name = "Endpoint")
 public class Endpoint {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", columnDefinition = "int UNSIGNED not null")
-    private Long id;
+    @Column(name = "RecId", columnDefinition = "int UNSIGNED not null")
+    private Long recId;
 
-    @Column(name = "endpt_name", nullable = false, length = 50)
-    private String endptName;
+    @Column(name = "Name", nullable = false, length = 50)
+    private String name;
 
-    @Column(name = "url", nullable = false, length = 250)
+    @Column(name = "Url", nullable = false, length = 250)
     private String url;
 
-    @Column(name = "description", length = 250)
+    @Column(name = "Description", length = 250)
     private String description;
-    @Column(nullable = false)
-    private String integration_company;
 
-    public Long getId() {
-        return id;
+    @Column(name="IntegrationCompany", nullable = false)
+    private String integrationCompany;
+
+    public Long getRecId() {
+        return recId;
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    public void setRecId(Long recId) {
+        this.recId = recId;
     }
 
-    public String getEndptName() {
-        return endptName;
+    public String getName() {
+        return name;
     }
 
-    public void setEndptName(String endptName) {
-        this.endptName = endptName;
+    public void setName(String name) {
+        this.name = name;
     }
 
     public String getUrl() {
@@ -51,7 +52,9 @@ public class Endpoint {
     public void setDescription(String description) {
         this.description = description;
     }
-    public String getIntegrationCompany(){ return this.integration_company; }
-    public void setIntegrationCompany(String integration_company){ this.integration_company = integration_company; }
+
+    public String getIntegrationCompany(){ return this.integrationCompany; }
+
+    public void setIntegrationCompany(String integration_company){ this.integrationCompany = integration_company; }
 
 }

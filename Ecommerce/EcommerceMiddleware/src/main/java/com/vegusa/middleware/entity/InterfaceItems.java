@@ -3,6 +3,7 @@ package com.vegusa.middleware.entity;
 import jakarta.persistence.*;
 import org.hibernate.annotations.ColumnDefault;
 
+import java.time.Instant;
 import java.util.Date;
 
 @Entity
@@ -31,7 +32,7 @@ public class InterfaceItems {
     @Column(name = "UnitOfMeasurement", length = 20)
     private String unitOfMeasurement;
 
-    @Column(name = "Category", length = 100)
+    @Column(name = "Category", length = 500)
     private String category;
 
     @Column(name = "Brand", length = 100)
@@ -51,7 +52,7 @@ public class InterfaceItems {
 
     @ColumnDefault("'TRUE'")
     @Lob
-    @Column(name = "SkipNull")
+    @Column(name = "SkipNull", nullable = false)
     private String skipNull;
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
@@ -67,6 +68,22 @@ public class InterfaceItems {
             @JoinColumn(name = "DataAreaId", referencedColumnName = "DataAreaId", nullable = false)
     })
     private Company company;
+
+    @Column(name = "Warranty", length = 50)
+    private String warranty;
+
+    @Lob
+    @Column(name = "CrossReferences")
+    private String crossReferences;
+
+    @Column(name = "Length", length = 20)
+    private String length;
+
+    @Column(name = "Height", length = 20)
+    private String height;
+
+    @Column(name = "Width", length = 20)
+    private String width;
 
     public Long getId() {
         return id;
@@ -168,8 +185,8 @@ public class InterfaceItems {
         return updatedAt;
     }
 
-    public void setUpdatedAt(Date modifiedAt) {
-        this.updatedAt = modifiedAt;
+    public void setUpdatedAt(Date updatedAt) {
+        this.updatedAt = updatedAt;
     }
 
     public String getSkipNull() {
@@ -194,6 +211,46 @@ public class InterfaceItems {
 
     public void setCompany(Company company) {
         this.company = company;
+    }
+
+    public String getWarranty() {
+        return warranty;
+    }
+
+    public void setWarranty(String warranty) {
+        this.warranty = warranty;
+    }
+
+    public String getCrossReferences() {
+        return crossReferences;
+    }
+
+    public void setCrossReferences(String crossReferences) {
+        this.crossReferences = crossReferences;
+    }
+
+    public String getLength() {
+        return length;
+    }
+
+    public void setLength(String length) {
+        this.length = length;
+    }
+
+    public String getHeight() {
+        return height;
+    }
+
+    public void setHeight(String height) {
+        this.height = height;
+    }
+
+    public String getWidth() {
+        return width;
+    }
+
+    public void setWidth(String width) {
+        this.width = width;
     }
 
 }

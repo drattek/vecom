@@ -7,6 +7,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface SyncCategoryRepository extends JpaRepository<SyncCategory, Long> {
-    @Query(value = "select * from SyncCategory where name = ?1 and veg_company = ?2", nativeQuery = true)
-    SyncCategory getSyncCategory(String categoryName, String company);
+    @Query(value = "select * from SyncCategory where Name = ?1 and DataAreaId = ?2", nativeQuery = true)
+    SyncCategory getSyncCategory(String categoryName, String dataAreaId);
 }

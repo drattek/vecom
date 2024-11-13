@@ -1,8 +1,8 @@
 package com.vegusa.middleware.entity;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
-import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.util.Date;
 
@@ -13,107 +13,115 @@ public class SyncItem {
     public SyncItem(){}
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    //@Column(name = "id", nullable = false)
-    @Column(name = "id")
-    private Long id;
+    @Column(name = "RecId")
+    private Long recId;
 
-    @Column(name = "id_mv", nullable = false, length = 100)
+    @Column(name = "ResponseId", nullable = false, length = 100)
     @JsonProperty("_id")
-    private String idMv;
+    private String responseId;
 
-    @Column(name = "status_mv")
+    @Column(name = "ResponseStatus")
     @JsonProperty("status")
-    private String status;
+    private String responseStatus;
 
-    @Column(name = "name")
+    @Column(name = "Name")
     @JsonProperty("name")
     private String name;
 
-    @Column(name = "alias")
+    @Column(name = "Alias")
     @JsonProperty("alias")
     private String alias;
 
-    @Column(name = "model")
+    @Column(name = "Model")
     @JsonProperty("model")
     private String model;
 
-    @Column(name = "description")
+    @Column(name = "Description")
     @JsonProperty("description")
     private String description;
 
-    @Column(name = "brand_id")
+    @Column(name = "BrandId")
     @JsonProperty("BrandId")
     private String brandId;
 
-    @Column(name = "season_id")
+    @Column(name = "SeasonId")
     @JsonProperty("SeasonId")
     private String seasonId;
 
-    @Column(name = "product_category_id")
+    @Column(name = "ProductCategoryId")
     @JsonProperty("ProductCategoryId")
     private String productCategoryId;
 
-    @Column(name = "code")
+    @Column(name = "Code")
     @JsonProperty("code")
     private String code;
 
-    @Column(name = "internal_code", nullable = false)
+    @Column(name = "InternalCode", nullable = false)
     @JsonProperty("internalCode")
     private String internalCode;
 
-    @Column(name = "short_description")
+    @Column(name = "ShortDescription")
     @JsonProperty("shortDescription")
     private String shortDescription;
 
-    @Column(name = "html_description")
+    @Column(name = "HtmlDescription")
     @JsonProperty("htmlDescription")
     private String htmlDescription;
 
-    @Column(name = "html_short_description")
+    @Column(name = "HtmlShortDescription")
     @JsonProperty("htmlShortDescription")
     private String htmlShortDescription;
 
-    @Column(name = "warranty_id")
+    @Column(name = "WarrantyId")
     @JsonProperty("WarrantyId")
     private String warrantyId;
 
-    @Column(name = "shipping_class_id")
+    @Column(name = "ShippingClassId")
     @JsonProperty("ShippingClassId")
     private String shippingClassId;
 
-    @Column(name = "official_store_id")
+    @Column(name = "OfficialStoreId")
     @JsonProperty("OfficialStoreId")
     private String officialStoreId;
 
-    @Column(name = "created_by_id")
+    @Column(name = "CreatedById")
     @JsonProperty("CreatedById")
     private String createdById;
 
-    @Column(name = "updated_by_id")
+    @Column(name = "UpdatedById")
     @JsonProperty("UpdatedById")
     private String updatedById;
 
-    @Column(name = "merchant_id")
+    @Column(name = "MerchantId")
     @JsonProperty("MerchantId")
     private String merchantId;
 
-    @Column(name = "updated_at_mv")
+    @Column(name = "UpdatedAt")
     @JsonProperty("updatedAt")
     private Date updatedAt;
 
-    @Column(name = "created_at_mv")
+    @Column(name = "CreatedAt")
     @JsonProperty("createdAt")
     private Date createdAt;
 
-    @Column(name = "product_type_Id")
+    @Column(name = "ProductTypeId")
     @JsonProperty("ProductTypeId")
     private String productTypeId;
 
-    @Column(nullable = false)
-    private String integration_company;
+    @Column(name="IntegrationCompany", nullable = false)
+    private String integrationCompany;
 
-    @Column(name = "veg_sync_status")
+    @Column(name = "DefaultVersionId")
+    private String defaultVersionId;
+
+    @Column(name = "VegSyncStatus")
     private String vegSyncStatus;
+
+    /*
+    @OneToOne
+    @JsonProperty("ProductVersions")
+    private SyncProductVersion[] syncProductVersions;
+    */
 
     @ManyToOne(fetch = FetchType.LAZY, optional = false)
     @JoinColumns({
@@ -122,38 +130,28 @@ public class SyncItem {
     })
     private Company company;
 
-    @Column(name = "default_version_id", length = 100)
-    private String defaultVersionId;
-
-    public String getDefaultVersionId() {
-        return defaultVersionId;
+    public Long getRecId() {
+        return recId;
     }
 
-    public void setDefaultVersionId(String defaultVersionId) {
-        this.defaultVersionId = defaultVersionId;
+    public void setRecId(Long recId) {
+        this.recId = recId;
     }
 
-    public Long getId() {
-        return id;
+    public String getResponseId() {
+        return responseId;
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    public void setResponseId(String responseId) {
+        this.responseId = responseId;
     }
 
-    public String getIdMvd() {
-        return idMv;
+    public String getResponseStatus() {
+        return responseStatus;
     }
 
-    public void setIdMvd(String idMv) {
-        this.idMv = idMv;
-    }
-    public String getStatus() {
-        return status;
-    }
-
-    public void setStatus(String status) {
-        this.status = status;
+    public void setResponseStatus(String responseStatus) {
+        this.responseStatus = responseStatus;
     }
 
     public String getName() {
@@ -192,7 +190,7 @@ public class SyncItem {
         return brandId;
     }
 
-    public void setBrandId(String BrandId) {
+    public void setBrandId(String brandId) {
         this.brandId = brandId;
     }
 
@@ -200,15 +198,15 @@ public class SyncItem {
         return seasonId;
     }
 
-    public void setSeasonId(String SeasonId) {
-        this.seasonId = seasonId;
+    public void setSeasonId(String seasonId) {
+        this.seasonId = this.seasonId;
     }
 
     public String getProductCategoryId() {
         return productCategoryId;
     }
 
-    public void setProductCategoryId(String ProductCategoryId) {
+    public void setProductCategoryId(String productCategoryId) {
         this.productCategoryId = productCategoryId;
     }
 
@@ -254,7 +252,7 @@ public class SyncItem {
         return warrantyId;
     }
 
-    public void setWarrantyId(String WarrantyId) {
+    public void setWarrantyId(String warrantyId) {
         this.warrantyId = warrantyId;
     }
 
@@ -262,7 +260,7 @@ public class SyncItem {
         return shippingClassId;
     }
 
-    public void setShippingClassId(String ShippingClassId) {
+    public void setShippingClassId(String shippingClassId) {
         this.shippingClassId = shippingClassId;
     }
 
@@ -270,7 +268,7 @@ public class SyncItem {
         return officialStoreId;
     }
 
-    public void setOfficialStoreId(String OfficialStoreId) {
+    public void setOfficialStoreId(String officialStoreId) {
         this.officialStoreId = officialStoreId;
     }
 
@@ -286,31 +284,31 @@ public class SyncItem {
         return updatedById;
     }
 
-    public void setUpdatedById(String UpdatedById) {
-        this.updatedById = UpdatedById;
+    public void setUpdatedById(String updatedById) {
+        this.updatedById = updatedById;
     }
 
     public String getMerchantId() {
         return merchantId;
     }
 
-    public void setMerchantId(String MerchantId) {
+    public void setMerchantId(String merchantId) {
         this.merchantId = merchantId;
     }
 
-    public Date getUpdatedAtMv() {
+    public Date getUpdatedAt() {
         return updatedAt;
     }
 
-    public void setUpdatedAtMv(Date updatedAt) {
+    public void setUpdatedAt(Date updatedAt) {
         this.updatedAt = updatedAt;
     }
 
-    public Date getCreatedAtMv() {
+    public Date getCreatedAt() {
         return createdAt;
     }
 
-    public void setCreatedAtMv(Date createdAt) {
+    public void setCreatedAt(Date createdAt) {
         this.createdAt = createdAt;
     }
 
@@ -318,16 +316,26 @@ public class SyncItem {
         return productTypeId;
     }
 
-    public void setProductTypeId(String ProductTypeId) {
+    public void setProductTypeId(String productTypeId) {
         this.productTypeId = productTypeId;
     }
 
-    public String getIntegrationCompany(){ return this.integration_company; }
-    public void setIntegrationCompany(String integration_company){ this.integration_company = integration_company; }
+    public String getIntegrationCompany(){ return this.integrationCompany; }
+
+    public void setIntegrationCompany(String integrationCompany){ this.integrationCompany = integrationCompany; }
+
     public String getVegSyncStatus(){ return this.vegSyncStatus; }
+
     public void setVegSyncStatus(String vegSyncStatus){ this.vegSyncStatus = vegSyncStatus; }
 
+    public String getDefaultVersionId(){ return this.defaultVersionId; }
+
+    public void setDefaultVersionId(String defaultVersionId){ this.defaultVersionId = defaultVersionId; }
+
+   // public SyncProductVersion[] getSyncProductVersions(){ return  this.syncProductVersions; }
+
     public Company getCompany() { return company; }
+
     public void setCompany(Company company) {
         this.company = company;
     }

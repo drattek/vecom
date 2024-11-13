@@ -87,7 +87,7 @@ public class MSBController {
             return switch (interfaceId) {
                 case "DYN" ->
                         interfaceInfoService.updateDYNInterfaceInfo(interfaceId, dataAreaId, company);
-                case "UCA", "TVH" ->
+                case "UCA", "TVH", "BOB" ->
                         interfaceInfoService.updateInterfaceInfo(interfaceId, dataAreaId, company);
                 default -> throw new RuntimeException("The interfaceId provided doesn't exist.");
             };
@@ -130,6 +130,7 @@ public class MSBController {
             Company company = itemPriceSyncService.getCompany(dataAreaId);
             if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            itemPriceSyncService.setAddFixedCostParameters("ADDITIONAL_FIXED_COST_LL", "ADDITIONAL_FIXED_COST_CL", "ADDITIONAL_FIXED_COST_UL", dataAreaId);
             authToken = itemPriceSyncService.getAccessToken();
             merchantId = itemPriceSyncService.getMerchantId(authToken);
             fullPriceListName = dataAreaId + "_" + priceListName + "_" + channel + "_" + currencyCode;

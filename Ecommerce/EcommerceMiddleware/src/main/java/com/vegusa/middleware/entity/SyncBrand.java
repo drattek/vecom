@@ -9,66 +9,74 @@ import java.util.Date;
 public class SyncBrand {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "id", nullable = false)
-    private Long id;
+    @Column(name = "RecId", nullable = false)
+    private Long recId;
 
-    @Column(name = "id_ecom", length = 100)
+    @Column(name = "ResponseId", length = 100)
     @JsonProperty("_id")
-    private String idEcom;
+    private String responseId;
 
-    @Column(name = "name", length = 150)
+    @Column(name = "Name", length = 150)
+    @JsonProperty("name")
     private String name;
 
-    @Column(name = "code", length = 100)
+    @Column(name = "Code", length = 100)
+    @JsonProperty("code")
     private String code;
 
-    @Column(name = "description", length = 150)
+    @Column(name = "Description", length = 150)
+    @JsonProperty("description")
     private String description;
 
-    @Column(name = "tags", length = 100)
+    @Column(name = "Tags", length = 100)
+    @JsonProperty("tags")
     private String tags;
 
-    @Column(name = "status_ecom", length = 100)
+    @Column(name = "ResponseStatus", length = 100)
     @JsonProperty("status")
-    private String statusEcom;
+    private String responseStatus;
 
-    @Column(name = "created_at")
+    @Column(name = "CreatedAt")
     @JsonProperty("createdAt")
     private Date createdAt;
 
-    @Column(name = "updated_at")
+    @Column(name = "UpdatedAt")
     @JsonProperty("updatedAt")
     private Date updatedAt;
 
-    @Column(name = "created_by_id", length = 100)
+    @Column(name = "CreatedById", length = 100)
     @JsonProperty("CreatedById")
     private String createdById;
 
-    @Column(name = "updated_by_id", length = 100)
+    @Column(name = "UpdatedById", length = 100)
     @JsonProperty("UpdatedById")
     private String updatedById;
 
-    @Column(name = "merchant_id", length = 100)
+    @Column(name = "MerchantId", length = 100)
     @JsonProperty("MerchantId")
     private String merchantId;
 
-    @Column(name = "veg_company", nullable = false, length = 50)
-    private String vegCompany;
+    @ManyToOne(fetch = FetchType.LAZY, optional = false)
+    @JoinColumns({
+            @JoinColumn(name = "CompanyRefRecId", referencedColumnName = "RecId", nullable = false),
+            @JoinColumn(name = "DataAreaId", referencedColumnName = "DataAreaId", nullable = false)
+    })
+    private Company company;
 
-    public Long getId() {
-        return id;
+    public Long getRecId() {
+        return recId;
     }
 
-    public void setId(Long id) {
-        this.id = id;
+    public void setRecId(Long recId) {
+        this.recId = recId;
     }
 
-    public String getIdEcom() {
-        return idEcom;
+    public String getResponseId() {
+        return responseId;
     }
 
-    public void setIdEcom(String idEcom) {
-        this.idEcom = idEcom;
+    public void setResponseId(String responseId) {
+        this.responseId = responseId;
     }
 
     public String getName() {
@@ -103,12 +111,12 @@ public class SyncBrand {
         this.tags = tags;
     }
 
-    public String getStatusEcom() {
-        return statusEcom;
+    public String getResponseStatus() {
+        return responseStatus;
     }
 
-    public void setStatusEcom(String statusEcom) {
-        this.statusEcom = statusEcom;
+    public void setResponseStatus(String responseStatus) {
+        this.responseStatus = this.responseStatus;
     }
 
     public Date getCreatedAt() {
@@ -151,12 +159,11 @@ public class SyncBrand {
         this.merchantId = merchantId;
     }
 
-    public String getVegCompany() {
-        return vegCompany;
+    public Company getCompany() {
+        return company;
     }
 
-    public void setVegCompany(String vegCompany) {
-        this.vegCompany = vegCompany;
+    public void setCompany(Company company) {
+        this.company = company;
     }
-
 }

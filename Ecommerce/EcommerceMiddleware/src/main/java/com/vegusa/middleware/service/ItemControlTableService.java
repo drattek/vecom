@@ -67,6 +67,11 @@ public class ItemControlTableService {
         attributeValuesMap.put("UNIT_OF_MEASUREMENT", iProduct.getUnitOfMeasurement());
         attributeValuesMap.put("AVAILABLE", auxAvailable);
         attributeValuesMap.put("COST", auxCost);
+        attributeValuesMap.put("LENGTH", iProduct.getLength());
+        attributeValuesMap.put("HEIGHT", iProduct.getHeight());
+        attributeValuesMap.put("WIDTH", iProduct.getWidth());
+        attributeValuesMap.put("WARRANTY", iProduct.getWarranty());
+        attributeValuesMap.put("CROSS_REFERENCES", iProduct.getCrossReferences());
         return attributeValuesMap;
     }
 

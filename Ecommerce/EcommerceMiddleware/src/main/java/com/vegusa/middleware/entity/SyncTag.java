@@ -6,36 +6,36 @@ import jakarta.persistence.*;
 import java.util.Date;
 
 @Entity
-@Table(name = "SyncCategory")
-public class SyncCategory {
+@Table(name = "synctag")
+public class SyncTag {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "RecId", nullable = false)
-    private Long recId;
+    private Long id;
 
     @Column(name = "ResponseId", length = 100)
     @JsonProperty("_id")
     private String responseId;
 
+    @Column(name = "ResponseStatus", length = 100)
+    @JsonProperty("status")
+    private String responseStatus;
+
     @Column(name = "Name", length = 250)
     @JsonProperty("name")
     private String name;
 
-    @Column(name = "Code")
-    @JsonProperty("code")
-    private String code;
+    @Column(name = "Slug", length = 250)
+    @JsonProperty("slug")
+    private String slug;
 
-    @Column(name = "Branch", length = 250)
-    @JsonProperty("branch")
-    private String branch;
-
-    @Column(name = "Description", length = 150)
+    @Column(name = "Description", length = 250)
     @JsonProperty("description")
     private String description;
 
-    @Column(name = "ResponseStatus", length = 100)
-    @JsonProperty("status")
-    private String responseStatus;
+    @Column(name = "TagTypeId", length = 100)
+    @JsonProperty("TagTypeId")
+    private String tagTypeId;
 
     @Column(name = "CreatedAt")
     @JsonProperty("createdAt")
@@ -64,12 +64,12 @@ public class SyncCategory {
     })
     private Company company;
 
-    public Long getRecId() {
-        return recId;
+    public Long getId() {
+        return id;
     }
 
-    public void setRecId(Long recId) {
-        this.recId = recId;
+    public void setId(Long id) {
+        this.id = id;
     }
 
     public String getResponseId() {
@@ -80,6 +80,14 @@ public class SyncCategory {
         this.responseId = responseId;
     }
 
+    public String getResponseStatus() {
+        return responseStatus;
+    }
+
+    public void setResponseStatus(String responseStatus) {
+        this.responseStatus = responseStatus;
+    }
+
     public String getName() {
         return name;
     }
@@ -88,18 +96,12 @@ public class SyncCategory {
         this.name = name;
     }
 
-    public String getCode() { return code; }
-
-    public void setCode(String code) {
-        this.code = code;
+    public String getSlug() {
+        return slug;
     }
 
-    public String getBranch() {
-        return branch;
-    }
-
-    public void setBranch(String branch) {
-        this.branch = branch;
+    public void setSlug(String slug) {
+        this.slug = slug;
     }
 
     public String getDescription() {
@@ -110,12 +112,12 @@ public class SyncCategory {
         this.description = description;
     }
 
-    public String getResponseStatus() {
-        return responseStatus;
+    public String getTagTypeId() {
+        return tagTypeId;
     }
 
-    public void setResponseStatus(String responseStatus) {
-        this.responseStatus = responseStatus;
+    public void setTagTypeId(String tagTypeId) {
+        this.tagTypeId = tagTypeId;
     }
 
     public Date getCreatedAt() {

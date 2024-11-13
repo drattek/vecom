@@ -119,6 +119,11 @@ public class MWUtils {
         attributes.put("UNIT_OF_MEASUREMENT", "");
         attributes.put("AVAILABLE", "");
         attributes.put("COST", "");
+        attributes.put("LENGTH", "");
+        attributes.put("HEIGHT", "");
+        attributes.put("WIDTH", "");
+        attributes.put("WARRANTY", "");
+        attributes.put("CROSS_REFERENCES", "");
         return attributes;
     }
 
