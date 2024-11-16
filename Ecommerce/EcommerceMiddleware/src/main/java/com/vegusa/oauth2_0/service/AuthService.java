@@ -2,21 +2,22 @@ package com.vegusa.oauth2_0.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
-import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.entity.AuthToken;
+import com.vegusa.middleware.repository.AuthTokenRepository;
+import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.entity.AuthTokenParameter;
 import com.vegusa.middleware.repository.AuthTokenParameterRepository;
-import com.vegusa.middleware.repository.AuthTokenRepository;
 import com.vegusa.middleware.repository.EndpointRepository;
 import com.vegusa.middleware.utils.MWUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
-import org.springframework.web.reactive.function.client.WebClientResponseException;
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
@@ -35,9 +36,9 @@ public class AuthService {
     private final AuthTokenParameterRepository authTokenParametersRepo;
     private final AuthTokenRepository authTokenRepo;
     private final EndpointRepository endpointRepo;
+    private AuthToken authToken;
     private EncryptDecryptInterface encryptDecryptInterface;
     private final Environment env;
-
     private final WebClient webClient;
 
     @Autowired
@@ -55,6 +56,10 @@ public class AuthService {
 
     public void setEncryptDecryptInterface(EncryptDecryptInterface encryptDecryptInterface) {
         this.encryptDecryptInterface = encryptDecryptInterface;
+    }
+
+    public AuthToken getAuthToken(){
+        return authToken;
     }
 
     private MultiValueMap<String, String> getTokenInfoParameters(String origin) throws RuntimeException {
@@ -159,4 +164,10 @@ public class AuthService {
             return MWUtils.getSimpleJSONResponse("error", "Token info to generate the refresh token was not found.");
         }
     }
+
+    public void refreshAuthToken() throws  RuntimeException {
+        this.authToken = authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
+        System.out.println("Auth Token Info refreshed successfully.");
+    }
+
 }

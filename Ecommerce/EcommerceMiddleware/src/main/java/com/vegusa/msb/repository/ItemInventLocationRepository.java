@@ -13,7 +13,7 @@ public interface ItemInventLocationRepository extends JpaRepository<ItemInventLo
     @Query(value = "select * from ItemInventLocation where Almacen = ?1 order by Articulo", nativeQuery = true)
     ItemInventLocation[] getItemInventLocation(String warehouse);
 
-    @Query(value = "select distinct Almacen, Name, Address from ItemInventLocation order by Almacen", nativeQuery = true)
+    @Query(value = "select distinct Almacen, Name, Address from ItemInventLocation where Almacen not like '%-%' order by Almacen", nativeQuery = true)
     List<Object[]> getWarehouse();
 
     @Query(value = "select Articulo, [Costo promedio] from ItemInventLocation group by Articulo, [Costo promedio] order by Articulo", nativeQuery = true)

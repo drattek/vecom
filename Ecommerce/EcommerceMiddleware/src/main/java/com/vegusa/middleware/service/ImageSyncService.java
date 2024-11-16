@@ -6,6 +6,7 @@ import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.utils.MWUtils;
+import com.vegusa.oauth2_0.service.AuthService;
 import jakarta.persistence.EntityManager;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -30,6 +31,7 @@ public class ImageSyncService {
     private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
     private final AuthTokenRepository authTokenRepo;
+    private final AuthService authService;
     private final WebClient webClient;
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
@@ -42,6 +44,7 @@ public class ImageSyncService {
                             CompanyRepository companyRepo,
                             EndpointRepository endpointRepo,
                             AuthTokenRepository authTokenRepo,
+                            AuthService authService,
                             EntityManager entityManager,
                             WebClient webClient,
                             Environment env){
@@ -51,6 +54,7 @@ public class ImageSyncService {
         this.companyRepo = companyRepo;
         this.endpointRepo = endpointRepo;
         this.authTokenRepo = authTokenRepo;
+        this.authService = authService;
         this.webClient = webClient;
         this.env = env;
     }
@@ -62,7 +66,8 @@ public class ImageSyncService {
 
     public String getAccessToken() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
-        return MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm);
+        AuthToken tokenInfo =  authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
+        return MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, algorithm);
     }
 
     public String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
@@ -112,8 +117,8 @@ public class ImageSyncService {
                 }
             } catch (RuntimeException e) {
                 System.err.println("An error occurred processing product images: " + e.getMessage());
-                if(e.getMessage().contains("401")){
-                    authToken = MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm,
+                if(e.getMessage().contains("401") || e.getMessage().contains("404")){
+                    authToken = MWUtils.getDecryptedAccessToken(authService.getAuthToken(), encryptDecryptInterface, algorithm,
                             "An error occurred while renewing unauthorized token.");
                 }
                 response.accumulate("error", "An error occurred processing product images: " + e.getMessage());

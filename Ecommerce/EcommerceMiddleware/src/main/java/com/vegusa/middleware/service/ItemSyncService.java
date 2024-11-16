@@ -6,10 +6,12 @@ import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.utils.MWUtils;
+import com.vegusa.oauth2_0.service.AuthService;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
@@ -23,6 +25,7 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.text.DecimalFormat;
+import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -42,6 +45,8 @@ public class ItemSyncService {
     private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
     private final AuthTokenRepository authTokenRepo;
+    private final AuthService authService;
+    private AuthToken authToken;
     private final WebClient webClient;
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
@@ -62,6 +67,7 @@ public class ItemSyncService {
                            CompanyRepository companyRepo,
                            EndpointRepository endpointRepo,
                            AuthTokenRepository authTokenRepo,
+                           AuthService authService,
                            WebClient webClient,
                            Environment env) {
         this.attributeValueRepo = attributeValueRepo;
@@ -78,6 +84,7 @@ public class ItemSyncService {
         this.companyRepo = companyRepo;
         this.endpointRepo = endpointRepo;
         this.authTokenRepo = authTokenRepo;
+        this.authService = authService;
         this.webClient = webClient;
         this.env = env;
     }
@@ -89,7 +96,8 @@ public class ItemSyncService {
 
     public String getAccessToken() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
-        return MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm);
+        AuthToken tokenInfo =  authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
+        return MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, algorithm);
     }
 
     public String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
@@ -116,8 +124,7 @@ public class ItemSyncService {
                 getProductToUpdate(auxIProduct, itemId, dataAreaId);
                 SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
                 String url = (syncItem == null) ? urlCreateProduct :
-                        (1 > 0)
-                       // (formatter.parse(auxIProduct.getUpdatedAt().toString()).after(formatter.parse(syncItem.getUpdatedAt().toString())))
+                    (formatter.parse(auxIProduct.getUpdatedAt().toString()).after(formatter.parse(syncItem.getUpdatedAt().toString())))
                                 ? urlUpdateProduct.replace("{{product_id}}", syncItem.getResponseId()) : "not synchronize";
                 if(!url.equals("not synchronize")){
                     String brandId = getBrandID(auxIProduct.getBrand(), authToken, merchantId, dataAreaId, company);
@@ -130,12 +137,12 @@ public class ItemSyncService {
                     response.accumulate("synchronized", "The product " + itemId + " doesn't require to be updated.");
                     System.out.println("The product " + itemId + " doesn't require to be synchronized.");
                 }
-            } catch  (RuntimeException |/* ParseException |*/ JsonProcessingException e) {
-                System.err.println("An error occurred while synchronizing the product " + itemId);
+            } catch  (RuntimeException | ParseException | JsonProcessingException e) {
+                System.err.println("An error occurred while synchronizing the product " + itemId + " " +  e.getMessage());
                 response.accumulate("error", "An error occurred while updating the product " + itemId + " " + e.getMessage());
-                if(e.getMessage().contains("401")){
-                    authToken = MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface,  env, algorithm,
-                            "An error occurred while renewing unauthorized token.");
+                if(e.getMessage().contains("401") || e.getMessage().contains("404")){
+                    authToken = MWUtils.getDecryptedAccessToken(authService.getAuthToken(), encryptDecryptInterface, algorithm,
+                "An error occurred while renewing unauthorized token.");
                 }
             }
         }
@@ -323,9 +330,10 @@ public class ItemSyncService {
         JSONObject bodyValues = new JSONObject();
         JSONArray otherCategoriesArray = new JSONArray();
         JSONArray tagsArray = new JSONArray();
-        String shortDescription = getShortDescription(product.getShortDescription(), product.getProductName()),
-                description = shortDescription + getCrossReferences(product.getCrossReferences()),
-                name = !Objects.equals(product.getShortDescription(), "") ? product.getShortDescription() : product.getPartNumber();
+        String auxShortDescription = getShortDescription(product.getShortDescription(), product.getProductName()),
+                name = getName(product, product.getShortDescription()),
+                shortDescription = getName(product, auxShortDescription),
+                description = "-- TIENDA VEGUSA MAQUINARIA, DISTRUIBIDOR AUTORIZADO UNICARRIERS, BOBCAT, JLG, FLEXI. -- " + shortDescription + ". " + getCrossReferences(product.getCrossReferences());
         JSONArray productVersionsArray = new JSONArray();
         bodyValues.put("name", name);
         bodyValues.put("alias", product.getProductName());
@@ -366,14 +374,27 @@ public class ItemSyncService {
         return bodyValues;
     }
 
+    private static String getName(InterfaceItems product, String shortDescription) {
+        String name = shortDescription;
+        boolean hasBrand = name.contains(product.getBrand());
+        boolean hasPartNumber = name.contains(product.getPartNumber());
+        if(!hasBrand && !Objects.equals(product.getBrand(), "")){
+            name = !Objects.equals(name, "") ? name + " "  + product.getBrand() : product.getBrand();
+        }
+        if(!hasPartNumber && !Objects.equals(product.getPartNumber(), "")){
+            name = !Objects.equals(name, "") ? name + " " + product.getPartNumber() : product.getPartNumber();
+        }
+        return name;
+    }
+
     private static String getShortDescription(String description01, String description02) throws RuntimeException {
         String shortDescription = "";
         if(!Objects.equals(description01, "") && !Objects.equals(description02, "")) {
-            shortDescription = description01 + " - " + description02 + ". ";
+            shortDescription = description01 + " - " + description02 + " ";
         } else if (!Objects.equals(description01, "")) {
-            shortDescription = description01 + ". ";
+            shortDescription = description01 + " ";
         } else if (!Objects.equals(description02, "")) {
-            shortDescription = description02 + ". ";
+            shortDescription = description02 + " ";
         }
         return shortDescription;
     }

@@ -3,10 +3,10 @@ package com.vegusa.middleware.utils;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.vegusa.oauth2_0.encrypt_decrypt.AESEncryptDecrypt;
-import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.entity.AuthToken;
 import com.vegusa.middleware.repository.AuthTokenRepository;
+import com.vegusa.oauth2_0.encrypt_decrypt.AESEncryptDecrypt;
+import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import org.json.JSONObject;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
@@ -41,10 +41,9 @@ public class MWUtils {
         }
     }
 
-    public static String getDecryptedAccessToken(AuthTokenRepository authTokenRepo, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm)
+    public static String getDecryptedAccessToken(AuthToken tokenInfo, EncryptDecryptInterface encryptDecryptInterface, String algorithm)
             throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException, IllegalBlockSizeException, NoSuchAlgorithmException,
             BadPaddingException, InvalidKeyException {
-        AuthToken tokenInfo =  authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
         if(tokenInfo != null) {
             SecretKey key = MWUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
             IvParameterSpec ivParameterSpec = MWUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
@@ -54,9 +53,8 @@ public class MWUtils {
         }
     }
 
-    public static String getDecryptedAccessToken(AuthTokenRepository authTokenRepo, EncryptDecryptInterface encryptDecryptInterface, Environment env, String algorithm, String ExcMessage) {
+    public static String getDecryptedAccessToken(AuthToken tokenInfo, EncryptDecryptInterface encryptDecryptInterface, String algorithm, String ExcMessage) {
         try {
-            AuthToken tokenInfo =  authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
             if(tokenInfo != null) {
                 SecretKey key = MWUtils.convertStringToSecretKey(tokenInfo.getSecretKey());
                 IvParameterSpec ivParameterSpec = MWUtils.convertStringToIvParameterSpec(tokenInfo.getInitializationVector());
@@ -66,9 +64,9 @@ public class MWUtils {
             }
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException e){
-            System.err.println(ExcMessage);
+            System.err.println(ExcMessage + " " + e.getMessage());
         }
-        return "";
+        return null;
     }
 
     public static SecretKey convertStringToSecretKey(String encodedKey) {

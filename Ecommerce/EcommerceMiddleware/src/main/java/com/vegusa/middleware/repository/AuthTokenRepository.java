@@ -6,8 +6,7 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public interface AuthTokenRepository extends JpaRepository<AuthToken, Integer>
-{
+public interface AuthTokenRepository extends JpaRepository<AuthToken, Long> {
     @Query(value = "select * from AuthToken where IntegrationCompany = ?1",nativeQuery = true)
     AuthToken getAuthToken(String integrationCompany);
 }

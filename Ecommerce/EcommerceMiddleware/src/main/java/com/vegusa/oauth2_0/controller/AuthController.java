@@ -64,7 +64,7 @@ public class AuthController implements ApplicationRunner {
     }
 
     @Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "${fixedDelayRefreshToken.in.milliseconds}")
-    public void refreshTokenPeriodically() {
+    public void refreshAccessTokenPeriodically() {
         try {
             ObjectMapper objectMapper = new ObjectMapper();
             JsonNode jsonNode = objectMapper.readTree(this.authService.refreshAccessToken());
@@ -75,17 +75,29 @@ public class AuthController implements ApplicationRunner {
                     attemptsToGetRefreshToken++;
                     Thread.sleep(sysParameterRepo
                             .getSystemParameter("ATTEMPT_REFRESH_TOKEN_SLEEP_VALUE").getIntValue());
-                    refreshTokenPeriodically();
+                    refreshAccessTokenPeriodically();
                 }
             } else {
-                System.out.println("Refresh token periodically method: Access token refreshed successfully.");
+                System.out.println("Access Token refreshed successfully.");
                 this.authService.saveTokenInfo(jsonNode);
             }
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException | InterruptedException | ParseException e){
             System.err.println("An error occurred while refreshing the token.");
-            System.err.println("StackTrace: ");
         }
     }
+
+    @Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "${fixedDelayRefreshAuthInfo.in.milliseconds}")
+    public void refreshAuthTokenInfoPeriodically(){
+        try {
+            this.authService.refreshAuthToken();
+        } catch (RuntimeException e){
+            System.err.println("An error occurred while refreshing Auth Token Info: " + e.getMessage());
+        }
+    }
+
+
+
+
 
 }

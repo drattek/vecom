@@ -7,6 +7,7 @@ import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import javax.crypto.BadPaddingException;
@@ -97,18 +98,19 @@ public class MSBController {
         }
     }
 
-    @PostMapping(value="/update-item-inventory")
-    public String updateItemInventory(@RequestBody HashMap<String, String> request){
+    @Scheduled(fixedRateString = "${fixedRateRefreshItemInventory.in.milliseconds}", initialDelayString = "${fixedDelayRefreshItemInventory.in.milliseconds}")
+    public String updateItemInventory(){
         try {
-            String authToken, merchantId, dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
-                    itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall"));
+            System.out.println("Inventory Update Started.");
+            String authToken, merchantId, dataAreaId = "MSB";//MWUtils.bodyValidation(request.get("dataAreaId")),
+            int itemsPerCall = itemInventService.getProductsPerCall("UPDATE_STOCK_PRODUCTS_PER_CALL");//MWUtils.bodyValidation(request.get("itemsPerCall"));
             Company company = itemInventService.getCompany(dataAreaId);
             if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             itemInventService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
             authToken = itemInventService.getAccessToken();
             merchantId = itemInventService.getMerchantId(authToken);
             itemInventService.uploadWarehouses(authToken, merchantId, company);
-            return itemInventService.processItemInventoryUpdate(Integer.parseInt(itemsPerCall), authToken, dataAreaId, company);
+            return itemInventService.processItemInventoryUpdate(itemsPerCall, authToken, dataAreaId, company);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while uploading item inventory.");
@@ -116,17 +118,18 @@ public class MSBController {
         }
     }
 
-    @PostMapping(value="/update-price-list")
-    public String updatePriceList(@RequestBody HashMap<String, String> request) {
+    @Scheduled(fixedRateString = "${fixedRateRefreshPriceLists.in.milliseconds}", initialDelayString = "${fixedDelayRefreshPriceLists.in.milliseconds}")
+    public String updatePriceList() {
         try {
+            System.out.println("Price Lists Update Started.");
             SyncPriceList priceList;
             String authToken, merchantId, fullPriceListName, currencyId,
-                    dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
-                    priceListName = MWUtils.bodyValidation(request.get("priceListName")),
-                    description = MWUtils.bodyValidation(request.get("priceListDescription")),
-                    channel = MWUtils.bodyValidation(request.get("channel")),
-                    currencyCode = MWUtils.bodyValidation(request.get("currencyCode")),
-                    itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall"));
+                    dataAreaId = "MSB",//MWUtils.bodyValidation(request.get("dataAreaId")),
+                    priceListName = "NORMAL",//MWUtils.bodyValidation(request.get("priceListName")),
+                    description = "Lista de precios Normal Mercado Libre.", //MWUtils.bodyValidation(request.get("priceListDescription")),
+                    channel = "MERCADO_LIBRE",//MWUtils.bodyValidation(request.get("channel")),
+                    currencyCode = "MXN"; //MWUtils.bodyValidation(request.get("currencyCode"));
+            int itemsPerCall = itemInventService.getProductsPerCall("UPDATE_PRICE_PRODUCTS_PER_CALL");//MWUtils.bodyValidation(request.get("itemsPerCall"));
             Company company = itemPriceSyncService.getCompany(dataAreaId);
             if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
@@ -140,7 +143,7 @@ public class MSBController {
                 String createdPriceList = itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, authToken, merchantId);
                 priceList = itemPriceSyncService.savePriceListInfo(createdPriceList, company);
             }
-            return itemPriceSyncService.processPriceListUpdate(priceList, priceListName, channel, currencyCode, Integer.parseInt(itemsPerCall), authToken);
+            return itemPriceSyncService.processPriceListUpdate(priceList, priceListName, channel, currencyCode, itemsPerCall, authToken);
         } catch(RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
                 BadPaddingException | InvalidKeyException | JsonProcessingException e){
             System.err.println("An error occurred while creating the price list.");

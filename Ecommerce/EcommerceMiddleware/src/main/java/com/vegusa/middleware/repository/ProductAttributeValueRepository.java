@@ -21,7 +21,7 @@ public interface ProductAttributeValueRepository extends JpaRepository<ProductAt
     @Query(value = "delete from productattributevalue where ProductAttributeId = ?1 and ItemId = ?2 and InterfaceId = ?3 and DataAreaId = ?4", nativeQuery = true)
     void deleteProductAttributeValue(String productAttributeId, String ItemId, String InterfaceId, String DataAreaId);
 
-    @Query(value = "select distinct ItemId from productattributevalue where DataAreaId = ?1 and RecId < 12580 order by ItemId desc", nativeQuery = true)
+    @Query(value = "select distinct ItemId from productattributevalue where DataAreaId = ?1 and RecId > 36990 and RecId < 86330 order by ItemId", nativeQuery = true)
     List<String> getProdAttValueItemIds(String DataAreaId);
 
 }

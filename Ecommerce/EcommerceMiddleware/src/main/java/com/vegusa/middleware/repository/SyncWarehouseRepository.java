@@ -7,7 +7,7 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface SyncWarehouseRepository extends JpaRepository<SyncWarehouse, Long> {
-    @Query(value = "select * from SyncWarehouse order by Name", nativeQuery = true)
+    @Query(value = "select * from SyncWarehouse where name not like '%-%' order by Name", nativeQuery = true)
     SyncWarehouse[] getSyncWarehouse();
 
     @Query(value = "select * from SyncWarehouse where Name = ?1", nativeQuery = true)

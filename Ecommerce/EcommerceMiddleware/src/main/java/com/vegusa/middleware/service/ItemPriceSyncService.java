@@ -40,6 +40,7 @@ public class ItemPriceSyncService {
     private final CompanyRepository companyRepo;
     private final EndpointRepository endpointRepo;
     private final AuthTokenRepository authTokenRepo;
+    private final SystemParameterRepository systemParameterRepo;
     private final WebClient webClient;
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
@@ -61,6 +62,7 @@ public class ItemPriceSyncService {
                                  CompanyRepository companyRepo,
                                  EndpointRepository endpointRepo,
                                  AuthTokenRepository authTokenRepo,
+                                 SystemParameterRepository systemParameterRepo,
                                  WebClient webClient,
                                  Environment env){
         this.syncPriceListRepo = syncPriceListRepo;
@@ -75,6 +77,7 @@ public class ItemPriceSyncService {
         this.companyRepo = companyRepo;
         this.endpointRepo = endpointRepo;
         this.authTokenRepo = authTokenRepo;
+        this.systemParameterRepo = systemParameterRepo;
         this.webClient = webClient;
         this.env = env;
     }
@@ -86,7 +89,8 @@ public class ItemPriceSyncService {
 
     public String getAccessToken() throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException {
-        return MWUtils.getDecryptedAccessToken(authTokenRepo, encryptDecryptInterface, env, algorithm);
+        AuthToken tokenInfo =  authTokenRepo.getAuthToken(env.getProperty("integration.company.name"));
+        return MWUtils.getDecryptedAccessToken(tokenInfo, encryptDecryptInterface, algorithm);
     }
 
     public String getMerchantId(String accessToken) throws RuntimeException, JsonProcessingException {
@@ -97,6 +101,10 @@ public class ItemPriceSyncService {
 
     public Company getCompany(String dataAreaId) throws RuntimeException{
         return companyRepo.getCompany(dataAreaId);
+    }
+
+    public int getProductsPerCall(String sysParameterName) throws RuntimeException {
+        return systemParameterRepo.getSystemParameter(sysParameterName).getIntValue();
     }
 
     public SyncPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
@@ -200,6 +208,7 @@ public class ItemPriceSyncService {
                 System.err.println("An error occurred while updating a part of price list.");
             }
         }
+        System.out.println("Price Lists Update Ends.");
         return response.toString();
     }
 
