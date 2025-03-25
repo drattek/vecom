@@ -1,5 +1,8 @@
 package com.vegusa.middleware.service;
 
+import com.azure.storage.blob.BlobContainerClientBuilder;
+import com.azure.storage.blob.BlobContainerClient;
+import com.azure.storage.blob.specialized.BlockBlobClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.middleware.entity.*;
@@ -18,10 +21,17 @@ import org.springframework.web.reactive.function.client.WebClient;
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
+import java.net.URL;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.HashMap;
 
 @Service
 public class ImageSyncService {
@@ -80,11 +90,11 @@ public class ImageSyncService {
         return companyRepo.getCompany(dataAreaId);
     }
 
-    public String processImagesUpload(int maxNumOfItemsPerCall, String authToken, String merchantId, String dataAreaId, Company company) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String processImagesUpload(int maxNumOfItemsPerCall, String authToken, String merchantId, String dataAreaId, Company company, String albumId) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
         String url = endpointRepo.getEndpointUrl("UPLOAD_PICTURE_TO_PRODUCT_BY_URL", env.getProperty("integration.company.name"))
-                .replace("{{merchant_id}}", merchantId) .replace("{{product-pictures-set-id}}", "default");
+                .replace("{{merchant_id}}", merchantId) .replace("{{product-pictures-set-id}}", albumId);
         ProductImagesView[] productImages = productImagesViewRepo.getProductImagesView(dataAreaId);
         String auxPreviousItem = productImages[0].getSyncItemResponseId();
         JSONArray request =  new JSONArray();
@@ -104,7 +114,7 @@ public class ImageSyncService {
                         auxItemProcessed++;
                     }
                 }
-                insertImage(images, imageByProduct);
+                insertImage(images, imageByProduct, albumId);
                 auxPreviousItem = imageByProduct.getSyncItemResponseId();
                 if(auxRowProcessed == streamSize){
                     boolean imagesIsEmpty = images.isEmpty();
@@ -118,13 +128,14 @@ public class ImageSyncService {
             } catch (RuntimeException e) {
                 System.err.println("An error occurred processing product images: " + e.getMessage());
                 if(e.getMessage().contains("401") || e.getMessage().contains("404")){
-                    authToken = MWUtils.getDecryptedAccessToken(authService.getAuthToken(), encryptDecryptInterface, algorithm,
-                            "An error occurred while renewing unauthorized token.");
+//                    authToken = MWUtils.getDecryptedAccessToken(authService.getAuthToken(), encryptDecryptInterface, algorithm,
+//                            "An error occurred while renewing unauthorized token.");
+                    System.out.println("error: " + authToken);
                 }
                 response.accumulate("error", "An error occurred processing product images: " + e.getMessage());
             }
             auxRowProcessed++;
-            System.out.println(imageByProduct.getItemId() + "/" + imageByProduct.getBlobName() + " processed.");
+            System.out.println(imageByProduct.getItemId() + "/" + imageByProduct.getBlobName() + " processed. ");
         }
         if(response.isEmpty()){
             response.accumulate("ok", "The process ended, there are no new images to synchronize.");
@@ -132,8 +143,8 @@ public class ImageSyncService {
         return response.toString();
     }
 
-    private void insertImage(ArrayList<String> images, ProductImagesView imageByProduct) throws RuntimeException{
-        SyncImage syncImage = syncImageRepo.getSyncImage(imageByProduct.getBlobName());
+    private void insertImage(ArrayList<String> images, ProductImagesView imageByProduct, String albumId) throws RuntimeException{
+        SyncImage syncImage = syncImageRepo.getSyncImage(imageByProduct.getBlobName(), albumId);
         if(syncImage == null) {
             images.add(imageByProduct.getImageUrl());
         }

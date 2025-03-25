@@ -156,13 +156,14 @@ public class MSBController {
         try {
             String itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall")),
                     dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    albumId = MWUtils.bodyValidation(request.get("albumId")),
                     authToken, merchantId;
             Company company = imageSyncService.getCompany(dataAreaId);
             if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             imageSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
             authToken = imageSyncService.getAccessToken();
             merchantId = imageSyncService.getMerchantId(authToken);
-            return imageSyncService.processImagesUpload(Integer.parseInt(itemsPerCall), authToken, merchantId, dataAreaId, company);
+            return imageSyncService.processImagesUpload(Integer.parseInt(itemsPerCall), authToken, merchantId, dataAreaId, company, albumId);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
             System.err.println("An error occurred while uploading the images.");

@@ -7,6 +7,6 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 public interface ProductImagesViewRepository extends JpaRepository<ProductImagesView, Long> {
-    @Query(value = "select * from productimagesview where DataAreaId = ?1 order by ItemId", nativeQuery = true)
+    @Query(value = "select * from productimagesview where DataAreaId = ?1 and isActive = 1 order by ItemId, Priority Asc", nativeQuery = true)
     ProductImagesView[] getProductImagesView(String dataAreaId);
 }
