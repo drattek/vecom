@@ -156,7 +156,7 @@ public class MSBController {
         try {
             String itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall")),
                     dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
-                    albumId = MWUtils.bodyValidation(request.get("albumId")),
+                    albumId = request.get("albumId") == null ? "default" : request.get("albumId"),
                     authToken, merchantId;
             Company company = imageSyncService.getCompany(dataAreaId);
             if(company == null){throw new RuntimeException("The company provided doesn't exist."); }

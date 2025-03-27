@@ -1,8 +1,5 @@
 package com.vegusa.middleware.service;
 
-import com.azure.storage.blob.BlobContainerClientBuilder;
-import com.azure.storage.blob.BlobContainerClient;
-import com.azure.storage.blob.specialized.BlockBlobClient;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.middleware.entity.*;
@@ -21,17 +18,10 @@ import org.springframework.web.reactive.function.client.WebClient;
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
-import java.io.ByteArrayInputStream;
-import java.io.ByteArrayOutputStream;
-import java.io.IOException;
-import java.net.URI;
-import java.net.URISyntaxException;
-import java.net.URL;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
-import java.util.HashMap;
 
 @Service
 public class ImageSyncService {
