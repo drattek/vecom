@@ -3,13 +3,18 @@ package com.vegusa.msb.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.vegusa.middleware.entity.Company;
 import com.vegusa.middleware.entity.SyncPriceList;
+import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerCategoryDto;
+import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
+import com.vegusa.middleware.integrations.jumpseller.service.JumpsellerCategoryService;
+import com.vegusa.middleware.integrations.jumpseller.service.JumpsellerProductService;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Mono;
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
@@ -17,6 +22,7 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.List;
 
 @RestController
 @RequestMapping("msb-ecommerce-middleware")
@@ -27,6 +33,8 @@ public class MSBController {
     private final ItemInventorySyncService itemInventService;
     private final ItemPriceSyncService itemPriceSyncService;
     private final ImageSyncService imageSyncService;
+    private final JumpsellerProductService jumpsellerService;
+    private final JumpsellerCategoryService jumpsellerCategoryService;
 
     private final WebScraperService webScraperService;
 
@@ -37,6 +45,8 @@ public class MSBController {
                          ItemInventorySyncService itemInventService,
                          ItemPriceSyncService itemPriceSyncService,
                          ImageSyncService imageSyncService,
+                         JumpsellerProductService jumpsellerService,
+                         JumpsellerCategoryService jumpsellerCategoryService,
                          WebScraperService webScraperService){
         this.itemSyncService = itemSyncService;
         this.ctrlTableService = ctrlTableService;
@@ -45,6 +55,28 @@ public class MSBController {
         this.itemPriceSyncService = itemPriceSyncService;
         this.imageSyncService = imageSyncService;
         this.webScraperService = webScraperService;
+        this.jumpsellerService = jumpsellerService;
+        this.jumpsellerCategoryService = jumpsellerCategoryService;
+    }
+
+    @GetMapping(value = "/get-products")
+    public Mono<List<JumpsellerProductDto>> getAllProducts(@RequestParam(defaultValue = "1") int page) {
+        try {
+            return jumpsellerService.getAllProducts();
+        } catch (RuntimeException e) {
+            System.err.println(e.getMessage());
+        }
+        return null;
+    }
+
+    @GetMapping(value = "/get-categories")
+    public Mono<JumpsellerCategoryDto[]> getAllCategories(){
+        try {
+            return jumpsellerCategoryService.getAllCategories();
+        } catch (RuntimeException e) {
+            System.err.println(e.getMessage());
+        }
+        return null;
     }
 
     @PostMapping(value = "/update-products")
@@ -98,7 +130,7 @@ public class MSBController {
         }
     }
 
-    @Scheduled(fixedRateString = "${fixedRateRefreshItemInventory.in.milliseconds}", initialDelayString = "${fixedDelayRefreshItemInventory.in.milliseconds}")
+    //@Scheduled(fixedRateString = "${fixedRateRefreshItemInventory.in.milliseconds}", initialDelayString = "${fixedDelayRefreshItemInventory.in.milliseconds}")
     public String updateItemInventory(){
         try {
             System.out.println("Inventory Update Started.");
@@ -118,7 +150,7 @@ public class MSBController {
         }
     }
 
-    @Scheduled(fixedRateString = "${fixedRateRefreshPriceLists.in.milliseconds}", initialDelayString = "${fixedDelayRefreshPriceLists.in.milliseconds}")
+    //@Scheduled(fixedRateString = "${fixedRateRefreshPriceLists.in.milliseconds}", initialDelayString = "${fixedDelayRefreshPriceLists.in.milliseconds}")
     public String updatePriceList() {
         try {
             System.out.println("Price Lists Update Started.");
