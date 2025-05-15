@@ -1,13 +1,17 @@
 package com.vegusa.middleware.integrations.jumpseller.service;
 
+import com.vegusa.middleware.entity.SyncItem;
 import com.vegusa.middleware.integrations.jumpseller.client.product.JumpsellerProduct;
 import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
+import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
+import com.vegusa.middleware.integrations.jumpseller.repository.SyncProductJumpsellerRepository;
+import com.vegusa.middleware.integrations.jumpseller.utils.ProductUtils;
+import com.vegusa.middleware.repository.SyncItemRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigInteger;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.stream.IntStream;
@@ -16,6 +20,15 @@ import java.util.stream.IntStream;
 public class JumpsellerProductService {
 
     private final JumpsellerProduct jumpsellerClient;
+
+    @Autowired
+    private ProductUtils productUtils;
+
+    @Autowired
+    private SyncProductJumpsellerRepository syncProductJumpsellerRepository;
+
+    @Autowired
+    private SyncItemRepository syncItemRepository;
 
     @Autowired
     public JumpsellerProductService(JumpsellerProduct jumpsellerClient) {
@@ -54,6 +67,17 @@ public class JumpsellerProductService {
                         }
                     });
                     return flatList;
+                })
+                .doOnNext(products -> {
+                    for (JumpsellerProductDto product : products){
+                        SyncItem syncItem = syncItemRepository.getSyncItemByName(product.getProduct().getName(), product.getProduct().getSku(), "MSB");
+                        if (syncItem == null){
+                            System.err.println(product.getProduct().getSku());
+                        } else {
+                            SyncJumpsellerProduct productEntity = productUtils.toEntity(product, syncItem.getInternalCode());
+                            syncProductJumpsellerRepository.save(productEntity);
+                        }
+                    }
                 });
     }
 }

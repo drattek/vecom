@@ -1,0 +1,12 @@
+package com.vegusa.middleware.integrations.jumpseller.repository;
+
+import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface SyncProductJumpsellerRepository extends JpaRepository<SyncJumpsellerProduct, Long> {
+    @Query(value = "select * from syncItemJumpseller where DataAreaId = ?1", nativeQuery = true)
+    SyncJumpsellerProduct getSyncProducts(String dataAreaId);
+}

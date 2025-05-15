@@ -17,7 +17,7 @@ public class JumpsellerProductDto {
         this.product = product;
     }
 
-    private static class Product {
+    public static class Product {
         private Long id;
         private String name;
         private String page_title;

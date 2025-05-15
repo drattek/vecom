@@ -14,5 +14,6 @@ public interface SyncItemRepository extends JpaRepository<SyncItem, Long>
     @Query(value = "select * from SyncItem order by InternalCode", nativeQuery = true)
     SyncItem[] getSyncItem();
 
-
+    @Query(value = "select * from syncItem where Name = ?1 and Code = ?2 and DataAreaId = ?3 limit 1", nativeQuery = true)
+    SyncItem getSyncItemByName(String name, String code, String dataAreaId);
 }
