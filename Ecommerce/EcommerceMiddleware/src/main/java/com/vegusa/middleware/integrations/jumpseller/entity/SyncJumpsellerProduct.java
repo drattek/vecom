@@ -121,8 +121,6 @@ public class SyncJumpsellerProduct {
     @Column(name = "CompanyRefRecId")
     private Long companyRefRecId;
 
-    public SyncJumpsellerProduct() {}
-
     public Long getRecId() {
         return recId;
     }

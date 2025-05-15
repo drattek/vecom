@@ -21,7 +21,7 @@ import javax.sql.DataSource;
 @EnableJpaRepositories(
         entityManagerFactoryRef = "dbVegMiddEntityManagerFactory",
         transactionManagerRef = "dbVegMiddTransactionManager",
-        basePackages = {"com.vegusa.middleware.repository"}
+        basePackages = {"com.vegusa.middleware.repository", "com.vegusa.middleware.integrations.jumpseller.repository"}
 )
 public class MWDataBaseConfig {
     @Primary
@@ -37,7 +37,7 @@ public class MWDataBaseConfig {
     entityManagerFactory(EntityManagerFactoryBuilder builder, @Qualifier("vegMiddlewareDataSource") DataSource dataSource) {
         return builder
                 .dataSource(dataSource)
-                .packages("com.vegusa.middleware.entity")
+                .packages("com.vegusa.middleware.entity", "com.vegusa.middleware.integrations.jumpseller.entity")
                 .persistenceUnit("db1")
                 .build();
     }
