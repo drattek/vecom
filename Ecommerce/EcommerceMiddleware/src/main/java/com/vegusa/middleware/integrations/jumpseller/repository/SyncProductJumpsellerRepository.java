@@ -8,5 +8,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public interface SyncProductJumpsellerRepository extends JpaRepository<SyncJumpsellerProduct, Long> {
     @Query(value = "select * from syncItemJumpseller where DataAreaId = ?1", nativeQuery = true)
-    SyncJumpsellerProduct getSyncProducts(String dataAreaId);
+    SyncJumpsellerProduct[] getSyncProducts(String dataAreaId);
+
+    @Query(value = "select * from syncItemJumpseller where ResponseId = ?1 limit 1", nativeQuery = true)
+    SyncJumpsellerProduct getSyncById(Long id);
 }

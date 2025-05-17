@@ -1,8 +1,13 @@
 package com.vegusa.middleware.integrations.jumpseller.utils;
 
 import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
+import com.vegusa.middleware.integrations.jumpseller.dto.Product;
 import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.stereotype.Component;
+
+import java.util.HashMap;
 
 @Component
 public class ProductUtils {
@@ -48,5 +53,59 @@ public class ProductUtils {
         entity.setCompanyRefRecId(1L);
 
         return entity;
+    }
+
+    public JumpsellerProductDto toDto(SyncJumpsellerProduct entity){
+        Product product = new Product();
+        JumpsellerProductDto dto = new JumpsellerProductDto(product);
+
+        dto.getProduct().setName(entity.getName());
+        dto.getProduct().setDescription(entity.getDescription());
+        dto.getProduct().setPage_title(entity.getPageTitle());
+        dto.getProduct().setMeta_description(entity.getMetaDescription());
+        dto.getProduct().setType(entity.getType());
+        dto.getProduct().setDays_to_expire(entity.getDaysToExpire());
+        dto.getProduct().setPrice(entity.getPrice());
+        dto.getProduct().setWeight(entity.getWeight());
+        dto.getProduct().setStock(entity.getStock());
+        dto.getProduct().setStock_unlimited(entity.isStockUnlimited());
+        dto.getProduct().setStock_threshold(entity.getStockThreshold());
+        dto.getProduct().setStock_notification(entity.isStockNotification());
+        dto.getProduct().setCost_per_item(entity.getCostPerItem());
+        dto.getProduct().setCompare_at_price(entity.getCompareAtPrice());
+        dto.getProduct().setMinimum_quantity(entity.getMinimumQuantity());
+        dto.getProduct().setMaximum_quantity(entity.getMaximumQuantity());
+        dto.getProduct().setSku(entity.getSku());
+        dto.getProduct().setBarcode(entity.getBarcode());
+        dto.getProduct().setGoogle_product_category(entity.getGoogleProductCategory());
+        dto.getProduct().setFeatured(entity.isFeatured());
+        dto.getProduct().setShipping_required(entity.isShippingRequired());
+        dto.getProduct().setStatus("available");
+        dto.getProduct().setPackage_format(entity.getPackageFormat());
+        dto.getProduct().setLength(entity.getLength());
+        dto.getProduct().setWidth(entity.getWidth());
+        dto.getProduct().setHeight(entity.getHeight());
+        dto.getProduct().setDiameter(entity.getDiameter());
+        dto.getProduct().setPermalink(entity.getPermalink());
+
+        return dto;
+    }
+
+    public HashMap<String, String> getPrices(JSONArray itemValues) {
+        HashMap<String, String> response = new HashMap<>();
+
+        for (int i = 0; i < itemValues.length(); i++){
+            try {
+                JSONObject obj = itemValues.getJSONObject(i);
+                String code = obj.getString("code");
+                String price = obj.getString("price");
+                if (code != null && price != null) {
+                    response.put(code, price);
+                }
+            } catch (RuntimeException e){
+                System.err.println("An error occurred transforming the price list.");
+            }
+        }
+        return response;
     }
 }

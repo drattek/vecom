@@ -6,8 +6,6 @@ import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
-import java.math.BigInteger;
-
 @Component
 public class JumpsellerProduct {
 
@@ -71,6 +69,9 @@ public class JumpsellerProduct {
                         .bodyValue(product)
                         .retrieve()
                         .bodyToMono(JumpsellerProductDto.class)
+                        .onErrorResume(e -> {
+                            return Mono.empty();
+                        })
         );
     }
 

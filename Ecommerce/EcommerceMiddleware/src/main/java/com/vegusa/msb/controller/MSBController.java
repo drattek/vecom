@@ -9,8 +9,11 @@ import com.vegusa.middleware.integrations.jumpseller.service.JumpsellerCategoryS
 import com.vegusa.middleware.integrations.jumpseller.service.JumpsellerProductService;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
 import reactor.core.publisher.Mono;
@@ -22,7 +25,6 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
-import java.util.List;
 
 @RestController
 @RequestMapping("msb-ecommerce-middleware")
@@ -59,6 +61,7 @@ public class MSBController {
         this.jumpsellerCategoryService = jumpsellerCategoryService;
     }
 
+    /*
     @GetMapping(value = "/get-products")
     public Mono<List<JumpsellerProductDto>> getAllProducts(@RequestParam(defaultValue = "1") int page) {
         try {
@@ -68,11 +71,18 @@ public class MSBController {
         }
         return null;
     }
+    */
 
-    @GetMapping(value = "/get-categories")
-    public Mono<JumpsellerCategoryDto[]> getAllCategories(){
+    @PostMapping(value = "/update-prices-jumpseller")
+    public Mono<ResponseEntity<String>> updatePricesJumpseller (@RequestBody HashMap<String, String> request){
         try {
-            return jumpsellerCategoryService.getAllCategories();
+            System.out.println("Start updating prices");
+            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    products = MWUtils.bodyValidation(request.get("productList")); // Read the array of products uploaded
+            JSONArray productsList = new JSONObject(products).getJSONArray("content"); // Transform the productlist to JsonArray
+            jumpsellerService.updatePrices(productsList, dataAreaId).subscribe();
+
+            return Mono.just(ResponseEntity.accepted().body("Update started"));
         } catch (RuntimeException e) {
             System.err.println(e.getMessage());
         }

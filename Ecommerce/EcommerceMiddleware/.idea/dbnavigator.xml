@@ -32,7 +32,7 @@ select * from productattributevalue where `DataAreaId` = 'MSB'
 select * from interface where `DataAreaId` = 'MSB'
 select * from product where `DataAreaId` = 'MSB'
 select * from category where `DataAreaId` = 'MSB' and `Level` = 1 order by `Name`]]></console>
-      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select code, count(code) as code_count from syncitem group by code order by code_count desc]]></console>
+      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemjumpseller]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">

@@ -1,9 +1,12 @@
 package com.vegusa.middleware.integrations.jumpseller.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
 @Entity
 @Table(name = "syncItemJumpseller")
+@JsonIgnoreProperties(ignoreUnknown = true)
 public class SyncJumpsellerProduct {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -11,108 +14,142 @@ public class SyncJumpsellerProduct {
     private Long recId;
 
     @Column(name = "ResponseId", unique = true)
+    @JsonProperty("id")
     private Long responseId;
 
     @Column(name = "InternalCode")
     private String internalCode;
 
     @Column(name = "Name")
+    @JsonProperty("name")
     private String name;
 
     @Column(name = "PageTitle")
+    @JsonProperty("page_title")
     private String pageTitle;
 
     @Column(name = "Description", columnDefinition = "TEXT")
+    @JsonProperty("description")
     private String description;
 
     @Column(name = "MetaDescription", columnDefinition = "TEXT")
+    @JsonProperty("meta_description")
     private String metaDescription;
 
     @Column(name = "Type")
+    @JsonProperty("type")
     private String type;
 
     @Column(name = "DaysToExpire")
+    @JsonProperty("days_to_expire")
     private int daysToExpire;
 
     @Column(name = "Price")
+    @JsonProperty("price")
     private double price;
 
     @Column(name = "Discount")
+    @JsonProperty("discount")
     private double discount;
 
     @Column(name = "Weight")
+    @JsonProperty("weight")
     private double weight;
 
     @Column(name = "Stock")
+    @JsonProperty("stock")
     private int stock;
 
     @Column(name = "StockUnlimited")
+    @JsonProperty("stock_unlimited")
     private boolean stockUnlimited;
 
     @Column(name = "StockThreshold")
+    @JsonProperty("stock_threshold")
     private int stockThreshold;
 
     @Column(name = "StockNotification")
+    @JsonProperty("stock_notification")
     private boolean stockNotification;
 
     @Column(name = "CostPerItem")
+    @JsonProperty("cost_per_item")
     private Double costPerItem;
 
     @Column(name = "CompareAtPrice")
+    @JsonProperty("compare_at_price")
     private Double compareAtPrice;
 
     @Column(name = "MinimumQuantity")
+    @JsonProperty("minimum_quantity")
     private int minimumQuantity;
 
     @Column(name = "MaximumQuantity")
+    @JsonProperty("maximum_quantity")
     private int maximumQuantity;
 
     @Column(name = "Sku")
+    @JsonProperty("sku")
     private String sku;
 
     @Column(name = "Brand")
+    @JsonProperty("brand")
     private String brand;
 
     @Column(name = "Barcode")
+    @JsonProperty("barcode")
     private String barcode;
 
     @Column(name = "GoogleProductCategory")
+    @JsonProperty("google_product_category")
     private String googleProductCategory;
 
     @Column(name = "Featured")
+    @JsonProperty("featured")
     private boolean featured;
 
     @Column(name = "ShippingRequired")
+    @JsonProperty("shipping_required")
     private boolean shippingRequired;
 
     @Column(name = "ReviewsEnabled")
+    @JsonProperty("reviews_enabled")
     private boolean reviewsEnabled;
 
     @Column(name = "Status")
+    @JsonProperty("status")
     private String status;
 
     @Column(name = "CreatedAt")
+    @JsonProperty("created_at")
     private String createdAt;
 
     @Column(name = "UpdatedAt")
+    @JsonProperty("updated_at")
     private String updatedAt;
 
     @Column(name = "PackageFormat")
+    @JsonProperty("package_format")
     private String packageFormat;
 
     @Column(name = "Length")
+    @JsonProperty("length")
     private double length;
 
     @Column(name = "Width")
+    @JsonProperty("width")
     private double width;
 
     @Column(name = "Height")
+    @JsonProperty("height")
     private double height;
 
     @Column(name = "Diameter")
+    @JsonProperty("diameter")
     private double diameter;
 
     @Column(name = "Permalink")
+    @JsonProperty("permalink")
     private String permalink;
 
     @Column(name = "DataAreaId")
