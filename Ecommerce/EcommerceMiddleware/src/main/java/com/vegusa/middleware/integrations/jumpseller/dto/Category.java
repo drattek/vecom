@@ -1,15 +1,15 @@
 package com.vegusa.middleware.integrations.jumpseller.dto;
 
 public class Category {
-    private long id;
+    private Long id;
     private String name;
     private String description;
-    private long parent_id;
+    private Long parent_id;
     private String permalink;
 
     public  Category(){}
 
-    public Category(long id, String name, String description, long parent_id, String permalink) {
+    public Category(Long id, String name, String description, Long parent_id, String permalink) {
         this.id = id;
         this.name = name;
         this.description = description;
@@ -17,11 +17,11 @@ public class Category {
         this.permalink = permalink;
     }
 
-    public long getId() {
+    public Long getId() {
         return id;
     }
 
-    public void setId(long id) {
+    public void setId(Long id) {
         this.id = id;
     }
 
@@ -41,11 +41,11 @@ public class Category {
         this.description = description;
     }
 
-    public long getParent_id() {
+    public Long getParent_id() {
         return parent_id;
     }
 
-    public void setParent_id(long parent_id) {
+    public void setParent_id(Long parent_id) {
         this.parent_id = parent_id;
     }
 

@@ -195,7 +195,7 @@ public class ItemPriceSyncService {
         JSONObject response = new JSONObject();
         Company company = syncPriceList.getCompany();
         String url = endpointRepo.getEndpointUrl("UPDATE_PRICE_BULK_SET", env.getProperty("integration.company.name"))
-                .replace("{{product_price_list_id}}", syncPriceList.getResponseId());
+                .replace("{{product_price_list_id}}", "416a09d7-aa5f-4c9d-a7b7-2defd2372f7f" /*syncPriceList.getResponseId()*/);
         List<JSONArray> bodyValues = getItemPrices(priceListName, channel, currencyCode, itemsPerCall, company.getId().getDataAreaId());
         for(JSONArray bodyValue: bodyValues){
             try {

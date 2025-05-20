@@ -111,6 +111,8 @@ public class JumpsellerProductService {
                 return jumpsellerClient.updateProduct(syncItem.getResponseId(), productDto)
                         .doOnSuccess(result -> {
                             System.out.println("Updated product " + syncItem.getInternalCode() + " with price " + costItem);
+                            syncItem.setPrice(Double.valueOf(costItem));
+                            syncProductJumpsellerRepository.save(syncItem);
                         })
                         .doOnError(error -> {
                             System.err.println("Error updating product " + syncItem.getInternalCode() + " : " + error.getMessage());

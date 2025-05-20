@@ -64,6 +64,9 @@ public class SyncCategory {
     })
     private Company company;
 
+    @Column(name = "IntegrationCompany")
+    private String integrationCompany;
+
     public Long getRecId() {
         return recId;
     }
@@ -166,4 +169,11 @@ public class SyncCategory {
         this.company = company;
     }
 
+    public String getIntegrationCompany() {
+        return integrationCompany;
+    }
+
+    public void setIntegrationCompany(String integrationCompany) {
+        this.integrationCompany = integrationCompany;
+    }
 }

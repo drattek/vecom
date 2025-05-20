@@ -3,20 +3,13 @@ package com.vegusa.msb.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.vegusa.middleware.entity.Company;
 import com.vegusa.middleware.entity.SyncPriceList;
-import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerCategoryDto;
-import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
-import com.vegusa.middleware.integrations.jumpseller.service.JumpsellerCategoryService;
 import com.vegusa.middleware.integrations.jumpseller.service.JumpsellerProductService;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
-import org.json.JSONArray;
-import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import reactor.core.publisher.Mono;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
@@ -35,8 +28,6 @@ public class MSBController {
     private final ItemInventorySyncService itemInventService;
     private final ItemPriceSyncService itemPriceSyncService;
     private final ImageSyncService imageSyncService;
-    private final JumpsellerProductService jumpsellerService;
-    private final JumpsellerCategoryService jumpsellerCategoryService;
 
     private final WebScraperService webScraperService;
 
@@ -47,8 +38,6 @@ public class MSBController {
                          ItemInventorySyncService itemInventService,
                          ItemPriceSyncService itemPriceSyncService,
                          ImageSyncService imageSyncService,
-                         JumpsellerProductService jumpsellerService,
-                         JumpsellerCategoryService jumpsellerCategoryService,
                          WebScraperService webScraperService){
         this.itemSyncService = itemSyncService;
         this.ctrlTableService = ctrlTableService;
@@ -57,36 +46,6 @@ public class MSBController {
         this.itemPriceSyncService = itemPriceSyncService;
         this.imageSyncService = imageSyncService;
         this.webScraperService = webScraperService;
-        this.jumpsellerService = jumpsellerService;
-        this.jumpsellerCategoryService = jumpsellerCategoryService;
-    }
-
-    /*
-    @GetMapping(value = "/get-products")
-    public Mono<List<JumpsellerProductDto>> getAllProducts(@RequestParam(defaultValue = "1") int page) {
-        try {
-            return jumpsellerService.getAllProducts();
-        } catch (RuntimeException e) {
-            System.err.println(e.getMessage());
-        }
-        return null;
-    }
-    */
-
-    @PostMapping(value = "/update-prices-jumpseller")
-    public Mono<ResponseEntity<String>> updatePricesJumpseller (@RequestBody HashMap<String, String> request){
-        try {
-            System.out.println("Start updating prices");
-            String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
-                    products = MWUtils.bodyValidation(request.get("productList")); // Read the array of products uploaded
-            JSONArray productsList = new JSONObject(products).getJSONArray("content"); // Transform the productlist to JsonArray
-            jumpsellerService.updatePrices(productsList, dataAreaId).subscribe();
-
-            return Mono.just(ResponseEntity.accepted().body("Update started"));
-        } catch (RuntimeException e) {
-            System.err.println(e.getMessage());
-        }
-        return null;
     }
 
     @PostMapping(value = "/update-products")
