@@ -371,6 +371,53 @@ public class ItemSyncService {
             productVersionsArray.put(productVersionObj);
             bodyValues.put("ProductVersions", productVersionsArray);
         }
+
+        // ****************** Brand on customAttribute for Jumpseller **********************************
+        String brand = product.getBrand() != null ? product.getBrand() : "";
+        JSONObject customAttributes = new JSONObject();
+        switch (brand){
+            case "BOBCAT":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "BOBCAT");
+                break;
+            case "DOOSAN FK":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "BOBCAT MH");
+                break;
+            case "CAMSO":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "CAMSO");
+                break;
+            case "FLEXI":
+            case "FELXI":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "FLEXI");
+                break;
+            case "TVH":
+            case "GENERICAS":
+            case "DEKA":
+            case "GEN-APYMSA":
+            case "MAXILEVER":
+            case "APYMSA":
+            case "DONALDSON":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "GENERICAS");
+                break;
+            case "JLG":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "JLG");
+                break;
+            case "NISSAN":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "NISSAN");
+                break;
+            case "RALOYD":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "RAYLOD");
+                break;
+            case "UNICARRIERS":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "UNICARRIERS");
+                break;
+            default:
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "OTRA");
+                break;
+        }
+        if (!customAttributes.isEmpty()){
+            bodyValues.put("CustomAttributeValues", customAttributes);
+        }
+        // *********************************************************************************************
         return bodyValues;
     }
 
