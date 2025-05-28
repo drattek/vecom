@@ -1,10 +1,10 @@
 package com.vegusa.middleware.integrations.jumpseller.service;
 
-import com.vegusa.middleware.entity.SyncCategory;
 import com.vegusa.middleware.integrations.jumpseller.client.category.JumpsellerCategory;
 import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerCategoryDto;
+import com.vegusa.middleware.integrations.jumpseller.entity.SyncCategoryJumpseller;
+import com.vegusa.middleware.integrations.jumpseller.repository.SyncCategoryRepositoryJumpseller;
 import com.vegusa.middleware.integrations.jumpseller.utils.CategoryUtils;
-import com.vegusa.middleware.repository.SyncCategoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;
@@ -18,7 +18,7 @@ public class JumpsellerCategoryService {
     private CategoryUtils categoryUtils;
 
     @Autowired
-    private SyncCategoryRepository syncCategoryRepository;
+    private SyncCategoryRepositoryJumpseller syncCategoryRepository;
 
     @Autowired
     public JumpsellerCategoryService(JumpsellerCategory jumpsellerCategory){
@@ -33,7 +33,7 @@ public class JumpsellerCategoryService {
         return jumpsellerCategory.getAllCategories()
                 .doOnNext(categories -> {
                     for (JumpsellerCategoryDto category : categories) {
-                        SyncCategory categoryEntity = categoryUtils.toEntity(category);
+                        SyncCategoryJumpseller categoryEntity = categoryUtils.toEntity(category);
                         syncCategoryRepository.save(categoryEntity);
                     }
                 })

@@ -18,7 +18,7 @@ public class CategoryJumpsellerController {
     @Autowired
     public CategoryJumpsellerController(){}
 
-    @GetMapping(value = "/get-categories")
+    //@GetMapping(value = "/get-categories")
     public Mono<JumpsellerCategoryDto[]> getCategories (){
         try {
             return jumpsellerCategoryService.getAllCategories();
