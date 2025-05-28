@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.utils.LogsUtils;
 import com.vegusa.msb.repository.ItemInventLocationRepository;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.utils.MWUtils;
@@ -108,6 +109,7 @@ public class ItemPriceSyncService {
     }
 
     public SyncPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
+        System.out.println(name);
         return syncPriceListRepo.getSyncPriceList(name, currencyId, dataAreaId);
     }
 
@@ -317,16 +319,19 @@ public class ItemPriceSyncService {
         return response;
     }
 
-
     private String updatePrices(String accessToken, String url, JSONArray bodyValues) {
         try {
             HttpHeaders headers = MWUtils.getHeaders(accessToken);
+            LogsUtils.generateLog(bodyValues.toString(), "prices");
             return webClient.post()
                     .uri(url)
                     .headers(h -> h.addAll(headers))
                     .bodyValue(bodyValues.toString())
                     .retrieve()
                     .bodyToMono(String.class)
+                    .doOnSuccess(result -> {
+                        LogsUtils.generateLog(result, "price-response");
+                    })
                     .block();
         } catch (RuntimeException e) {
             throw new RuntimeException("An error occurred while updating price list: " + e.getMessage());
@@ -353,6 +358,87 @@ public class ItemPriceSyncService {
              //   System.err.println("Error while saving synchronized item price info.");
             }
         }
+    }
+
+    /* ********** PRICE TEST *************** */
+    public String processPriceListUpdate2(SyncPriceList syncPriceList, String priceListName, String channel, String currencyCode, int itemsPerCall, String accessToken, JSONArray productList)
+            throws RuntimeException, JsonProcessingException {
+        JSONObject response = new JSONObject();
+        Company company = syncPriceList.getCompany();
+        String url = endpointRepo.getEndpointUrl("UPDATE_PRICE_BULK_SET", env.getProperty("integration.company.name"))
+                .replace("{{product_price_list_id}}", syncPriceList.getResponseId());
+        List<JSONArray> bodyValues = getItemPrices2(itemsPerCall, company.getId().getDataAreaId(), productList);
+        System.out.println(bodyValues);
+        for(JSONArray bodyValue: bodyValues){
+            try {
+                String updatedPrices = updatePrices(accessToken, url, bodyValue);
+                saveSyncPriceListInfo(updatedPrices, syncPriceList.getResponseId(), company);
+                response.accumulate("updated", new JSONArray(updatedPrices));
+                System.out.println("A part of the price list was successfully updated.");
+            }catch (RuntimeException e){
+                response.accumulate("error", e.getMessage());
+                System.err.println("An error occurred while updating a part of price list.");
+            }
+        }
+        System.out.println("Price Lists Update Ends.");
+        return response.toString();
+    }
+
+    private List<JSONArray> getItemPrices2(int itemsPerCall, String dataAreaId, JSONArray productList) throws RuntimeException {
+        List<JSONArray> response = new ArrayList<>();
+        JSONArray itemPriceArray = new JSONArray();
+        float shippingCost = 0, auxCost = 0, finalCost = 0;
+        HashMap<String, String> itemCostMap = getItemMap2(productList);
+        HashMap<String, String> itemCategoryMap = getItemMap(productCategoryRepo.getItemCategory(dataAreaId));
+        SyncItem[] syncItems = this.syncItemRepo.getSyncItem();
+        DecimalFormat costFmt = new DecimalFormat("0.00");
+        int countSyncItems = 0, countItemArray = 0;
+        for(SyncItem product : syncItems){
+            countSyncItems++;
+            try {
+                if(itemCostMap.get(product.getInternalCode()) != null && itemCategoryMap.get(product.getInternalCode()) != null
+                        && product.getDefaultVersionId() != null) {
+                    countItemArray++;
+                    auxCost = Float.parseFloat(itemCostMap.get(product.getInternalCode()));
+                    JSONObject itemPrice = new JSONObject();
+                    itemPrice.put("ProductVersionId", product.getDefaultVersionId());
+                    itemPrice.put("gross", costFmt.format(auxCost));
+                    itemPrice.put("priceWithDiscount", costFmt.format(auxCost));
+                    itemPrice.put("tax", 16);
+                    itemPrice.put("net", costFmt.format(auxCost));
+                    itemPriceArray.put(itemPrice);
+                    if (countItemArray % itemsPerCall == 0) {
+                        response.add(itemPriceArray);
+                        itemPriceArray = new JSONArray();
+                        countItemArray = 0;
+                    }
+                }
+                if(countSyncItems == syncItems.length && !itemPriceArray.isEmpty()){
+                    response.add(itemPriceArray);
+                }
+            } catch (RuntimeException e){
+                System.err.println("An error occurred obtaining item price of " + product.getInternalCode() + " " + e.getMessage());
+            }
+        }
+        return response;
+    }
+
+    private HashMap<String, String> getItemMap2(JSONArray itemValues) throws RuntimeException {
+        HashMap<String, String> response = new HashMap<>();
+
+        for (int i = 0; i < itemValues.length(); i++){
+            try {
+                JSONObject obj = itemValues.getJSONObject(i);
+                String code = obj.getString("code");
+                String price = obj.getString("price");
+                if (code != null && price != null) {
+                    response.put(code, price);
+                }
+            } catch (RuntimeException e){
+                System.err.println("Ann error ocurred while saving item value map.");
+            }
+        }
+        return response;
     }
 
 }

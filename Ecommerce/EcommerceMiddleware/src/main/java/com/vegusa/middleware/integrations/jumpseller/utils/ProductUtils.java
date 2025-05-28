@@ -1,16 +1,35 @@
 package com.vegusa.middleware.integrations.jumpseller.utils;
 
+import com.vegusa.middleware.entity.ProductAttributeValue;
 import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
 import com.vegusa.middleware.integrations.jumpseller.dto.Product;
 import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
+import com.vegusa.middleware.repository.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.util.HashMap;
+import java.util.*;
+import java.util.stream.Collectors;
 
 @Component
 public class ProductUtils {
+
+    @Autowired
+    private ProductAttributeRepository productAttributeRepository;
+
+    @Autowired
+    private ProductAttributeHierarchyRepository productAttributeHierarchyRepository;
+
+    @Autowired
+    private InterfaceHierarchyRepository interfaceHierarchyRepository;
+
+    @Autowired
+    private InterfaceItemsRepository interfaceItemsRepository;
+
+    @Autowired
+    private ProductAttributeValueRepository productAttributeValueRepository;
 
     public SyncJumpsellerProduct toEntity(JumpsellerProductDto dto, String internalCode){
         SyncJumpsellerProduct entity = new SyncJumpsellerProduct();
@@ -107,5 +126,95 @@ public class ProductUtils {
             }
         }
         return response;
+    }
+
+    public String generateName(HashMap<String, String> data){
+        String name = data.get("SHORT_DESCRIPTION");
+        boolean hasBrand = name.contains(data.get("BRAND_ID"));
+        boolean hasPartNumber = name.contains(data.get("PART_NUMBER"));
+
+        if (!hasBrand && !Objects.equals(data.get("BRAND_ID"), "")) {
+            name = !Objects.equals(name, "") ? name + " " + data.get("BRAND_ID") : data.get("BRAND_ID");
+        }
+        if (!hasPartNumber && !Objects.equals(data.get("PART_NUMBER"), "")) {
+            name = !Objects.equals(name, "") ? name + " " + data.get("PART_NUMBER") : data.get("PART_NUMBER");
+        }
+        return name;
+    }
+
+    public HashMap<String, String> getAttributes(SyncJumpsellerProduct entity, String dataAreaId){
+        List<String> attributes = productAttributeRepository.getProductAttributeId(dataAreaId);
+        HashMap<String, String> values = new HashMap<>();
+        for (String attribute : attributes) {
+            List<String> hierarchies = productAttributeHierarchyRepository.getAttributeHierarchy(attribute, dataAreaId);
+            if (hierarchies.isEmpty()) {
+                hierarchies = interfaceHierarchyRepository.getInterfaceHierarchy(dataAreaId);
+            }
+            boolean skipNull = Boolean.parseBoolean(interfaceItemsRepository.getSkipNull(entity.getInternalCode(), dataAreaId));
+
+            String responseAttribute = "";
+            if (skipNull){
+                String priorityList = hierarchies.stream()
+                        .map(s -> "'" + s + "'")
+                        .collect(Collectors.joining(","));
+                ProductAttributeValue value = productAttributeValueRepository.getProductAttributes(
+                        attribute,
+                        entity.getInternalCode(),
+                        hierarchies,
+                        dataAreaId,
+                        priorityList
+                );
+                if (value != null) responseAttribute = value.getValue();
+            } else {
+                ProductAttributeValue value = productAttributeValueRepository.getProductAttributeValue(
+                        attribute,
+                        entity.getInternalCode(),
+                        hierarchies.get(0),
+                        dataAreaId
+                );
+                if (value != null) responseAttribute = value.getValue();
+            }
+            values.put(attribute, responseAttribute);
+        }
+
+        return values;
+    }
+
+    public JumpsellerProductDto getProduct(HashMap<String, String> values, SyncJumpsellerProduct entity){
+        Product product = new Product();
+        String name = generateName(values);
+        String shortDescription = values.get("PRODUCT_NAME") + " - " + name;
+
+        product.setSku(values.get("PART_NUMBER"));
+        product.setName(name);
+        product.setBrand(values.get("BRAND_ID"));
+        product.setPrice(entity.getPrice());
+        String description = "-- TIENDA VEGUSA MAQUINARIA, DISTRUIBIDOR AUTORIZADO UNICARRIERS, BOBCAT, JLG, FLEXI. -- " + (!values.get("META_DESCRIPTION").isBlank() ? values.get("META_DESCRIPTION") : shortDescription) + ". " + values.get("CROSS_REFERENCES");
+        product.setDescription(description);
+        product.setPage_title(!values.get("SEO_TITLE").isBlank() ? values.get("SEO_TITLE") : name);
+        product.setMeta_description(!values.get("META_DESCRIPTION").isBlank() ? values.get("META_DESCRIPTION") : shortDescription);
+        double weight = Double.parseDouble(!values.get("WEIGHT").isBlank() ? values.get("WEIGHT") : "0.0");
+        product.setWeight(Math.max(weight, 1.0));
+        product.setStatus("available");
+        product.setLength(Double.parseDouble(!values.get("LENGTH").isBlank() ? values.get("LENGTH") : "0.0"));
+        product.setWidth(Double.parseDouble(!values.get("WIDTH").isBlank() ? values.get("WIDTH") : "0.0"));
+        product.setHeight(Double.parseDouble(!values.get("HEIGHT").isBlank() ? values.get("HEIGHT") : "0.0"));
+
+        return new JumpsellerProductDto(product);
+    }
+
+    public List<List<String>> getChunks(SyncJumpsellerProduct[] products, int size){
+        List<List<String>> chunks = new ArrayList<>();
+        List<SyncJumpsellerProduct> products_array = Arrays.asList(products);
+
+        for (int i = 0; i < products_array.size(); i += size) {
+            List<String> chunk = products_array.subList(i, Math.min(i + size, products_array.size()))
+                    .stream()
+                    .map(product -> product.getResponseId().toString())
+                    .collect(Collectors.toList());
+            chunks.add(chunk);
+        }
+
+        return chunks;
     }
 }

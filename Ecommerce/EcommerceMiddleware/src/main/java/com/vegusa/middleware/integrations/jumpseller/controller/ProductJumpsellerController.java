@@ -19,7 +19,7 @@ import java.util.HashMap;
 public class ProductJumpsellerController {
 
     @Autowired
-    JumpsellerProductService jumpsellerProductService;
+    private JumpsellerProductService jumpsellerProductService;
 
     @Autowired
     public ProductJumpsellerController(){}
@@ -40,11 +40,27 @@ public class ProductJumpsellerController {
         return null;
     }
 
+    @PostMapping(value = "/sync-brands")
+    public Mono<ResponseEntity<String>> updateBrands(){
+        try {
+            System.out.println("Start updating brands");
+            jumpsellerProductService.syncBrands().subscribe();
+
+            return Mono.just(ResponseEntity.accepted().body("Update started"));
+        } catch (RuntimeException e){
+            System.err.println(e.getMessage());
+        }
+        return null;
+    }
+
     @PostMapping(value = "/sync-products")
     public Mono<ResponseEntity<String>> synProductJumpseller (@RequestBody HashMap<String, String> request){
         try {
             System.out.println("Start sync products");
             String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId"));
+            jumpsellerProductService.syncProducts(dataAreaId).subscribe();
+
+            return Mono.just(ResponseEntity.accepted().body("Syn started"));
         } catch (RuntimeException e) {
             System.err.println(e.getMessage());
         }

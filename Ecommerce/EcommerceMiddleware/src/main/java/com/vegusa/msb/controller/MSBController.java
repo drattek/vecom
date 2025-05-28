@@ -3,9 +3,10 @@ package com.vegusa.msb.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.vegusa.middleware.entity.Company;
 import com.vegusa.middleware.entity.SyncPriceList;
-import com.vegusa.middleware.integrations.jumpseller.service.JumpsellerProductService;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.*;
@@ -95,6 +96,41 @@ public class MSBController {
             };
         } catch (RuntimeException e){
             System.err.println("An error occurred while updating interface information.");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
+        }
+    }
+
+    @PostMapping(value = "/update-pricelist")
+    public String updatePriceListInterface(@RequestBody HashMap<String, String> request) {
+        try {
+            System.out.println("Price Lists Update Started.");
+            SyncPriceList priceList;
+            String authToken, merchantId, fullPriceListName, currencyId,
+                    dataAreaId = "MSB", //MWUtils.bodyValidation(request.get("dataAreaId")),
+                    priceListName = "NORMAL", //MWUtils.bodyValidation(request.get("priceListName")),
+                    description = "Lista de precios Normal Jumpseller.", //MWUtils.bodyValidation(request.get("priceListDescription")),
+                    channel = "JUMPSELLER", //MWUtils.bodyValidation(request.get("channel")), //"MERCADO_LIBRE"
+                    currencyCode = "MXN", //MWUtils.bodyValidation(request.get("currencyCode"));
+                    products = MWUtils.bodyValidation(request.get("productList"));
+            JSONArray productsList = new JSONObject(products).getJSONArray("content");
+            int itemsPerCall = itemInventService.getProductsPerCall("UPDATE_PRICE_PRODUCTS_PER_CALL");//MWUtils.bodyValidation(request.get("itemsPerCall"));
+            Company company = itemPriceSyncService.getCompany(dataAreaId);
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
+            itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            //itemPriceSyncService.setAddFixedCostParameters("ADDITIONAL_FIXED_COST_LL", "ADDITIONAL_FIXED_COST_CL", "ADDITIONAL_FIXED_COST_UL", dataAreaId);
+            authToken = itemPriceSyncService.getAccessToken();
+            merchantId = itemPriceSyncService.getMerchantId(authToken);
+            fullPriceListName = dataAreaId + "_" + priceListName + "_" + channel + "_" + currencyCode;
+            currencyId = itemPriceSyncService.getCurrencyId(currencyCode, authToken, merchantId);
+            priceList = itemPriceSyncService.getSyncPriceList(fullPriceListName, currencyId, dataAreaId);
+            if (priceList == null) {
+                String createdPriceList = itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, authToken, merchantId);
+                priceList = itemPriceSyncService.savePriceListInfo(createdPriceList, company);
+            }
+            return itemPriceSyncService.processPriceListUpdate2(priceList, priceListName, channel, currencyCode, itemsPerCall, authToken, productsList);
+        } catch(RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
+                BadPaddingException | InvalidKeyException | JsonProcessingException e){
+            System.err.println("An error occurred while creating the price list.");
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
     }

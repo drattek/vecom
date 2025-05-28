@@ -14,6 +14,9 @@ public interface ProductAttributeValueRepository extends JpaRepository<ProductAt
     @Query(value = "select * from productattributevalue where ProductAttributeId = ?1 and ItemId = ?2 and InterfaceId = ?3 and DataAreaId = ?4", nativeQuery = true)
     ProductAttributeValue getProductAttributeValue(String productAttributeId, String ItemId, String InterfaceId, String DataAreaId);
 
+    @Query(value = "select * from productattributevalue where ProductAttributeId = ?1 and ItemId = ?2 and InterfaceId IN (?3) and DataAreaId = ?4 order by FIELD(InterfaceId, ?5) limit 1", nativeQuery = true)
+    ProductAttributeValue getProductAttributes(String productAttributeId, String itemId, List<String> interfaceIds, String dataAreaId, String priorityList);
+
     @Query(value = "select UpdatedAt from productattributevalue where ItemId = ?1 and DataAreaId = ?2 order by UpdatedAt desc limit 1", nativeQuery = true)
     Date getUpdatedDate(String itemId, String dataAreaId);
 

@@ -152,7 +152,7 @@ public class ItemInventorySyncService {
         List<JSONArray> auxRequest;
         String updateStockResp;
         for(SyncWarehouse syncWarehouse : syncWarehouses){
-            try{
+            try {
                 auxUrl = url.replace("{{warehouse_id}}", syncWarehouse.getIdEcom());
                 auxItemInventory = itemInventLocRepo.getItemInventLocation(syncWarehouse.getName());
                 auxRequest = getRequestItemInventory(auxItemInventory, syncWarehouse.getName(), itemsPerCall, dataAreaId);
@@ -167,7 +167,7 @@ public class ItemInventorySyncService {
                         System.err.println("Error while updating stock to " + syncWarehouse.getName() + " - " + e.getMessage());
                     }
                 }
-            }catch (RuntimeException e){
+            } catch (RuntimeException e) {
                 System.err.println(e.getMessage());
             }
         }
