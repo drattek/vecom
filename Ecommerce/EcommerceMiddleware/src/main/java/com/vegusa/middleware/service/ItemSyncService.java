@@ -118,14 +118,18 @@ public class ItemSyncService {
         String urlUpdateProduct = endpointRepo.getEndpointUrl("UPDATE_PRODUCT", env.getProperty("integration.company.name"));
         InterfaceItems auxIProduct = new InterfaceItems();
         List<String> itemIds = attributeValueRepo.getProdAttValueItemIds(dataAreaId);
+        System.out.println("Total items:" + itemIds.size());
         for(String itemId : itemIds){
             try {
                 SyncItem syncItem = syncItemRepo.getSyncItem(itemId, dataAreaId);
                 getProductToUpdate(auxIProduct, itemId, dataAreaId);
                 SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                String url = (syncItem == null) ? "not synchronize" : urlUpdateProduct.replace("{{product_id}}", syncItem.getResponseId());
+                /*
                 String url = (syncItem == null) ? urlCreateProduct :
                     (formatter.parse(auxIProduct.getUpdatedAt().toString()).after(formatter.parse(syncItem.getUpdatedAt().toString())))
                                 ? urlUpdateProduct.replace("{{product_id}}", syncItem.getResponseId()) : "not synchronize";
+                */
                 if(!url.equals("not synchronize")){
                     String brandId = getBrandID(auxIProduct.getBrand(), authToken, merchantId, dataAreaId, company);
                     ArrayList<List<String>> categoryIDs = getCategoryIDs(itemId, authToken, merchantId, dataAreaId, company);
@@ -137,7 +141,7 @@ public class ItemSyncService {
                     response.accumulate("synchronized", "The product " + itemId + " doesn't require to be updated.");
                     System.out.println("The product " + itemId + " doesn't require to be synchronized.");
                 }
-            } catch  (RuntimeException | ParseException | JsonProcessingException e) {
+            } catch  (RuntimeException | JsonProcessingException e) {
                 System.err.println("An error occurred while synchronizing the product " + itemId + " " +  e.getMessage());
                 response.accumulate("error", "An error occurred while updating the product " + itemId + " " + e.getMessage());
                 if(e.getMessage().contains("401") || e.getMessage().contains("404")){
@@ -458,9 +462,10 @@ public class ItemSyncService {
         JSONObject productVersionObj = new JSONObject();
         DecimalFormat weightFmt = new DecimalFormat("0.00");
         productVersionObj.put("_id", syncItem.getDefaultVersionId());
-        if(!Objects.equals(product.getWeight(), "")){
-            productVersionObj.put("weight", weightFmt.format(Float.parseFloat(product.getWeight()) / 2.20462));
-        }
+        /* ****************** WEIGHT CORRECTION FOR JUMPSELLER *********************************** */
+        double weight = Double.parseDouble((product.getWeight() == null || product.getWeight().isBlank()) ? "0.0" : product.getWeight()) / 2.20462;
+        productVersionObj.put("weight", Math.max(weight, 1.00));
+        /* *************************************************************************************** */
         if(!Objects.equals(product.getLength(), "")){
             productVersionObj.put("length", weightFmt.format(Float.parseFloat(product.getLength())));
         }
