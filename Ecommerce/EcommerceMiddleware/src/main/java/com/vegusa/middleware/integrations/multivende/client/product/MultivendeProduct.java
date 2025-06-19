@@ -67,14 +67,21 @@ public class MultivendeProduct {
         );
     }
 
-    public Mono<Product> updateProduct(Product product, String productId){
+    public Mono<JsonNode> updateProduct(Product product, String productId){
         return multivendeClient.executeRateLimited(() ->
                 multivendeClient.getClient()
                         .put()
                         .uri("/api/products/{product_id}", productId)
                         .bodyValue(product)
                         .retrieve()
-                        .bodyToMono(Product.class)
+                        .bodyToMono(JsonNode.class)
+                        .doOnSuccess(ignored -> {
+                            System.out.println("id: " + productId);
+                            System.out.println("Updated item: " + product.getInternalCode() + " - " + product.getCode());
+                        })
+                        .doOnError(error -> {
+                            System.err.println(error.getMessage());
+                        })
         );
     }
 

@@ -1,4 +1,4 @@
-package com.vegusa.middleware.integrations.multivende.entity;
+package com.vegusa.middleware.entity;
 
 import jakarta.persistence.*;
 

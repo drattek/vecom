@@ -3,7 +3,7 @@ package com.vegusa.middleware.integrations.multivende.client;
 import com.vegusa.middleware.entity.AuthTokenParameter;
 import com.vegusa.middleware.integrations.multivende.dto.OAuthDto;
 import com.vegusa.middleware.integrations.multivende.dto.TokenRequest;
-import com.vegusa.middleware.integrations.multivende.oauth.TokenStorage;
+import com.vegusa.middleware.integrations.multivende.oauth.TokenStorageMultivende;
 import com.vegusa.middleware.repository.AuthTokenParameterRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -13,9 +13,11 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.reactive.function.client.ClientRequest;
 import org.springframework.web.reactive.function.client.ExchangeFilterFunction;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
 import reactor.core.publisher.Mono;
 import reactor.core.publisher.Sinks;
 import reactor.core.scheduler.Schedulers;
+import reactor.util.retry.Retry;
 
 import java.time.Duration;
 import java.util.Queue;
@@ -24,7 +26,7 @@ import java.util.function.Supplier;
 
 @Component
 public class MultivendeClient {
-    private final TokenStorage tokenStorage;
+    private final TokenStorageMultivende tokenStorageMultivende;
     private final WebClient.Builder webClientBuilder;
     private WebClient webClient;
 
@@ -39,14 +41,23 @@ public class MultivendeClient {
     @Value("${multivende.api.base-url}")
     private String baseUrl;
 
-    public MultivendeClient(WebClient.Builder webClientBuilder, TokenStorage tokenStorage) {
+    public MultivendeClient(WebClient.Builder webClientBuilder, TokenStorageMultivende tokenStorageMultivende) {
         this.webClientBuilder = webClientBuilder;
-        this.tokenStorage = tokenStorage;
+        this.tokenStorageMultivende = tokenStorageMultivende;
     }
 
     @PostConstruct
     public void init() {
+        /*
+        HttpClient httpClient = HttpClient.create()
+                .wiretap("reactor.netty.http.client.HttpClient",
+                        LogLevel.DEBUG,
+                        AdvancedByteBufFormat.TEXTUAL);
+
+         */
+
         this.webClient = webClientBuilder
+                //.clientConnector(new ReactorClientHttpConnector(httpClient))
                 .baseUrl(baseUrl)
                 .defaultHeaders(headers -> {
                     headers.setContentType(MediaType.APPLICATION_JSON);
@@ -57,7 +68,7 @@ public class MultivendeClient {
 
         // Procesar una solicitud cada 250ms = 4 por segundo
         reactor.core.publisher.Flux.interval(Duration.ofMillis(250))
-                .onBackpressureDrop()
+                .onBackpressureBuffer()
                 .publishOn(Schedulers.boundedElastic())
                 .subscribe(tick -> {
                     Supplier<Mono<?>> task = requestQueue.poll();
@@ -77,19 +88,32 @@ public class MultivendeClient {
         requestQueue.offer(() ->
                 ensureValidAccessToken()
                         .then(waitForRefresh())
-                        .then(supplier.get())
+                        .then(supplier.get()
+                                .retryWhen(Retry.backoff(3, Duration.ofSeconds(2))
+                                        .filter(this::isRetryable)
+                                        .onRetryExhaustedThrow((retryBackoffSpec, retrySignal) -> retrySignal.failure())
+                                )
+                        )
                         .doOnNext(sink::tryEmitValue)
                         .doOnError(sink::tryEmitError)
         );
         return sink.asMono();
     }
 
+    private boolean isRetryable(Throwable throwable) {
+        if (throwable instanceof WebClientResponseException e) {
+            int status = e.getStatusCode().value();
+            return (status >= 500 && status < 600) || (status >= 400 && status < 500 && status != 401 && status != 403);
+        }
+        return false;
+    }
+
     public Mono<Void> ensureValidAccessToken() {
-        if (!tokenStorage.isAccessTokenExpired()) {
+        if (!tokenStorageMultivende.isAccessTokenExpired()) {
             return Mono.empty(); // token aún es válido
         }
 
-        if (tokenStorage.isRefreshTokenExpired()) {
+        if (tokenStorageMultivende.isRefreshTokenExpired()) {
             System.err.println("Ambos token han vencido. Se require una autenticación manual");
             return Mono.empty();
         }
@@ -111,7 +135,6 @@ public class MultivendeClient {
         Mono<Void> refresh = performRefreshToken()
                 .doOnTerminate(() -> {
                     isRefreshing = false;
-                    System.out.println("Access token refreshed");
                 })
                 .cache(); // Importante: compartir el mismo Mono con todos los que esperen
 
@@ -119,7 +142,7 @@ public class MultivendeClient {
         return refresh;
     }
 
-    private Mono<Void> performAuthentication() {
+    public Mono<Void> performAuthentication() {
         AuthTokenParameter tokenParameter = authTokenParameterRepository.getTokenInfoParameters("MULTIVENDE");
 
         TokenRequest request = new TokenRequest();
@@ -133,7 +156,7 @@ public class MultivendeClient {
                 .body(request, TokenRequest.class)
                 .retrieve()
                 .bodyToMono(OAuthDto.class)
-                .doOnNext(tokenStorage::save)
+                .doOnNext(tokenStorageMultivende::save)
                 .then(); // Convertir a Mono<Void> para simplificar
     }
 
@@ -141,24 +164,24 @@ public class MultivendeClient {
         AuthTokenParameter tokenParameter = authTokenParameterRepository.getTokenInfoParameters("MULTIVENDE");
 
         TokenRequest request = new TokenRequest();
-        request.setRefresh_token(tokenStorage.getRefreshToken());
+        request.setRefresh_token(tokenStorageMultivende.getRefreshToken());
         request.setClient_id(tokenParameter.getClientId());
         request.setClient_secret(tokenParameter.getClientSecret());
         request.setGrant_type("refresh_token");
 
+        System.out.println("Refresh token: " + tokenStorageMultivende.getRefreshToken());
         return webClient.post()
                 .uri("/oauth/access-token")
                 .bodyValue(request)
                 .retrieve()
                 .bodyToMono(OAuthDto.class)
-                .doOnNext(tokenStorage::save)
+                .doOnNext(tokenStorageMultivende::save)
                 .then(); // Convertimos a Mono<Void> para simplificar
     }
 
     private ExchangeFilterFunction addAuthHeaderFilter() {
         return ExchangeFilterFunction.ofRequestProcessor(clientRequest -> {
-            String token = tokenStorage.getAccessToken();
-            System.out.println("token header: " + token);
+            String token = tokenStorageMultivende.getAccessToken();
             if (token != null && !token.isBlank()) {
                 ClientRequest newRequest = ClientRequest.from(clientRequest)
                         .headers(headers -> headers.setBearerAuth(token))
@@ -169,7 +192,7 @@ public class MultivendeClient {
         });
     }
 
-    public TokenStorage getTokenStorage(){
-        return tokenStorage;
+    public TokenStorageMultivende getTokenStorage(){
+        return tokenStorageMultivende;
     }
 }

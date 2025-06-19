@@ -2,8 +2,8 @@ package com.vegusa.middleware.integrations.multivende.oauth;
 
 import com.vegusa.middleware.entity.AuthTokenParameter;
 import com.vegusa.middleware.integrations.multivende.dto.OAuthDto;
-import com.vegusa.middleware.integrations.multivende.entity.Token;
-import com.vegusa.middleware.integrations.multivende.repository.TokenRepository;
+import com.vegusa.middleware.entity.Token;
+import com.vegusa.middleware.repository.TokenRepository;
 import com.vegusa.middleware.repository.AuthTokenParameterRepository;
 import com.vegusa.middleware.utils.EncryptUtils;
 import jakarta.annotation.PostConstruct;
@@ -23,7 +23,7 @@ import java.text.SimpleDateFormat;
 import java.time.Instant;
 
 @Component
-public class TokenStorage {
+public class TokenStorageMultivende {
     private volatile String accessToken;
     private volatile String refreshToken;
     private volatile Instant expiresAt;
@@ -36,7 +36,7 @@ public class TokenStorage {
     @Autowired
     private EncryptUtils encryptUtils;
 
-    public TokenStorage(TokenRepository tokenRepository, AuthTokenParameterRepository authTokenParameterRepository){
+    public TokenStorageMultivende(TokenRepository tokenRepository, AuthTokenParameterRepository authTokenParameterRepository){
         this.tokenRepository = tokenRepository;
         this.authTokenParameterRepository = authTokenParameterRepository;
         this.algorithm = "AES/CBC/PKCS5Padding";
@@ -108,7 +108,6 @@ public class TokenStorage {
     }
 
     public boolean isAccessTokenExpired(){
-        System.out.println("expires in: " + this.expiresAt.toString());
         return this.expiresAt == null | Instant.now().isAfter(this.expiresAt.minusSeconds(60));
     }
 

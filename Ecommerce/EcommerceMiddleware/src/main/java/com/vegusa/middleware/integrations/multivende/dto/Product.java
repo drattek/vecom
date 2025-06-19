@@ -1,106 +1,76 @@
 package com.vegusa.middleware.integrations.multivende.dto;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
+
+import java.math.BigDecimal;
+import java.util.HashMap;
+
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class Product {
+    @JsonProperty("_id")
     private String _id;
+    @JsonProperty("name")
     private String name;
+    @JsonProperty("code")
     private String code;
+    @JsonProperty("alias")
+    private String alias;
+    @JsonProperty("description")
     private String description;
+    @JsonProperty("htmlDescription")
     private String htmlDescription;
+    @JsonProperty("shortDescription")
     private String shortDescription;
+    @JsonProperty("model")
     private String model;
+    @JsonProperty("internalCode")
+    private String internalCode;
+    @JsonProperty("createdAt")
     private String createdAt;
+    @JsonProperty("updatedAt")
     private String updatedAt;
+    @JsonProperty("status")
     private String status;
+    @JsonProperty("BrandId")
     private String brandId;
+    @JsonProperty("SeasonId")
     private String seasonId;
+    @JsonProperty("CodeTypeId")
     private String codeTypeId;
+    @JsonProperty("ProductTypeId")
     private String productTypeId;
+    @JsonProperty("ProductCategoryId")
     private String productCategoryId;
+    @JsonProperty("InternalCodeTypeId")
     private String internalCodeTypeId;
+    @JsonProperty("WarrantyId")
+    private String warrantyId;
+    @JsonProperty("InventoryTypeId")
+    private String inventoryTypeId;
+    @JsonProperty("otherProductCategories")
+    private String[] otherProductCategories;
     private Brand brand;
     private Season season;
     private Category productCategory;
     private Tag[] productTags;
+    @JsonProperty("ProductVersions")
     private Version[] productVersions;
-
-    public static class Version {
-        private String _id;
-        private String code;
-        private Integer position;
-        private String productId;
-        private Size size;
-        private Color color;
-
-        public Version() {}
-
-        public Version(String _id, String code, Integer position, String productId, Size size, Color color) {
-            this._id = _id;
-            this.code = code;
-            this.position = position;
-            this.productId = productId;
-            this.size = size;
-            this.color = color;
-        }
-
-        public String get_id() {
-            return _id;
-        }
-
-        public void set_id(String _id) {
-            this._id = _id;
-        }
-
-        public String getCode() {
-            return code;
-        }
-
-        public void setCode(String code) {
-            this.code = code;
-        }
-
-        public Integer getPosition() {
-            return position;
-        }
-
-        public void setPosition(Integer position) {
-            this.position = position;
-        }
-
-        public String getProductId() {
-            return productId;
-        }
-
-        public void setProductId(String productId) {
-            this.productId = productId;
-        }
-
-        public Size getSize() {
-            return size;
-        }
-
-        public void setSize(Size size) {
-            this.size = size;
-        }
-
-        public Color getColor() {
-            return color;
-        }
-
-        public void setColor(Color color) {
-            this.color = color;
-        }
-    }
+    @JsonProperty("CustomAttributeValues")
+    private HashMap<String, String> customAttributeValues;
 
     public Product() {}
 
-    public Product(String _id, String name, String code, String description, String htmlDescription, String shortDescription, String model, String createdAt, String updatedAt, String status, String brandId, String seasonId, String codeTypeId, String productTypeId, String productCategoryId, String internalCodeTypeId, Brand brand, Season season, Category productCategory, Tag[] productTags, Version[] productVersions) {
+    public Product(String _id, String name, String code, String alias, String description, String htmlDescription, String shortDescription, String model, String internalCode, String createdAt, String updatedAt, String status, String brandId, String seasonId, String codeTypeId, String productTypeId, String productCategoryId, String internalCodeTypeId, String warrantyId, String inventoryTypeId, String[] otherProductCategories, Brand brand, Season season, Category productCategory, Tag[] productTags, Version[] productVersions, HashMap<String, String> customAttributeValues) {
         this._id = _id;
         this.name = name;
         this.code = code;
+        this.alias = alias;
         this.description = description;
         this.htmlDescription = htmlDescription;
         this.shortDescription = shortDescription;
         this.model = model;
+        this.internalCode = internalCode;
         this.createdAt = createdAt;
         this.updatedAt = updatedAt;
         this.status = status;
@@ -110,11 +80,15 @@ public class Product {
         this.productTypeId = productTypeId;
         this.productCategoryId = productCategoryId;
         this.internalCodeTypeId = internalCodeTypeId;
+        this.warrantyId = warrantyId;
+        this.inventoryTypeId = inventoryTypeId;
+        this.otherProductCategories = otherProductCategories;
         this.brand = brand;
         this.season = season;
         this.productCategory = productCategory;
         this.productTags = productTags;
         this.productVersions = productVersions;
+        this.customAttributeValues = customAttributeValues;
     }
 
     public String get_id() {
@@ -139,6 +113,14 @@ public class Product {
 
     public void setCode(String code) {
         this.code = code;
+    }
+
+    public String getAlias() {
+        return alias;
+    }
+
+    public void setAlias(String alias) {
+        this.alias = alias;
     }
 
     public String getDescription() {
@@ -173,6 +155,14 @@ public class Product {
         this.model = model;
     }
 
+    public String getInternalCode() {
+        return internalCode;
+    }
+
+    public void setInternalCode(String internalCode) {
+        this.internalCode = internalCode;
+    }
+
     public String getCreatedAt() {
         return createdAt;
     }
@@ -195,6 +185,30 @@ public class Product {
 
     public void setStatus(String status) {
         this.status = status;
+    }
+
+    public String getWarrantyId() {
+        return warrantyId;
+    }
+
+    public void setWarrantyId(String warrantyId) {
+        this.warrantyId = warrantyId;
+    }
+
+    public String getInventoryTypeId() {
+        return inventoryTypeId;
+    }
+
+    public void setInventoryTypeId(String inventoryTypeId) {
+        this.inventoryTypeId = inventoryTypeId;
+    }
+
+    public String[] getOtherProductCategories() {
+        return otherProductCategories;
+    }
+
+    public void setOtherProductCategories(String[] otherProductCategories) {
+        this.otherProductCategories = otherProductCategories;
     }
 
     public String getBrandId() {
@@ -283,5 +297,13 @@ public class Product {
 
     public void setProductVersions(Version[] productVersions) {
         this.productVersions = productVersions;
+    }
+
+    public HashMap<String, String> getCustomAttributeValues() {
+        return customAttributeValues;
+    }
+
+    public void setCustomAttributeValues(HashMap<String, String> customAttributeValues) {
+        this.customAttributeValues = customAttributeValues;
     }
 }

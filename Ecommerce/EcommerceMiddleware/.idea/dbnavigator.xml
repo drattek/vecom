@@ -24,22 +24,28 @@
   </component>
   <component name="DBNavigator.Project.DatabaseConsoleManager">
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2">
-      <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from synccategory order by `RecId` desc
-select * from category where `Level` = 1 order by `RecId` asc]]></console>
-      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemjumpseller]]></console>
+      <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool" />
+      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitem where `Code` = '59499FB20A'
+select * from integration_parameters
+select * from integration_tokens
+
+update integration_parameters set store_url = 'https://vecom.odo.mx/msb-ecommerce-middleware/mercadolibre/callback' where id = 1]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
     <last-used-providers />
   </component>
   <component name="DBNavigator.Project.DatabaseFileManager">
-    <open-files />
+    <open-files>
+      <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql test" />
+    </open-files>
   </component>
   <component name="DBNavigator.Project.DatabaseSessionManager">
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" />
   </component>
   <component name="DBNavigator.Project.DatasetFilterManager">
     <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.authtokenparameter" active-filter-id="" />
+    <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.productimagesview" active-filter-id="" />
   </component>
   <component name="DBNavigator.Project.ExecutionManager">
     <retain-sticky-names value="false" />
@@ -84,7 +90,7 @@ select * from category where `Level` = 1 order by `RecId` asc]]></console>
           <token-type value="" />
           <token-config-file value="" />
           <token-profile value="" />
-          <session-user value="vecomsqladmin@207.248.114.42" />
+          <session-user value="vecomsqladmin@189.206.52.13" />
         </database>
         <properties>
           <auto-commit value="true" />

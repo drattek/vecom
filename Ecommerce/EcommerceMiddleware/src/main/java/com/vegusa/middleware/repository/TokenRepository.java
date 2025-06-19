@@ -1,6 +1,6 @@
-package com.vegusa.middleware.integrations.multivende.repository;
+package com.vegusa.middleware.repository;
 
-import com.vegusa.middleware.integrations.multivende.entity.Token;
+import com.vegusa.middleware.entity.Token;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.Optional;

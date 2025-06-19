@@ -14,7 +14,7 @@ public interface ProductAttributeValueRepository extends JpaRepository<ProductAt
     @Query(value = "select * from productattributevalue where ProductAttributeId = ?1 and ItemId = ?2 and InterfaceId = ?3 and DataAreaId = ?4", nativeQuery = true)
     ProductAttributeValue getProductAttributeValue(String productAttributeId, String ItemId, String InterfaceId, String DataAreaId);
 
-    @Query(value = "select * from productattributevalue where ProductAttributeId = ?1 and ItemId = ?2 and InterfaceId IN (?3) and DataAreaId = ?4 order by FIELD(InterfaceId, ?5) limit 1", nativeQuery = true)
+    @Query(value = "select * from productattributevalue where ProductAttributeId = ?1 and ItemId = ?2 and InterfaceId IN (?3) and DataAreaId = ?4 and Value IS NOT NULL order by FIELD(InterfaceId, ?5) limit 1", nativeQuery = true)
     ProductAttributeValue getProductAttributes(String productAttributeId, String itemId, List<String> interfaceIds, String dataAreaId, String priorityList);
 
     @Query(value = "select UpdatedAt from productattributevalue where ItemId = ?1 and DataAreaId = ?2 order by UpdatedAt desc limit 1", nativeQuery = true)
@@ -23,6 +23,9 @@ public interface ProductAttributeValueRepository extends JpaRepository<ProductAt
     @Modifying
     @Query(value = "delete from productattributevalue where ProductAttributeId = ?1 and ItemId = ?2 and InterfaceId = ?3 and DataAreaId = ?4", nativeQuery = true)
     void deleteProductAttributeValue(String productAttributeId, String ItemId, String InterfaceId, String DataAreaId);
+
+    @Query(value = "select distinct ItemId from productattributevalue where DataAreaId = ?1 order by ItemId", nativeQuery = true)
+    List<String> getProdAttValueItemIds(String DataAreaId);
 
     @Query(value = "select distinct ItemId from productattributevalue where DataAreaId = ?1 and ItemId in (" +
             "'MSB-0000106', 'MSB-0000211', 'MSB-0000212', 'MSB-0000266', 'MSB-0000276', 'MSB-0000285'," +
@@ -67,6 +70,6 @@ public interface ProductAttributeValueRepository extends JpaRepository<ProductAt
             "'MSB-0010553', 'MSB-0010695', 'MSB-0010791', 'MSB-0010873', 'MSB-0010895', 'MSB-0010993'," +
             "'MSB-0011117', 'MSB-0011191', 'MSB-0011280', 'MSB-0011289', 'MSB-0011295', 'MSB-0011436'," +
             "'MSB-0011456', 'MSB-0011620', 'MSB-0011679', 'MSB-0011828') order by ItemId", nativeQuery = true)
-    List<String> getProdAttValueItemIds(String DataAreaId);
+    List<String> getProdAttValueItemIds2(String DataAreaId);
 
 }

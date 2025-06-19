@@ -125,13 +125,14 @@ public class JumpsellerProductService {
                 Product product = new Product();
                 product.setName(syncItem.getName()); // Is required
                 BigDecimal price = new BigDecimal(costItem).setScale(2, RoundingMode.DOWN);
-                product.setPrice(price.doubleValue());
+                BigDecimal final_price = price; //price.add(BigDecimal.valueOf(150));
+                product.setPrice(final_price.doubleValue());
                 JumpsellerProductDto productDto = new JumpsellerProductDto(product);
 
                 return jumpsellerClient.updateProduct(syncItem.getResponseId(), productDto)
                         .doOnSuccess(result -> {
-                            System.out.println("Updated product " + syncItem.getInternalCode() + " with price " + costItem);
-                            syncItem.setPrice(Double.valueOf(costItem));
+                            System.out.println("Updated product " + syncItem.getInternalCode() + " with price " + final_price.doubleValue());
+                            syncItem.setPrice(final_price.doubleValue());
                             syncProductJumpsellerRepository.save(syncItem);
                         })
                         .doOnError(error -> {

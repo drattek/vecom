@@ -10,4 +10,7 @@ import org.springframework.stereotype.Repository;
 public interface SyncImageRepository extends JpaRepository<SyncImage, Long> {
     @Query(value = "select * from syncimage where OriginalFileName like %:blobName% and ProductPictureSetId = :albumId", nativeQuery = true)
     SyncImage getSyncImage(@Param("blobName") String blobName, @Param("albumId") String albumId);
+
+    @Query(value = "select * from syncimage where OriginalFileName like %:blobName% and ProductPictureSetId IS NULL", nativeQuery = true)
+    SyncImage getSyncImageDefault(@Param("blobName") String blobName);
 }

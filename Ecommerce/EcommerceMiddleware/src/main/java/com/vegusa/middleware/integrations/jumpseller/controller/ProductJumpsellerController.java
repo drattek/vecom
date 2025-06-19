@@ -6,10 +6,7 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.*;
 import reactor.core.publisher.Mono;
 
 import java.util.HashMap;
@@ -23,6 +20,19 @@ public class ProductJumpsellerController {
 
     @Autowired
     public ProductJumpsellerController(){}
+
+    @GetMapping(value = "/get-products")
+    public Mono<ResponseEntity<String>> getProducts(){
+        try {
+            System.out.println("Get all products");
+            jumpsellerProductService.getAllProducts().subscribe();
+
+            return Mono.just(ResponseEntity.accepted().body("Getting all products"));
+        } catch (RuntimeException e){
+            System.err.println("Error getting all products");
+        }
+        return null;
+    }
 
     @PostMapping(value = "/sync-prices")
     public Mono<ResponseEntity<String>> updatePricesJumpseller (@RequestBody HashMap<String, String> request){

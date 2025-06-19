@@ -4,6 +4,7 @@ import com.vegusa.middleware.entity.ProductAttributeValue;
 import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
 import com.vegusa.middleware.integrations.jumpseller.dto.Product;
 import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
+import com.vegusa.middleware.integrations.jumpseller.repository.SyncProductJumpsellerRepository;
 import com.vegusa.middleware.repository.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -31,27 +32,32 @@ public class ProductUtils {
     @Autowired
     private ProductAttributeValueRepository productAttributeValueRepository;
 
+    @Autowired
+    private SyncProductJumpsellerRepository syncProductJumpsellerRepository;
+
     public SyncJumpsellerProduct toEntity(JumpsellerProductDto dto, String internalCode){
-        SyncJumpsellerProduct entity = new SyncJumpsellerProduct();
-        entity.setResponseId(dto.getProduct().getId());
+        SyncJumpsellerProduct entity = syncProductJumpsellerRepository.findByResponseId(dto.getProduct().getId())
+                .orElseGet(SyncJumpsellerProduct::new);
+        Product product = dto.getProduct();
+        entity.setResponseId(product.getId());
         entity.setInternalCode(internalCode);
-        entity.setName(dto.getProduct().getName());
-        entity.setPageTitle(dto.getProduct().getPage_title());
-        entity.setDescription(dto.getProduct().getDescription());
-        entity.setMetaDescription(dto.getProduct().getMeta_description());
-        entity.setType(dto.getProduct().getType());
-        entity.setDaysToExpire(dto.getProduct().getDays_to_expire());
-        entity.setPrice(dto.getProduct().getPrice());
-        entity.setDiscount(dto.getProduct().getDiscount());
-        entity.setWeight(dto.getProduct().getWeight());
-        entity.setStock(dto.getProduct().getStock());
-        entity.setStockUnlimited(dto.getProduct().isStock_unlimited());
-        entity.setStockThreshold(dto.getProduct().getStock_threshold());
-        entity.setStockNotification(dto.getProduct().isStock_notification());
-        entity.setCostPerItem(dto.getProduct().getCost_per_item());
-        entity.setCompareAtPrice(dto.getProduct().getCompare_at_price());
-        entity.setMinimumQuantity(dto.getProduct().getMinimum_quantity());
-        entity.setMaximumQuantity(dto.getProduct().getMaximum_quantity());
+        entity.setName(product.getName());
+        entity.setPageTitle(product.getPage_title());
+        entity.setDescription(product.getDescription());
+        entity.setMetaDescription(product.getMeta_description());
+        entity.setType(product.getType());
+        entity.setDaysToExpire(product.getDays_to_expire());
+        entity.setPrice(product.getPrice());
+        entity.setDiscount(product.getDiscount());
+        entity.setWeight(product.getWeight());
+        entity.setStock(product.getStock());
+        entity.setStockUnlimited(product.isStock_unlimited());
+        entity.setStockThreshold(product.getStock_threshold());
+        entity.setStockNotification(product.isStock_notification());
+        entity.setCostPerItem(product.getCost_per_item());
+        entity.setCompareAtPrice(product.getCompare_at_price());
+        if (product.getMinimum_quantity() != null) entity.setMinimumQuantity(dto.getProduct().getMinimum_quantity());
+        if (product.getMaximum_quantity() != null) entity.setMaximumQuantity(dto.getProduct().getMaximum_quantity());
         entity.setSku(dto.getProduct().getSku());
         entity.setBrand(dto.getProduct().getBrand());
         entity.setBarcode(dto.getProduct().getBarcode());

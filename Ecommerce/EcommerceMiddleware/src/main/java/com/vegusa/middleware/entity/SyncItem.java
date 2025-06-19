@@ -1,6 +1,8 @@
 package com.vegusa.middleware.entity;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.*;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -9,11 +11,13 @@ import java.util.Date;
 @Entity
 @Table(name = "SyncItem")
 @JsonIgnoreProperties(ignoreUnknown = true)
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class SyncItem {
     public SyncItem(){}
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "RecId")
+    @JsonIgnore
     private Long recId;
 
     @Column(name = "ResponseId", nullable = false, length = 100)
@@ -109,12 +113,15 @@ public class SyncItem {
     private String productTypeId;
 
     @Column(name="IntegrationCompany", nullable = false)
+    @JsonIgnore
     private String integrationCompany;
 
     @Column(name = "DefaultVersionId")
+    @JsonIgnore
     private String defaultVersionId;
 
     @Column(name = "VegSyncStatus")
+    @JsonIgnore
     private String vegSyncStatus;
 
     /*
@@ -128,6 +135,7 @@ public class SyncItem {
             @JoinColumn(name = "CompanyRefRecId", referencedColumnName = "RecId", nullable = false),
             @JoinColumn(name = "DataAreaId", referencedColumnName = "DataAreaId", nullable = false)
     })
+    @JsonIgnore
     private Company company;
 
     public Long getRecId() {

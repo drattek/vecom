@@ -1,7 +1,11 @@
 package com.vegusa.msb.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.vegusa.middleware.dto.Product;
 import com.vegusa.middleware.entity.Company;
+import com.vegusa.middleware.entity.SyncItem;
 import com.vegusa.middleware.entity.SyncPriceList;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
@@ -9,8 +13,11 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
 
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
@@ -19,6 +26,7 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("msb-ecommerce-middleware")
@@ -64,6 +72,26 @@ public class MSBController {
             System.err.println("An error occurred while synchronizing the products.");
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
+    }
+
+    @GetMapping(value = "/get-products")
+    public Map<String, Object> getProducts(@RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "50") int size){
+        int _size = Math.min(size, 50);
+        SyncItem[] products = itemSyncService.getProducts(page - 1, _size);
+
+        Map<String, Object> response = new HashMap<>();
+
+        long totalItems = itemSyncService.countProducts();
+        int totalPages = (int) Math.ceil((double) totalItems / size);
+        response.put("total_items", totalItems);
+        response.put("current_page", page);
+        response.put("previous_page", page > 1 ? page - 1 : null);
+        response.put("next_page", page < totalPages ? page + 1 : null);
+        response.put("total_pages", totalPages);
+        response.put("item_count", products.length);
+        response.put("products", products);
+
+        return response;
     }
 
     @PostMapping(value="/update-control-table-products-information")
@@ -156,6 +184,7 @@ public class MSBController {
     }
 
     //@Scheduled(fixedRateString = "${fixedRateRefreshPriceLists.in.milliseconds}", initialDelayString = "${fixedDelayRefreshPriceLists.in.milliseconds}")
+    @PostMapping(value = "/upade-meli")
     public String updatePriceList() {
         try {
             System.out.println("Price Lists Update Started.");
@@ -206,6 +235,28 @@ public class MSBController {
             System.err.println("An error occurred while uploading the images.");
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
+    }
+
+    @PostMapping(value = "/update-imagelist")
+    public ObjectNode updateImages(@RequestBody HashMap<String, String> request){
+        try {
+            System.out.println("Image Lists Update Started.");
+            String products = MWUtils.bodyValidation(request.get("imagesList")),
+                    dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    authToken, merchantId;
+            Company company = imageSyncService.getCompany(dataAreaId);
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
+            imageSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            authToken = imageSyncService.getAccessToken();
+            merchantId = imageSyncService.getMerchantId(authToken);
+            JSONArray imageList = new JSONObject(products).getJSONArray("content");
+
+            return imageSyncService.createImages(imageList, authToken, merchantId, dataAreaId, company);
+        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
+                NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
+            System.err.println(e.getMessage());
+        }
+        return null;
     }
 
     /*

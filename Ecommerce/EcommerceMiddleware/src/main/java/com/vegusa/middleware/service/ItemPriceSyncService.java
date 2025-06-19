@@ -18,9 +18,13 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -197,7 +201,7 @@ public class ItemPriceSyncService {
         JSONObject response = new JSONObject();
         Company company = syncPriceList.getCompany();
         String url = endpointRepo.getEndpointUrl("UPDATE_PRICE_BULK_SET", env.getProperty("integration.company.name"))
-                .replace("{{product_price_list_id}}", "416a09d7-aa5f-4c9d-a7b7-2defd2372f7f" /*syncPriceList.getResponseId()*/);
+                .replace("{{product_price_list_id}}", syncPriceList.getResponseId());
         List<JSONArray> bodyValues = getItemPrices(priceListName, channel, currencyCode, itemsPerCall, company.getId().getDataAreaId());
         for(JSONArray bodyValue: bodyValues){
             try {
@@ -321,8 +325,12 @@ public class ItemPriceSyncService {
 
     private String updatePrices(String accessToken, String url, JSONArray bodyValues) {
         try {
+            String timestamp = String.valueOf(System.currentTimeMillis());
             HttpHeaders headers = MWUtils.getHeaders(accessToken);
-            LogsUtils.generateLog(bodyValues.toString(), "prices");
+            JSONObject request = new JSONObject();
+            request.put("url", url);
+            request.put("data", bodyValues);
+            LogsUtils.generateLog(request.toString(), timestamp + "prices-meli");
             return webClient.post()
                     .uri(url)
                     .headers(h -> h.addAll(headers))
@@ -330,12 +338,33 @@ public class ItemPriceSyncService {
                     .retrieve()
                     .bodyToMono(String.class)
                     .doOnSuccess(result -> {
-                        LogsUtils.generateLog(result, "price-response");
+                        LogsUtils.generateLog(result, timestamp + "price-meli-response");
+                    })
+                    .doOnError(error -> {
+                        LogsUtils.generateLog(error.getMessage(), timestamp + "error-meli");
+                        String errorLog;
+
+                        if (error instanceof WebClientResponseException) {
+                            WebClientResponseException ex = (WebClientResponseException) error;
+                            errorLog = "Status: " + ex.getRawStatusCode() + "\n" +
+                                    "Headers: " + ex.getHeaders() + "\n" +
+                                    "Response Body: " + ex.getResponseBodyAsString();
+                        } else {
+                            errorLog = getStackTraceAsString(error);
+                        }
+                        LogsUtils.generateLog(errorLog, timestamp + "price-meli-error");
                     })
                     .block();
         } catch (RuntimeException e) {
             throw new RuntimeException("An error occurred while updating price list: " + e.getMessage());
         }
+    }
+
+    public static String getStackTraceAsString(Throwable throwable) {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        throwable.printStackTrace(pw);
+        return sw.toString();
     }
 
     private void saveSyncPriceListInfo(String updatedPrices, String priceListId, Company company) throws RuntimeException {
@@ -368,7 +397,7 @@ public class ItemPriceSyncService {
         String url = endpointRepo.getEndpointUrl("UPDATE_PRICE_BULK_SET", env.getProperty("integration.company.name"))
                 .replace("{{product_price_list_id}}", syncPriceList.getResponseId());
         List<JSONArray> bodyValues = getItemPrices2(itemsPerCall, company.getId().getDataAreaId(), productList);
-        System.out.println(bodyValues);
+        //System.out.println(bodyValues);
         for(JSONArray bodyValue: bodyValues){
             try {
                 String updatedPrices = updatePrices(accessToken, url, bodyValue);

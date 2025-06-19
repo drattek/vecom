@@ -2,12 +2,14 @@ package com.vegusa.middleware.integrations.jumpseller.controller;
 
 import com.vegusa.middleware.integrations.jumpseller.dto.StockDto;
 import com.vegusa.middleware.integrations.jumpseller.service.JumpsellerStockService;
+import com.vegusa.middleware.utils.MWUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.web.bind.annotation.GetMapping;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RestController;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.web.servlet.function.EntityResponse;
 import reactor.core.publisher.Mono;
 
+import java.util.HashMap;
 import java.util.List;
 
 @RestController
@@ -27,5 +29,13 @@ public class StockJumpsellerController {
             System.err.println("Error: " + e.getMessage());
         }
         return null;
+    }
+
+    @PostMapping(value = "/update-stock")
+    public Mono<ResponseEntity<String>> updateStock(@RequestBody HashMap<String, String> request){
+        String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId"));
+        jumpsellerStockService.updateStock(dataAreaId).subscribe();
+
+        return Mono.just(ResponseEntity.accepted().body("Update started"));
     }
 }
