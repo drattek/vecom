@@ -1,15 +1,24 @@
 package com.vegusa.msb.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.vegusa.middleware.dto.Product;
 import com.vegusa.middleware.entity.Company;
+import com.vegusa.middleware.entity.SyncItem;
 import com.vegusa.middleware.entity.SyncPriceList;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
+import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
+import reactor.core.publisher.Flux;
+import reactor.core.publisher.Mono;
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
@@ -17,6 +26,7 @@ import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.util.HashMap;
+import java.util.Map;
 
 @RestController
 @RequestMapping("msb-ecommerce-middleware")
@@ -64,6 +74,26 @@ public class MSBController {
         }
     }
 
+    @GetMapping(value = "/get-products")
+    public Map<String, Object> getProducts(@RequestParam(defaultValue = "1") int page, @RequestParam(defaultValue = "50") int size){
+        int _size = Math.min(size, 50);
+        SyncItem[] products = itemSyncService.getProducts(page - 1, _size);
+
+        Map<String, Object> response = new HashMap<>();
+
+        long totalItems = itemSyncService.countProducts();
+        int totalPages = (int) Math.ceil((double) totalItems / size);
+        response.put("total_items", totalItems);
+        response.put("current_page", page);
+        response.put("previous_page", page > 1 ? page - 1 : null);
+        response.put("next_page", page < totalPages ? page + 1 : null);
+        response.put("total_pages", totalPages);
+        response.put("item_count", products.length);
+        response.put("products", products);
+
+        return response;
+    }
+
     @PostMapping(value="/update-control-table-products-information")
     public String updateControlTableInfo(@RequestBody HashMap<String, String> request){
         try{
@@ -98,7 +128,42 @@ public class MSBController {
         }
     }
 
-    @Scheduled(fixedRateString = "${fixedRateRefreshItemInventory.in.milliseconds}", initialDelayString = "${fixedDelayRefreshItemInventory.in.milliseconds}")
+    @PostMapping(value = "/update-pricelist")
+    public String updatePriceListInterface(@RequestBody HashMap<String, String> request) {
+        try {
+            System.out.println("Price Lists Update Started.");
+            SyncPriceList priceList;
+            String authToken, merchantId, fullPriceListName, currencyId,
+                    dataAreaId = "MSB", //MWUtils.bodyValidation(request.get("dataAreaId")),
+                    priceListName = "NORMAL", //MWUtils.bodyValidation(request.get("priceListName")),
+                    description = "Lista de precios Normal Jumpseller.", //MWUtils.bodyValidation(request.get("priceListDescription")),
+                    channel = "JUMPSELLER", //MWUtils.bodyValidation(request.get("channel")), //"MERCADO_LIBRE"
+                    currencyCode = "MXN", //MWUtils.bodyValidation(request.get("currencyCode"));
+                    products = MWUtils.bodyValidation(request.get("productList"));
+            JSONArray productsList = new JSONObject(products).getJSONArray("content");
+            int itemsPerCall = itemInventService.getProductsPerCall("UPDATE_PRICE_PRODUCTS_PER_CALL");//MWUtils.bodyValidation(request.get("itemsPerCall"));
+            Company company = itemPriceSyncService.getCompany(dataAreaId);
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
+            itemPriceSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            //itemPriceSyncService.setAddFixedCostParameters("ADDITIONAL_FIXED_COST_LL", "ADDITIONAL_FIXED_COST_CL", "ADDITIONAL_FIXED_COST_UL", dataAreaId);
+            authToken = itemPriceSyncService.getAccessToken();
+            merchantId = itemPriceSyncService.getMerchantId(authToken);
+            fullPriceListName = dataAreaId + "_" + priceListName + "_" + channel + "_" + currencyCode;
+            currencyId = itemPriceSyncService.getCurrencyId(currencyCode, authToken, merchantId);
+            priceList = itemPriceSyncService.getSyncPriceList(fullPriceListName, currencyId, dataAreaId);
+            if (priceList == null) {
+                String createdPriceList = itemPriceSyncService.createPriceList(fullPriceListName, description, currencyId, authToken, merchantId);
+                priceList = itemPriceSyncService.savePriceListInfo(createdPriceList, company);
+            }
+            return itemPriceSyncService.processPriceListUpdate2(priceList, priceListName, channel, currencyCode, itemsPerCall, authToken, productsList);
+        } catch(RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException | NoSuchAlgorithmException |
+                BadPaddingException | InvalidKeyException | JsonProcessingException e){
+            System.err.println("An error occurred while creating the price list.");
+            throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
+        }
+    }
+
+    //@Scheduled(fixedRateString = "${fixedRateRefreshItemInventory.in.milliseconds}", initialDelayString = "${fixedDelayRefreshItemInventory.in.milliseconds}")
     public String updateItemInventory(){
         try {
             System.out.println("Inventory Update Started.");
@@ -118,7 +183,8 @@ public class MSBController {
         }
     }
 
-    @Scheduled(fixedRateString = "${fixedRateRefreshPriceLists.in.milliseconds}", initialDelayString = "${fixedDelayRefreshPriceLists.in.milliseconds}")
+    //@Scheduled(fixedRateString = "${fixedRateRefreshPriceLists.in.milliseconds}", initialDelayString = "${fixedDelayRefreshPriceLists.in.milliseconds}")
+    @PostMapping(value = "/upade-meli")
     public String updatePriceList() {
         try {
             System.out.println("Price Lists Update Started.");
@@ -156,18 +222,41 @@ public class MSBController {
         try {
             String itemsPerCall = MWUtils.bodyValidation(request.get("itemsPerCall")),
                     dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    albumId = request.get("albumId") == null ? "default" : request.get("albumId"),
                     authToken, merchantId;
             Company company = imageSyncService.getCompany(dataAreaId);
             if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
             imageSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
             authToken = imageSyncService.getAccessToken();
             merchantId = imageSyncService.getMerchantId(authToken);
-            return imageSyncService.processImagesUpload(Integer.parseInt(itemsPerCall), authToken, merchantId, dataAreaId, company);
+            return imageSyncService.processImagesUpload(Integer.parseInt(itemsPerCall), authToken, merchantId, dataAreaId, company, albumId);
         } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
                  NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
             System.err.println("An error occurred while uploading the images.");
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
+    }
+
+    @PostMapping(value = "/update-imagelist")
+    public ObjectNode updateImages(@RequestBody HashMap<String, String> request){
+        try {
+            System.out.println("Image Lists Update Started.");
+            String products = MWUtils.bodyValidation(request.get("imagesList")),
+                    dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId")),
+                    authToken, merchantId;
+            Company company = imageSyncService.getCompany(dataAreaId);
+            if(company == null){throw new RuntimeException("The company provided doesn't exist."); }
+            imageSyncService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface(), "AES/CBC/PKCS5Padding");
+            authToken = imageSyncService.getAccessToken();
+            merchantId = imageSyncService.getMerchantId(authToken);
+            JSONArray imageList = new JSONObject(products).getJSONArray("content");
+
+            return imageSyncService.createImages(imageList, authToken, merchantId, dataAreaId, company);
+        } catch (RuntimeException | InvalidAlgorithmParameterException | NoSuchPaddingException | IllegalBlockSizeException |
+                NoSuchAlgorithmException | BadPaddingException | InvalidKeyException | JsonProcessingException e) {
+            System.err.println(e.getMessage());
+        }
+        return null;
     }
 
     /*

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.utils.LogsUtils;
 import com.vegusa.msb.repository.ItemInventLocationRepository;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.utils.MWUtils;
@@ -17,9 +18,13 @@ import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
@@ -108,6 +113,7 @@ public class ItemPriceSyncService {
     }
 
     public SyncPriceList getSyncPriceList(String name, String currencyId, String dataAreaId) throws RuntimeException {
+        System.out.println(name);
         return syncPriceListRepo.getSyncPriceList(name, currencyId, dataAreaId);
     }
 
@@ -317,20 +323,48 @@ public class ItemPriceSyncService {
         return response;
     }
 
-
     private String updatePrices(String accessToken, String url, JSONArray bodyValues) {
         try {
+            String timestamp = String.valueOf(System.currentTimeMillis());
             HttpHeaders headers = MWUtils.getHeaders(accessToken);
+            JSONObject request = new JSONObject();
+            request.put("url", url);
+            request.put("data", bodyValues);
+            LogsUtils.generateLog(request.toString(), timestamp + "prices-meli");
             return webClient.post()
                     .uri(url)
                     .headers(h -> h.addAll(headers))
                     .bodyValue(bodyValues.toString())
                     .retrieve()
                     .bodyToMono(String.class)
+                    .doOnSuccess(result -> {
+                        LogsUtils.generateLog(result, timestamp + "price-meli-response");
+                    })
+                    .doOnError(error -> {
+                        LogsUtils.generateLog(error.getMessage(), timestamp + "error-meli");
+                        String errorLog;
+
+                        if (error instanceof WebClientResponseException) {
+                            WebClientResponseException ex = (WebClientResponseException) error;
+                            errorLog = "Status: " + ex.getRawStatusCode() + "\n" +
+                                    "Headers: " + ex.getHeaders() + "\n" +
+                                    "Response Body: " + ex.getResponseBodyAsString();
+                        } else {
+                            errorLog = getStackTraceAsString(error);
+                        }
+                        LogsUtils.generateLog(errorLog, timestamp + "price-meli-error");
+                    })
                     .block();
         } catch (RuntimeException e) {
             throw new RuntimeException("An error occurred while updating price list: " + e.getMessage());
         }
+    }
+
+    public static String getStackTraceAsString(Throwable throwable) {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        throwable.printStackTrace(pw);
+        return sw.toString();
     }
 
     private void saveSyncPriceListInfo(String updatedPrices, String priceListId, Company company) throws RuntimeException {
@@ -353,6 +387,87 @@ public class ItemPriceSyncService {
              //   System.err.println("Error while saving synchronized item price info.");
             }
         }
+    }
+
+    /* ********** PRICE TEST *************** */
+    public String processPriceListUpdate2(SyncPriceList syncPriceList, String priceListName, String channel, String currencyCode, int itemsPerCall, String accessToken, JSONArray productList)
+            throws RuntimeException, JsonProcessingException {
+        JSONObject response = new JSONObject();
+        Company company = syncPriceList.getCompany();
+        String url = endpointRepo.getEndpointUrl("UPDATE_PRICE_BULK_SET", env.getProperty("integration.company.name"))
+                .replace("{{product_price_list_id}}", syncPriceList.getResponseId());
+        List<JSONArray> bodyValues = getItemPrices2(itemsPerCall, company.getId().getDataAreaId(), productList);
+        //System.out.println(bodyValues);
+        for(JSONArray bodyValue: bodyValues){
+            try {
+                String updatedPrices = updatePrices(accessToken, url, bodyValue);
+                saveSyncPriceListInfo(updatedPrices, syncPriceList.getResponseId(), company);
+                response.accumulate("updated", new JSONArray(updatedPrices));
+                System.out.println("A part of the price list was successfully updated.");
+            }catch (RuntimeException e){
+                response.accumulate("error", e.getMessage());
+                System.err.println("An error occurred while updating a part of price list.");
+            }
+        }
+        System.out.println("Price Lists Update Ends.");
+        return response.toString();
+    }
+
+    private List<JSONArray> getItemPrices2(int itemsPerCall, String dataAreaId, JSONArray productList) throws RuntimeException {
+        List<JSONArray> response = new ArrayList<>();
+        JSONArray itemPriceArray = new JSONArray();
+        float shippingCost = 0, auxCost = 0, finalCost = 0;
+        HashMap<String, String> itemCostMap = getItemMap2(productList);
+        HashMap<String, String> itemCategoryMap = getItemMap(productCategoryRepo.getItemCategory(dataAreaId));
+        SyncItem[] syncItems = this.syncItemRepo.getSyncItem();
+        DecimalFormat costFmt = new DecimalFormat("0.00");
+        int countSyncItems = 0, countItemArray = 0;
+        for(SyncItem product : syncItems){
+            countSyncItems++;
+            try {
+                if(itemCostMap.get(product.getInternalCode()) != null && itemCategoryMap.get(product.getInternalCode()) != null
+                        && product.getDefaultVersionId() != null) {
+                    countItemArray++;
+                    auxCost = Float.parseFloat(itemCostMap.get(product.getInternalCode()));
+                    JSONObject itemPrice = new JSONObject();
+                    itemPrice.put("ProductVersionId", product.getDefaultVersionId());
+                    itemPrice.put("gross", costFmt.format(auxCost));
+                    itemPrice.put("priceWithDiscount", costFmt.format(auxCost));
+                    itemPrice.put("tax", 16);
+                    itemPrice.put("net", costFmt.format(auxCost));
+                    itemPriceArray.put(itemPrice);
+                    if (countItemArray % itemsPerCall == 0) {
+                        response.add(itemPriceArray);
+                        itemPriceArray = new JSONArray();
+                        countItemArray = 0;
+                    }
+                }
+                if(countSyncItems == syncItems.length && !itemPriceArray.isEmpty()){
+                    response.add(itemPriceArray);
+                }
+            } catch (RuntimeException e){
+                System.err.println("An error occurred obtaining item price of " + product.getInternalCode() + " " + e.getMessage());
+            }
+        }
+        return response;
+    }
+
+    private HashMap<String, String> getItemMap2(JSONArray itemValues) throws RuntimeException {
+        HashMap<String, String> response = new HashMap<>();
+
+        for (int i = 0; i < itemValues.length(); i++){
+            try {
+                JSONObject obj = itemValues.getJSONObject(i);
+                String code = obj.getString("code");
+                String price = obj.getString("price");
+                if (code != null && price != null) {
+                    response.put(code, price);
+                }
+            } catch (RuntimeException e){
+                System.err.println("Ann error ocurred while saving item value map.");
+            }
+        }
+        return response;
     }
 
 }

@@ -117,7 +117,7 @@ public class AuthService {
         tokenInfo.setResponseId(jsonNode.get("_id").asText());
         tokenInfo.setStatus(jsonNode.get("status").asText());
         tokenInfo.setCipherAccessToken(cipherAccessToken);
-        tokenInfo.setAccessTokenExpiresAt(formatter.parse(jsonNode.get("refreshTokenExpiresAt").asText()));
+        tokenInfo.setAccessTokenExpiresAt(formatter.parse(jsonNode.get("expiresAt").asText()));
         tokenInfo.setCipherRefreshToken(cipherRefreshToken);
         tokenInfo.setRefreshTokenExpiresAt(formatter.parse(jsonNode.get("refreshTokenExpiresAt").asText()));
         tokenInfo.setSecretKey(AuthService.convertSecretKeyToString(key));

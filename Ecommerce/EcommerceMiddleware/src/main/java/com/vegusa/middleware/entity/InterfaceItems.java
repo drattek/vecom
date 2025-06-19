@@ -1,5 +1,6 @@
 package com.vegusa.middleware.entity;
 
+import com.fasterxml.jackson.annotation.JsonInclude;
 import jakarta.persistence.*;
 import org.hibernate.annotations.ColumnDefault;
 
@@ -8,6 +9,7 @@ import java.util.Date;
 
 @Entity
 @Table(name = "product")
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class InterfaceItems {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -84,6 +86,12 @@ public class InterfaceItems {
 
     @Column(name = "Width", length = 20)
     private String width;
+
+    @Column(name = "SeoTitle")
+    private String seoTitle;
+
+    @Column(name = "MetaDescription")
+    private String metaDescription;
 
     public Long getId() {
         return id;
@@ -253,4 +261,19 @@ public class InterfaceItems {
         this.width = width;
     }
 
+    public String getSeoTitle() {
+        return seoTitle;
+    }
+
+    public void setSeoTitle(String seoTitle) {
+        this.seoTitle = seoTitle;
+    }
+
+    public String getMetaDescription() {
+        return metaDescription;
+    }
+
+    public void setMetaDescription(String metaDescription) {
+        this.metaDescription = metaDescription;
+    }
 }

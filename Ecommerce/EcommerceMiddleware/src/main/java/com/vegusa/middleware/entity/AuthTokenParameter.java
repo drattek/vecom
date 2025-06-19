@@ -10,6 +10,8 @@ public class AuthTokenParameter
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     @Column(name = "RecId")
     private int recId;
+    @Column(name = "MerchantId", nullable = false)
+    private String merchantId;
     @Column(name = "ClientId", nullable = false)
     private String clientId;
     @Column(name = "ClientSecret", nullable = false)
@@ -24,6 +26,7 @@ public class AuthTokenParameter
     private String integrationCompany;
 
     //getters
+    public String getMerchantId(){ return this.merchantId; }
     public String getClientId(){ return this.clientId; }
     public String getClientSecret(){ return this.clientSecret; }
     public String getGrantTypeAuthCode(){ return this.grantTypeAuthCode; }
@@ -32,6 +35,7 @@ public class AuthTokenParameter
     public String getIntegrationCompany(){ return this.integrationCompany; }
 
     //setters
+    public void setMerchantId(String merchantId){ this.merchantId = merchantId; }
     public void setClientId(String clientId){ this.clientId = clientId; }
     public void setClientSecret(String clientSecret){ this.clientSecret = clientSecret; }
     public void setGrantTypeAuthCode(String grantTypeAuthCode){ this.grantTypeAuthCode = grantTypeAuthCode; }

@@ -27,8 +27,7 @@ public class AuthController implements ApplicationRunner {
     private final SystemParameterRepository sysParameterRepo;
 
     @Autowired
-    public AuthController(AuthService authService, SystemParameterRepository sysParameterRepo)
-    {
+    public AuthController(AuthService authService, SystemParameterRepository sysParameterRepo) {
         this.authService = authService;
         this.sysParameterRepo = sysParameterRepo;
         this.authService.setEncryptDecryptInterface(MWUtils.getEncryptDecryptInterface());
@@ -36,11 +35,12 @@ public class AuthController implements ApplicationRunner {
 
     @Override
     public void run(ApplicationArguments args) throws Exception {
-        System.out.println("Application Oauth2.0 Starts!");
-        generateToken(1);
+        //System.out.println("Application Oauth2.0 Starts!");
+        //generateToken(1);
     }
 
     private void generateToken(int attemptNumber) {
+        /*
         try {
             ObjectMapper objectMapper = new ObjectMapper();
             JsonNode jsonNode = objectMapper.readTree(authService.fetchAccessToken());
@@ -61,9 +61,10 @@ public class AuthController implements ApplicationRunner {
             System.err.println("An error occurred while saving the token.");
             System.err.println("StackTrace: ");
         }
+         */
     }
 
-    @Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "${fixedDelayRefreshToken.in.milliseconds}")
+    //@Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "3000")
     public void refreshAccessTokenPeriodically() {
         try {
             ObjectMapper objectMapper = new ObjectMapper();
@@ -87,7 +88,7 @@ public class AuthController implements ApplicationRunner {
         }
     }
 
-    @Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "${fixedDelayRefreshAuthInfo.in.milliseconds}")
+    //@Scheduled(fixedRateString = "${fixedRateRefreshToken.in.milliseconds}", initialDelayString = "${fixedDelayRefreshAuthInfo.in.milliseconds}")
     public void refreshAuthTokenInfoPeriodically(){
         try {
             this.authService.refreshAuthToken();

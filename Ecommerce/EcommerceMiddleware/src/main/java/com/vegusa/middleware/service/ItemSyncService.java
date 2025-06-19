@@ -1,7 +1,9 @@
 package com.vegusa.middleware.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
@@ -11,21 +13,23 @@ import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.core.env.Environment;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 import org.springframework.util.LinkedMultiValueMap;
 import org.springframework.util.MultiValueMap;
 import org.springframework.web.reactive.function.BodyInserters;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.http.HttpHeaders;
+import reactor.core.publisher.Mono;
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
 import java.text.DecimalFormat;
-import java.text.ParseException;
 import java.text.SimpleDateFormat;
 import java.util.*;
 
@@ -118,14 +122,18 @@ public class ItemSyncService {
         String urlUpdateProduct = endpointRepo.getEndpointUrl("UPDATE_PRODUCT", env.getProperty("integration.company.name"));
         InterfaceItems auxIProduct = new InterfaceItems();
         List<String> itemIds = attributeValueRepo.getProdAttValueItemIds(dataAreaId);
+        System.out.println("Total items:" + itemIds.size());
         for(String itemId : itemIds){
             try {
                 SyncItem syncItem = syncItemRepo.getSyncItem(itemId, dataAreaId);
                 getProductToUpdate(auxIProduct, itemId, dataAreaId);
                 SimpleDateFormat formatter = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                String url = (syncItem == null) ? "not synchronize" : urlUpdateProduct.replace("{{product_id}}", syncItem.getResponseId());
+                /*
                 String url = (syncItem == null) ? urlCreateProduct :
                     (formatter.parse(auxIProduct.getUpdatedAt().toString()).after(formatter.parse(syncItem.getUpdatedAt().toString())))
                                 ? urlUpdateProduct.replace("{{product_id}}", syncItem.getResponseId()) : "not synchronize";
+                */
                 if(!url.equals("not synchronize")){
                     String brandId = getBrandID(auxIProduct.getBrand(), authToken, merchantId, dataAreaId, company);
                     ArrayList<List<String>> categoryIDs = getCategoryIDs(itemId, authToken, merchantId, dataAreaId, company);
@@ -137,7 +145,7 @@ public class ItemSyncService {
                     response.accumulate("synchronized", "The product " + itemId + " doesn't require to be updated.");
                     System.out.println("The product " + itemId + " doesn't require to be synchronized.");
                 }
-            } catch  (RuntimeException | ParseException | JsonProcessingException e) {
+            } catch  (RuntimeException | JsonProcessingException e) {
                 System.err.println("An error occurred while synchronizing the product " + itemId + " " +  e.getMessage());
                 response.accumulate("error", "An error occurred while updating the product " + itemId + " " + e.getMessage());
                 if(e.getMessage().contains("401") || e.getMessage().contains("404")){
@@ -204,6 +212,8 @@ public class ItemSyncService {
         iProduct.setLength(values.get("LENGTH"));
         iProduct.setHeight(values.get("HEIGHT"));
         iProduct.setWidth(values.get("WIDTH"));
+        iProduct.setSeoTitle(values.get("SEO_TITLE"));
+        iProduct.setMetaDescription(values.get("META_DESCRIPTION"));
         iProduct.setCrossReferences(values.get("CROSS_REFERENCES"));
         iProduct.setUpdatedAt(updatedAt);
     }
@@ -336,10 +346,10 @@ public class ItemSyncService {
                 description = "-- TIENDA VEGUSA MAQUINARIA, DISTRUIBIDOR AUTORIZADO UNICARRIERS, BOBCAT, JLG, FLEXI. -- " + shortDescription + ". " + getCrossReferences(product.getCrossReferences());
         JSONArray productVersionsArray = new JSONArray();
         bodyValues.put("name", name);
-        bodyValues.put("alias", product.getProductName());
+        bodyValues.put("alias", !product.getSeoTitle().isBlank() ? product.getSeoTitle() : name /*product.getProductName()*/);
         bodyValues.put("model", product.getPartNumber());
         bodyValues.put("description", description);
-        bodyValues.put("shortDescription", shortDescription);
+        bodyValues.put("shortDescription", !product.getMetaDescription().isBlank() ? product.getMetaDescription() : shortDescription);
         bodyValues.put("code", product.getPartNumber());
         bodyValues.put("internalCode", product.getItemId());
         bodyValues.put("WarrantyId", "4b93c926-0e32-4681-aba4-ea1a15c89045");
@@ -365,12 +375,58 @@ public class ItemSyncService {
                 bodyValues.put("tags", tagsArray);
             }
         }
-        if(syncItem.getDefaultVersionId() != null && (!Objects.equals(product.getWeight(), "") || !Objects.equals(product.getLength(), "") ||
-                !Objects.equals(product.getHeight(), "") || !Objects.equals(product.getWidth(), ""))){
+        if (syncItem.getDefaultVersionId() != null){
             JSONObject productVersionObj = getProductVersionObj(syncItem, product);
             productVersionsArray.put(productVersionObj);
             bodyValues.put("ProductVersions", productVersionsArray);
         }
+
+        // ****************** Brand on customAttribute for Jumpseller **********************************
+        String brand = product.getBrand() != null ? product.getBrand() : "";
+        JSONObject customAttributes = new JSONObject();
+        switch (brand){
+            case "BOBCAT":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "BOBCAT");
+                break;
+            case "DOOSAN FK":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "BOBCAT MH");
+                break;
+            case "CAMSO":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "CAMSO");
+                break;
+            case "FLEXI":
+            case "FELXI":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "FLEXI");
+                break;
+            case "TVH":
+            case "GENERICAS":
+            case "DEKA":
+            case "GEN-APYMSA":
+            case "MAXILEVER":
+            case "APYMSA":
+            case "DONALDSON":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "GENERICAS");
+                break;
+            case "JLG":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "JLG");
+                break;
+            case "NISSAN":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "NISSAN");
+                break;
+            case "RALOYD":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "RAYLOD");
+                break;
+            case "UNICARRIERS":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "UNICARRIERS");
+                break;
+            default:
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "OTRA");
+                break;
+        }
+        if (!customAttributes.isEmpty()){
+            bodyValues.put("CustomAttributeValues", customAttributes);
+        }
+        // *********************************************************************************************
         return bodyValues;
     }
 
@@ -411,9 +467,10 @@ public class ItemSyncService {
         JSONObject productVersionObj = new JSONObject();
         DecimalFormat weightFmt = new DecimalFormat("0.00");
         productVersionObj.put("_id", syncItem.getDefaultVersionId());
-        if(!Objects.equals(product.getWeight(), "")){
-            productVersionObj.put("weight", weightFmt.format(Float.parseFloat(product.getWeight()) / 2.20462));
-        }
+        /* ****************** WEIGHT CORRECTION FOR JUMPSELLER *********************************** */
+        BigDecimal weight = BigDecimal.valueOf(Double.parseDouble((product.getWeight() == null || product.getWeight().isBlank()) ? "0.0" : product.getWeight()) / 2.20462).setScale(2, RoundingMode.HALF_UP);
+        productVersionObj.put("weight", weight.max(new BigDecimal("1.00")));
+        /* *************************************************************************************** */
         if(!Objects.equals(product.getLength(), "")){
             productVersionObj.put("length", weightFmt.format(Float.parseFloat(product.getLength())));
         }
@@ -461,6 +518,193 @@ public class ItemSyncService {
             System.err.println("The product " + MWUtils.getJsonNodeResponse(syncResponse,"internalCode") + " with error status was saved in Middleware table.");
         } catch (RuntimeException | JsonProcessingException e) {
             System.err.println("The product " + MWUtils.getJsonNodeResponse(syncResponse,"internalCode") + " with error status was NOT saved in Middleware table.");
+        }
+    }
+
+    /* ******************************* Sensedia testing ********************************* */
+    public SyncItem[] getProducts(int page, int size){
+        int offset = page * size;
+
+        return syncItemRepo.getPagedItems(size, offset);
+    }
+
+    public long countProducts(){
+        return syncItemRepo.count();
+    }
+
+    /* ************************************ CREATE PRODUCT ******************************************* */
+    public JsonNode createProduct(String authToken, String merchantId, String dataAreaId, Company company, String itemId) {
+        String urlCreateProduct = endpointRepo.getEndpointUrl("CREATE_PRODUCT", env.getProperty("integration.company.name"))
+                .replace("{{merchant_id}}", merchantId);
+        InterfaceItems auxIProduct = new InterfaceItems();
+        getProductToUpdate(auxIProduct, itemId, dataAreaId);
+        String brandId = getBrandID(auxIProduct.getBrand(), authToken, merchantId, dataAreaId, company);
+        ArrayList<List<String>> categoryIDs = getCategoryIDs(itemId, authToken, merchantId, dataAreaId, company);
+        List<String> categories = categoryIDs.getFirst(), tags = categoryIDs.getLast();
+
+        JSONObject bodyValues = getProductBodyValues(auxIProduct, brandId, categories, tags);
+        JsonNode postResponse = postProduct(bodyValues, authToken, urlCreateProduct);
+        saveProduct(postResponse, company);
+
+        return postResponse;
+    }
+
+    public JsonNode postProduct(JSONObject bodyValues, String accessToken, String url){
+        HttpHeaders headers = MWUtils.getHeaders(accessToken);
+        return webClient.post()
+                .uri(url)
+                .headers(h -> h.addAll(headers))
+                .bodyValue(bodyValues.toString())
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block();
+    }
+
+    public JsonNode getProduct(String accessToken, String url){
+        HttpHeaders headers = MWUtils.getHeaders(accessToken);
+        return webClient.get()
+                .uri(url)
+                .headers(h -> h.addAll(headers))
+                .retrieve()
+                .bodyToMono(JsonNode.class)
+                .block();
+    }
+
+    private static JSONObject getProductBodyValues(InterfaceItems product, String brandId, List<String> categories, List<String> tags) throws RuntimeException {
+        JSONObject bodyValues = new JSONObject();
+        JSONArray otherCategoriesArray = new JSONArray();
+        JSONArray tagsArray = new JSONArray();
+        String auxShortDescription = getShortDescription(product.getShortDescription(), product.getProductName()),
+                name = getName(product, product.getShortDescription()),
+                shortDescription = getName(product, auxShortDescription),
+                description = "-- TIENDA VEGUSA MAQUINARIA, DISTRUIBIDOR AUTORIZADO UNICARRIERS, BOBCAT, JLG, FLEXI. -- " + shortDescription + ". " + getCrossReferences(product.getCrossReferences());
+
+        bodyValues.put("name", name);
+        bodyValues.put("alias", !product.getSeoTitle().isBlank() ? product.getSeoTitle() : name);
+        bodyValues.put("model", product.getPartNumber().trim());
+        bodyValues.put("description", description);
+        bodyValues.put("shortDescription", !product.getMetaDescription().isBlank() ? product.getMetaDescription() : shortDescription);
+        bodyValues.put("code", product.getPartNumber().trim());
+        bodyValues.put("internalCode", product.getItemId().trim());
+        bodyValues.put("WarrantyId", "4b93c926-0e32-4681-aba4-ea1a15c89045");
+        bodyValues.put("InventoryTypeId", "791a6654-c5f2-11e6-aad6-2c56dc130c0d");
+        bodyValues.put("InternalCodeTypeId", JSONObject.NULL);
+        if(brandId != null){ bodyValues.put("BrandId", brandId); }
+        if(!categories.isEmpty()){
+            bodyValues.put("ProductCategoryId", categories.getFirst());
+            categories.removeFirst();
+            for(String category : categories){
+                otherCategoriesArray.put(category);
+            }
+            if(!otherCategoriesArray.isEmpty()){
+                bodyValues.put("otherProductCategories", otherCategoriesArray);
+            }
+        }
+        if(!tags.isEmpty()){
+            for (String tag : tags) {
+                JSONObject tagsObj = new JSONObject();
+                tagsObj.put("_id", tag);
+                tagsArray.put(tagsObj);
+            }
+            if (!tagsArray.isEmpty()) {
+                bodyValues.put("tags", tagsArray);
+            }
+        }
+
+        // ****************** Brand on customAttribute for Jumpseller **********************************
+        String brand = product.getBrand() != null ? product.getBrand() : "";
+        JSONObject customAttributes = new JSONObject();
+        switch (brand){
+            case "BOBCAT":
+            case "BOB":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "BOBCAT");
+                break;
+            case "DOOSAN FK":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "BOBCAT MH");
+                break;
+            case "CAMSO":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "CAMSO");
+                break;
+            case "FLEXI":
+            case "FELXI":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "FLEXI");
+                break;
+            case "TVH":
+            case "GENERICAS":
+            case "DEKA":
+            case "GEN-APYMSA":
+            case "MAXILEVER":
+            case "APYMSA":
+            case "DONALDSON":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "GENERICAS");
+                break;
+            case "JLG":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "JLG");
+                break;
+            case "NISSAN":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "NISSAN");
+                break;
+            case "RALOYD":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "RAYLOD");
+                break;
+            case "UNICARRIERS":
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "UNICARRIERS");
+                break;
+            default:
+                customAttributes.put("bea52509-9256-44b6-a2b3-7d1326c87d06", "OTRA");
+                break;
+        }
+        if (!customAttributes.isEmpty()){
+            bodyValues.put("CustomAttributeValues", customAttributes);
+        }
+        // *********************************************************************************************
+
+        /* ****************************************** PRODUCT VERSION ************************************** */
+        JSONArray productVersionsArray = new JSONArray();
+        JSONObject productVersionObj = new JSONObject();
+
+        productVersionObj.put("status", "waiting-for-creation");
+        productVersionObj.put("code", product.getPartNumber().trim());
+        productVersionObj.put("isDefaultVersion", true);
+        DecimalFormat weightFmt = new DecimalFormat("0.00");
+        /* ****************** WEIGHT CORRECTION FOR JUMPSELLER *********************************** */
+        BigDecimal weight = BigDecimal.valueOf(Double.parseDouble((product.getWeight() == null || product.getWeight().isBlank()) ? "0.0" : product.getWeight()) / 2.20462).setScale(2, RoundingMode.HALF_UP);
+        productVersionObj.put("weight", weight.max(new BigDecimal("1.00")));
+        /* *************************************************************************************** */
+        if(!Objects.equals(product.getLength(), "")){
+            productVersionObj.put("length", weightFmt.format(Float.parseFloat(product.getLength())));
+        }
+        if(!Objects.equals(product.getHeight(), "")){
+            productVersionObj.put("height", weightFmt.format(Float.parseFloat(product.getHeight())));
+        }
+        if(!Objects.equals(product.getWidth(), "")){
+            productVersionObj.put("width", weightFmt.format(Float.parseFloat(product.getWidth())));
+        }
+        productVersionObj.put("InventoryTypeId", "791a6654-c5f2-11e6-aad6-2c56dc130c0d");
+        productVersionObj.put("InternalCodeTypeId", JSONObject.NULL);
+        productVersionObj.put("position", 0);
+
+        productVersionsArray.put(productVersionObj);
+        bodyValues.put("ProductVersions", productVersionsArray);
+
+        return bodyValues;
+    }
+
+    private void saveProduct(JsonNode product, Company company){
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            SyncItem syncItem = mapper.treeToValue(product, SyncItem.class);
+            JsonNode productVersions = product.path("ProductVersions");
+            if (productVersions.isArray() && !productVersions.isEmpty()){
+                syncItem.setDefaultVersionId(productVersions.get(0).path("_id").asText());
+            }
+            syncItem.setCompany(company);
+            syncItem.setIntegrationCompany(env.getProperty("integration.company.name"));
+            syncItem.setVegSyncStatus("synchronized");
+
+            syncItemRepo.save(syncItem);
+        } catch (IllegalArgumentException | JsonProcessingException e){
+            System.err.println(e.getMessage());
         }
     }
 
@@ -523,6 +767,4 @@ public class ItemSyncService {
         }
     }
     */
-
-
 }

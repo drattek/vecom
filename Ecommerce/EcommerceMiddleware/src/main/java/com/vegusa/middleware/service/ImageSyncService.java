@@ -1,9 +1,13 @@
 package com.vegusa.middleware.service;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.utils.LogsUtils;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.utils.MWUtils;
 import com.vegusa.oauth2_0.service.AuthService;
@@ -15,13 +19,20 @@ import org.springframework.core.env.Environment;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.WebClient;
+import org.springframework.web.reactive.function.client.WebClientResponseException;
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.IllegalBlockSizeException;
 import javax.crypto.NoSuchPaddingException;
+import java.io.PrintWriter;
+import java.io.StringWriter;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Iterator;
+import java.util.Map;
 
 @Service
 public class ImageSyncService {
@@ -36,6 +47,12 @@ public class ImageSyncService {
     private final Environment env;
     private EncryptDecryptInterface encryptDecryptInterface;
     private String algorithm;
+
+    @Autowired
+    private ItemSyncService itemSyncService;
+
+    @Autowired
+    private ProductImageRepository productImageRepository;
 
     @Autowired
     public ImageSyncService(ProductImagesViewRepository productImagesViewRepo,
@@ -80,11 +97,11 @@ public class ImageSyncService {
         return companyRepo.getCompany(dataAreaId);
     }
 
-    public String processImagesUpload(int maxNumOfItemsPerCall, String authToken, String merchantId, String dataAreaId, Company company) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
+    public String processImagesUpload(int maxNumOfItemsPerCall, String authToken, String merchantId, String dataAreaId, Company company, String albumId) throws RuntimeException, InvalidAlgorithmParameterException, NoSuchPaddingException,
             IllegalBlockSizeException, NoSuchAlgorithmException, BadPaddingException, InvalidKeyException, JsonProcessingException {
         JSONObject response = new JSONObject();
         String url = endpointRepo.getEndpointUrl("UPLOAD_PICTURE_TO_PRODUCT_BY_URL", env.getProperty("integration.company.name"))
-                .replace("{{merchant_id}}", merchantId) .replace("{{product-pictures-set-id}}", "default");
+                .replace("{{merchant_id}}", merchantId) .replace("{{product-pictures-set-id}}", albumId);
         ProductImagesView[] productImages = productImagesViewRepo.getProductImagesView(dataAreaId);
         String auxPreviousItem = productImages[0].getSyncItemResponseId();
         JSONArray request =  new JSONArray();
@@ -104,7 +121,7 @@ public class ImageSyncService {
                         auxItemProcessed++;
                     }
                 }
-                insertImage(images, imageByProduct);
+                insertImage(images, imageByProduct, albumId);
                 auxPreviousItem = imageByProduct.getSyncItemResponseId();
                 if(auxRowProcessed == streamSize){
                     boolean imagesIsEmpty = images.isEmpty();
@@ -118,13 +135,14 @@ public class ImageSyncService {
             } catch (RuntimeException e) {
                 System.err.println("An error occurred processing product images: " + e.getMessage());
                 if(e.getMessage().contains("401") || e.getMessage().contains("404")){
-                    authToken = MWUtils.getDecryptedAccessToken(authService.getAuthToken(), encryptDecryptInterface, algorithm,
-                            "An error occurred while renewing unauthorized token.");
+//                    authToken = MWUtils.getDecryptedAccessToken(authService.getAuthToken(), encryptDecryptInterface, algorithm,
+//                            "An error occurred while renewing unauthorized token.");
+                    System.out.println("error: " + authToken);
                 }
                 response.accumulate("error", "An error occurred processing product images: " + e.getMessage());
             }
             auxRowProcessed++;
-            System.out.println(imageByProduct.getItemId() + "/" + imageByProduct.getBlobName() + " processed.");
+            System.out.println(imageByProduct.getItemId() + "/" + imageByProduct.getBlobName() + " processed. ");
         }
         if(response.isEmpty()){
             response.accumulate("ok", "The process ended, there are no new images to synchronize.");
@@ -132,8 +150,10 @@ public class ImageSyncService {
         return response.toString();
     }
 
-    private void insertImage(ArrayList<String> images, ProductImagesView imageByProduct) throws RuntimeException{
-        SyncImage syncImage = syncImageRepo.getSyncImage(imageByProduct.getBlobName());
+    private void insertImage(ArrayList<String> images, ProductImagesView imageByProduct, String albumId) throws RuntimeException{
+        SyncImage syncImage = albumId.equals("default") ?
+            syncImageRepo.getSyncImageDefault(imageByProduct.getBlobName()) :
+            syncImageRepo.getSyncImage(imageByProduct.getBlobName(), albumId);
         if(syncImage == null) {
             images.add(imageByProduct.getImageUrl());
         }
@@ -154,18 +174,44 @@ public class ImageSyncService {
             HttpHeaders headers = new HttpHeaders();
             headers.add("Content-Type", "application/json");
             headers.add("Authorization", "Bearer " + accessToken);
+            String timestamp = String.valueOf(System.currentTimeMillis());
+            LogsUtils.generateLog(bodyRequest.toString(), timestamp + "images-request");
             return webClient.post()
                     .uri(url)
                     .headers(h -> h.addAll(headers))
                     .bodyValue(bodyRequest.toString())
                     .retrieve()
                     .bodyToMono(String.class)
+                    .doOnSuccess(result -> {
+                        LogsUtils.generateLog(result, timestamp + "image-response");
+                    })
+                    .doOnError(error -> {
+                        LogsUtils.generateLog(error.getMessage(), timestamp + "error-image");
+                        String errorLog;
+
+                        if (error instanceof WebClientResponseException) {
+                            WebClientResponseException ex = (WebClientResponseException) error;
+                            errorLog = "Status: " + ex.getRawStatusCode() + "\n" +
+                                    "Headers: " + ex.getHeaders() + "\n" +
+                                    "Response Body: " + ex.getResponseBodyAsString();
+                        } else {
+                            errorLog = getStackTraceAsString(error);
+                        }
+                        LogsUtils.generateLog(errorLog, timestamp + "image-error");
+                    })
                     .block();
         } catch (RuntimeException e){
             throw new RuntimeException("An error occurred while uploading item images to " + bodyRequest  + " " + e.getMessage());
         } finally {
             bodyRequest.clear();
         }
+    }
+
+    public static String getStackTraceAsString(Throwable throwable) {
+        StringWriter sw = new StringWriter();
+        PrintWriter pw = new PrintWriter(sw);
+        throwable.printStackTrace(pw);
+        return sw.toString();
     }
 
     private JSONArray saveSyncImagesInfo(String uploadResponse, Company company) {
@@ -203,4 +249,98 @@ public class ImageSyncService {
         }
     }
 
+    /* ************************** Process new images **************************** */
+    public ObjectNode createImages(JSONArray imageList, String accessToken, String merchantId, String dataAreaId, Company company){
+        ObjectMapper mapper = new ObjectMapper();
+        try {
+            JsonNode imageListNode = mapper.readTree(imageList.toString());
+
+            if (imageListNode.isArray()) {
+                ObjectNode grouped = groupedImage((ArrayNode) imageListNode);
+
+                Iterator<Map.Entry<String, JsonNode>> fields = grouped.fields();
+
+                while (fields.hasNext()) {
+                    Map.Entry<String, JsonNode> entry = fields.next();
+                    String itemId = entry.getKey();
+                    JsonNode value = entry.getValue();
+                    String partNumber = value.get("partNumber").asText();
+                    String name = "";
+
+                    SyncItem syncItem = syncItemRepo.getSyncItem(itemId, dataAreaId);
+                    if (syncItem == null){
+                        JsonNode item = itemSyncService.createProduct(accessToken, merchantId, dataAreaId, company, itemId);
+                        name = item.path("name").asText();
+                    } else {
+                        name = syncItem.getName();
+                    }
+
+                    ArrayNode files = (ArrayNode) value.get("files");
+                    for (JsonNode file : files) {
+                        String consecutivo = file.path("consecutivo").asText();
+                        String filename = file.path("filename").asText();
+                        String fileUrl = file.path("fileUrl").asText();
+
+                        ProductImage image = new ProductImage();
+                        image.setItemId(itemId.trim());
+                        image.setPartNumber(partNumber.trim());
+                        image.setItemName(name);
+                        image.setImageUrl(fileUrl);
+                        image.setBlobName(filename);
+                        image.setUpdatedAt(Instant.now());
+                        image.setCreatedAt(Instant.now());
+                        image.setInterfaceId("DYN");
+                        image.setInterfaceRefRecId(4L);
+                        image.setDataAreaId(dataAreaId);
+                        image.setCompanyRefRecId(1L);
+                        image.setImageNumber(Long.valueOf(consecutivo));
+                        image.setActive(true);
+                        image.setPriority(1L);
+
+                        try {
+                            productImageRepository.save(image);
+                        } catch (RuntimeException e){
+                            System.err.println("Error item " + itemId + " - " + partNumber);
+                        }
+                    }
+
+                    System.out.println("Processed item: " + itemId + " - " + partNumber);
+                }
+                System.out.println("Images list completed");
+            }
+        } catch (JsonProcessingException e) {
+            throw new RuntimeException(e);
+        }
+        return mapper.createObjectNode();
+    }
+
+    private ObjectNode groupedImage(ArrayNode imageList) {
+        ObjectMapper mapper = new ObjectMapper();
+        ObjectNode grouped = mapper.createObjectNode();
+
+        for (JsonNode item : imageList) {
+            String itemId = item.path("itemId").asText();
+            String partNumber = item.path("partNumber").asText();
+
+            ObjectNode fileNode = mapper.createObjectNode();
+            fileNode.put("consecutivo", item.path("consecutivo").asText());
+            fileNode.put("filename", item.path("filename").asText());
+            fileNode.put("fileUrl", item.path("fileUrl").asText());
+
+            ObjectNode existing = (ObjectNode) grouped.get(itemId);
+            if (existing == null) {
+                existing = mapper.createObjectNode();
+                existing.put("itemId", itemId);
+                existing.put("partNumber", partNumber);
+                ArrayNode files = mapper.createArrayNode();
+                files.add(fileNode);
+                existing.set("files", files);
+                grouped.set(itemId, existing);
+            } else {
+                ((ArrayNode) existing.get("files")).add(fileNode);
+            }
+        }
+
+        return grouped;
+    }
 }
