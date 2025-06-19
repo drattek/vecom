@@ -16,7 +16,7 @@ COPY . .
 RUN gradle bootJar --no-daemon
 
 # Etapa 2: Imagen liviana para ejecución
-FROM eclipse-temurin:17-jdk-jammy
+FROM eclipse-temurin:21-jdk-jammy
 WORKDIR /app
 
 # Variables de entorno (opcional)
