@@ -1,5 +1,5 @@
 # Etapa 1: Build usando Gradle con Java 17
-FROM gradle:8.5-jdk17 AS builder
+FROM gradle:8.7-jdk-21-and-22 AS builder
 WORKDIR /app
 
 # Copiamos el wrapper y el archivo de build

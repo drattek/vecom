@@ -34,7 +34,7 @@ public class OauthMeliController {
     public String meliCallback(@RequestParam("code") String code){
         System.out.println("code: " + code);
 
-        client.performAccessToken(code);
+        client.performAccessToken(code).block();
 
         return "";
     }
