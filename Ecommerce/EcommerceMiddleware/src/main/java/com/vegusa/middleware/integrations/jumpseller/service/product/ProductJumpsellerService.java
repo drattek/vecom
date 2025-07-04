@@ -345,7 +345,7 @@ public class ProductJumpsellerService {
                 .orElseGet(HashMap::new);
         IntegrationCategory mainCategory = categories.get(346L);
 
-        List<JumpsellerProductDto> products = new ArrayList<>();
+        Map<String, JumpsellerProductDto> products = new HashMap<>();
         for (Map.Entry<String, ProductInfo> entry : listProducts.entrySet()) {
             String itemId = entry.getKey();
             ProductInfo info = entry.getValue();
@@ -374,33 +374,73 @@ public class ProductJumpsellerService {
                 String name = !baseProduct.getSeoTitle().isEmpty() ? baseProduct.getSeoTitle() : syncUtils.getName(baseProduct, baseProduct.getShortDescription());
                 product.setName(name);
                 product.setPage_title(name);
-                System.out.println(name);
 
                 String description = syncUtils.getDescription(baseProduct, name);
                 product.setDescription(description);
-                System.out.println(description);
 
                 product.setSku(baseProduct.getPartNumber());
                 product.setStatus("available");
 
-                product.setWeight(baseProduct.getWeight());
-                product.setLength(baseProduct.getLength());
-                product.setHeight(baseProduct.getHeight());
-                product.setWidth(baseProduct.getWidth());
+                product.setWeight(baseProduct.getWeight().setScale(2, RoundingMode.HALF_UP));
+                product.setLength(baseProduct.getLength().setScale(2, RoundingMode.HALF_UP));
+                product.setHeight(baseProduct.getHeight().setScale(2, RoundingMode.HALF_UP));
+                product.setWidth(baseProduct.getWidth().setScale(2, RoundingMode.HALF_UP));
 
                 JumpsellerProductDto dto = new JumpsellerProductDto(product);
-                products.add(dto);
+                products.put(itemId, dto);
             }
         }
 
-        return Flux.fromArray(products.toArray(JumpsellerProductDto[]::new)).flatMap(product ->
-                jumpsellerClient.createProduct(product)
+        return Flux.fromIterable(products.entrySet()).flatMap(productEntry -> {
+            String itemId = productEntry.getKey();
+            JumpsellerProductDto product = productEntry.getValue();
+            return jumpsellerClient.createProduct(product)
                     .doOnSuccess(response -> {
-                        System.out.println("Product created: " + product.getProduct().getSku());
+                        Product responseProduct = response.getProduct();
                         SyncJumpsellerProduct newProduct = new SyncJumpsellerProduct();
+                        newProduct.setResponseId(responseProduct.getId());
+                        newProduct.setInternalCode(itemId);
+                        newProduct.setName(responseProduct.getName());
+                        newProduct.setPageTitle(responseProduct.getPage_title());
+                        newProduct.setDescription(responseProduct.getDescription());
+                        newProduct.setMetaDescription(responseProduct.getMeta_description());
+                        newProduct.setType(responseProduct.getType());
+                        newProduct.setDaysToExpire(responseProduct.getDays_to_expire());
+                        newProduct.setPrice(responseProduct.getPrice());
+                        newProduct.setDiscount(responseProduct.getDiscount());
+                        newProduct.setWeight(responseProduct.getWeight());
+                        newProduct.setStock(responseProduct.getStock());
+                        newProduct.setStockUnlimited(responseProduct.isStock_unlimited());
+                        newProduct.setStockThreshold(responseProduct.getStock_threshold());
+                        newProduct.setStockNotification(responseProduct.isStock_notification());
+                        newProduct.setCostPerItem(responseProduct.getCost_per_item());
+                        newProduct.setCompareAtPrice(responseProduct.getCompare_at_price());
+                        newProduct.setMinimumQuantity(responseProduct.getMinimum_quantity());
+                        newProduct.setMaximumQuantity(responseProduct.getMaximum_quantity());
+                        newProduct.setSku(responseProduct.getSku());
+                        newProduct.setBrand(responseProduct.getBrand());
+                        newProduct.setBarcode(responseProduct.getBarcode());
+                        newProduct.setGoogleProductCategory(responseProduct.getGoogle_product_category());
+                        newProduct.setFeatured(responseProduct.isFeatured());
+                        newProduct.setShippingRequired(responseProduct.isShipping_required());
+                        newProduct.setReviewsEnabled(responseProduct.isReviews_enabled());
+                        newProduct.setStatus(responseProduct.getStatus());
+                        newProduct.setCreatedAt(responseProduct.getCreated_at());
+                        newProduct.setUpdatedAt(responseProduct.getUpdated_at());
+                        newProduct.setPackageFormat(responseProduct.getPackage_format());
+                        newProduct.setLength(responseProduct.getLength());
+                        newProduct.setWidth(responseProduct.getWidth());
+                        newProduct.setHeight(responseProduct.getHeight());
+                        newProduct.setDiameter(responseProduct.getDiameter());
+                        newProduct.setPermalink(responseProduct.getPermalink());
+                        newProduct.setDataAreaId(DataArea.MSB.name());
+                        newProduct.setCompanyRefRecId(1L);
+
+                        syncProductJumpsellerRepository.save(newProduct);
+                        System.out.println("Item " + itemId + " successfully created");
                     })
-                    .doOnError(error -> System.err.println("Error creating product: " + error.getMessage()))
-        ).then().doOnSuccess(e -> System.out.println("Synchronization completed"));
+                    .doOnError(error -> System.err.println("Error creating product: " + error.getMessage()));
+        }).then().doOnSuccess(e -> System.out.println("Synchronization completed"));
     }
 }
 

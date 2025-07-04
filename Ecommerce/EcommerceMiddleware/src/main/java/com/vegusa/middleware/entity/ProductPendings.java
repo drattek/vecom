@@ -19,6 +19,9 @@ public class ProductPendings {
     @Column(name = "has_image")
     private Boolean hasImage;
 
+    @Column(name = "has_weight")
+    private Boolean hasWeight;
+
     public Long getId() {
         return id;
     }
@@ -49,5 +52,13 @@ public class ProductPendings {
 
     public void setHasImage(Boolean hasImage) {
         this.hasImage = hasImage;
+    }
+
+    public Boolean getHasWeight() {
+        return hasWeight;
+    }
+
+    public void setHasWeight(Boolean hasWeight) {
+        this.hasWeight = hasWeight;
     }
 }

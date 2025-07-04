@@ -7,9 +7,12 @@ import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
 
 import java.util.List;
+import java.util.Optional;
 
 @Repository
 public interface SyncItemMeliRepository extends JpaRepository<SyncItemMeli, Long> {
     @Query(value = "select * from syncitemmeli where DataAreaId = :dataAreaId", nativeQuery = true)
     SyncItemMeli[] getItems(@Param("dataAreaId") String dataAreaId);
+
+    Optional<SyncItemMeli> findByInternalCode(String internalCode);
 }

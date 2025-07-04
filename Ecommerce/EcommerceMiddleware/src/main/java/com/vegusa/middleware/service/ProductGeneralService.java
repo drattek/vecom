@@ -4,11 +4,13 @@ import com.vegusa.middleware.constants.DataArea;
 import com.vegusa.middleware.dto.ProductInfo;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.integrations.jumpseller.service.product.ProductJumpsellerService;
+import com.vegusa.middleware.integrations.mercadolibre.service.product.ProductMeliService;
 import com.vegusa.middleware.repository.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import java.math.BigDecimal;
+import java.math.RoundingMode;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.List;
@@ -49,6 +51,9 @@ public class ProductGeneralService {
     @Autowired
     private ProductJumpsellerService jumpsellerService;
 
+    @Autowired
+    private ProductMeliService meliService;
+
     public void createProduct(List<String> itemIds){
         System.out.println("Start service");
         Map<String, BigDecimal> stocks = stockService.getStocks(itemIds);
@@ -62,22 +67,23 @@ public class ProductGeneralService {
             BigDecimal price = prices.getOrDefault(itemId, BigDecimal.ZERO);
             List<ProductImage> images = imageRepository.getImages(itemId);
 
-//            if (price.compareTo(BigDecimal.ZERO) == 0 || images.isEmpty()){
-//                ProductPendings pending = pendingsRepository.findByInternalCode(itemId)
-//                        .orElseGet(ProductPendings::new);
-//                pending.setInternalCode(itemId);
-//                pending.setHasPrice(price.compareTo(BigDecimal.ZERO) != 0);
-//                pending.setHasImage(!images.isEmpty());
-//
-//                pendingsRepository.save(pending);
-//                continue;
-//            }
+            if (price.compareTo(BigDecimal.ZERO) == 0 || images.isEmpty() || product.getWeight().compareTo(BigDecimal.ZERO) == 0){
+                ProductPendings pending = pendingsRepository.findByInternalCode(itemId)
+                        .orElseGet(ProductPendings::new);
+                pending.setInternalCode(itemId);
+                pending.setHasPrice(price.compareTo(BigDecimal.ZERO) != 0);
+                pending.setHasImage(!images.isEmpty());
+                pending.setHasWeight(product.getWeight().compareTo(BigDecimal.ZERO) == 0);
+
+                pendingsRepository.save(pending);
+                continue;
+            }
 
             ProductInfo info = new ProductInfo();
             info.setProduct(product);
             info.setCategory(category);
             info.setStock(stock);
-            info.setPrice(price);
+            info.setPrice(price.setScale(2, RoundingMode.HALF_UP));
             info.setImages(images);
             listProducts.put(itemId, info);
 
@@ -86,6 +92,9 @@ public class ProductGeneralService {
 
         System.out.println("Jumpseller starting");
         jumpsellerService.syncProduct(listProducts).subscribe();
+
+        System.out.println("Mercado Libre starting");
+        meliService.syncProduct(listProducts).subscribe();
     }
 
     private Products getProductValues(String internalCode){
@@ -132,7 +141,7 @@ public class ProductGeneralService {
         product.setShortDescription(values.get("SHORT_DESCRIPTION"));
         product.setBrand(values.get("BRAND_ID"));
         product.setCategory(values.get("CATEGORY_ID"));
-        BigDecimal weight = values.get("WEIGHT") != null && !values.get("WEIGHT").isBlank() ? new BigDecimal(values.get("WEIGHT")) : BigDecimal.ONE;
+        BigDecimal weight = values.get("WEIGHT") != null && !values.get("WEIGHT").isBlank() ? new BigDecimal(values.get("WEIGHT")) : BigDecimal.ZERO;
         product.setWeight(weight);
         product.setUnitOfMeasurement(values.get("UNIT_OF_MEASUREMENT"));
         if(values.get("AVAILABLE") != null && !values.get("AVAILABLE").isBlank()){
@@ -141,11 +150,11 @@ public class ProductGeneralService {
         if(values.get("COST") != null || !values.get("COST").isBlank()){
             product.setCost(new BigDecimal(values.getOrDefault("COST", "0.00")));
         }
-        BigDecimal length = values.get("LENGTH") != null && !values.get("LENGTH").isBlank() ? new BigDecimal(values.get("LENGTH")) : BigDecimal.ONE;
+        BigDecimal length = values.get("LENGTH") != null && !values.get("LENGTH").isBlank() ? new BigDecimal(values.get("LENGTH")) : BigDecimal.ZERO;
         product.setLength(length);
-        BigDecimal height = values.get("HEIGHT") != null && !values.get("HEIGHT").isBlank() ? new BigDecimal(values.get("HEIGHT")) : BigDecimal.ONE;
+        BigDecimal height = values.get("HEIGHT") != null && !values.get("HEIGHT").isBlank() ? new BigDecimal(values.get("HEIGHT")) : BigDecimal.ZERO;
         product.setHeight(height);
-        BigDecimal width = values.get("WIDTH") != null && !values.get("WIDTH").isBlank() ? new BigDecimal(values.get("WIDTH")) : BigDecimal.ONE;
+        BigDecimal width = values.get("WIDTH") != null && !values.get("WIDTH").isBlank() ? new BigDecimal(values.get("WIDTH")) : BigDecimal.ZERO;
         product.setWidth(width);
         product.setSeoTitle(values.get("SEO_TITLE"));
         product.setMetaDescription(values.get("META_DESCRIPTION"));

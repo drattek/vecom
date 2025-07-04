@@ -50,7 +50,7 @@ public class ProductMeliClient {
         );
     }
 
-    public Mono<String> createProduct(Map<String, Object> data){
+    public Mono<ProductMeliDTO> createProduct(ProductMeliDTO data){
         return client.executeRateLimited(() ->
                 client.getClient().post()
                         .uri("/items")
@@ -61,7 +61,7 @@ public class ProductMeliClient {
                                         .doOnNext(errorBody -> System.err.println("Error 4xx: " + errorBody))
                                         .then(Mono.empty()) // No interrumpe el flujo
                         )
-                        .bodyToMono(String.class)
+                        .bodyToMono(ProductMeliDTO.class)
                         .doOnError(error -> {
                             System.err.println(error.getMessage());
                         })

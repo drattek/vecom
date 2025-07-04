@@ -79,6 +79,10 @@ public class PriceMeliService {
         Map<String, ProductMeliDTO> products = new HashMap<>();
         for (SyncItemMeli item : items){
             if (itemCostMap.get(item.getInternalCode()) != null && item.getStatus().equals("active")){
+                BigDecimal productCost = new BigDecimal(itemCostMap.get(item.getInternalCode()));
+                if (productCost.compareTo(BigDecimal.ZERO) > 0) {
+                    continue;
+                }
                 ProductCategory productCategory = productCategoryRepository.getProductCategory(item.getInternalCode(), dataAreaId);
                 Optional<Category> currentCategory = Arrays.stream(categories)
                         .filter(category -> Objects.equals(category.getId().getRecId(), productCategory.getCategory().getId().getRecId()))
@@ -86,7 +90,6 @@ public class PriceMeliService {
 
                 BigDecimal categoryPercentage = currentCategory.isPresent() ? currentCategory.get().getPercentage() : new BigDecimal("35");
 
-                BigDecimal productCost = new BigDecimal(itemCostMap.get(item.getInternalCode()));
                 BigDecimal auxCost = total_percentage
                         .add(categoryPercentage)
                         .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP)
@@ -99,7 +102,6 @@ public class PriceMeliService {
                     auxProduct.setPrice(finalCost);
                     products.put(item.getResponseId(), auxProduct);
                 }
-                //System.out.println("Item " + item.getInternalCode() + " with price: " + finalCost);
             }
         }
 

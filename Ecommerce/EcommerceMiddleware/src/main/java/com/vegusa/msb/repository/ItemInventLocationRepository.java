@@ -31,6 +31,6 @@ public interface ItemInventLocationRepository extends JpaRepository<ItemInventLo
     @Query(value = "SELECT Articulo, [Costo promedio] FROM ItemInventLocation where Articulo IN :items group by Articulo, [Costo promedio] order by Articulo", nativeQuery = true)
     List<Object[]> getCosts(@Param("items") List<String> items);
 
-    @Query(value = "select Articulo, [Costo promedio] as cost from ItemInventLocation where Articulo IN :items group by Articulo, [Costo promedio] order by Articulo", nativeQuery = true)
+    @Query(value = "select Articulo, [Costo promedio] as cost from ItemInventLocation where Articulo IN :items and [Costo promedio] IS NOT NULL group by Articulo, [Costo promedio] order by Articulo", nativeQuery = true)
     List<PriceProjection> getPrices(@Param("items") List<String> items);
 }

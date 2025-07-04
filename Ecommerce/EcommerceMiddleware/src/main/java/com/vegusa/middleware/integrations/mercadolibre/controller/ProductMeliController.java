@@ -36,10 +36,10 @@ public class ProductMeliController {
         return productService.getProduct(itemId);
     }
 
-    @PostMapping(value = "/create-product")
-    public Mono<String> createProduct(@RequestBody Map<String, Object> request){
-        return productService.createProduct(request);
-    }
+//    @PostMapping(value = "/create-product")
+//    public Mono<String> createProduct(@RequestBody Map<String, Object> request){
+//        return productService.createProduct(request);
+//    }
 
     @PostMapping(value = "/update-stock")
     public Mono<ResponseEntity<String>> updateStock(){

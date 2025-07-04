@@ -24,9 +24,10 @@
   </component>
   <component name="DBNavigator.Project.DatabaseConsoleManager">
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2">
-      <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemjumpseller where `Sku` = '7354884']]></console>
-      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemmeli where `InternalCode` in ('MSB-0010249','MSB-0010026','MSB-0008485','MSB-0003661','MSB-0003662')
-select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></console>
+      <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select distinct ExternalId from integration_category where `IntegrationName` = 'MERCADO_LIBRE']]></console>
+      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemmeli where `CategoryId` = 'MLM456166'
+
+select * from integration_images]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
@@ -34,6 +35,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
   </component>
   <component name="DBNavigator.Project.DatabaseFileManager">
     <open-files>
+      <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql" />
       <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql test" />
     </open-files>
   </component>
