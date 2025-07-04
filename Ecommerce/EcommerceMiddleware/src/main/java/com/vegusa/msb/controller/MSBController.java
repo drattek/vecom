@@ -3,16 +3,19 @@ package com.vegusa.msb.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.vegusa.middleware.dto.ImportSeoDTO;
 import com.vegusa.middleware.dto.Product;
 import com.vegusa.middleware.entity.Company;
 import com.vegusa.middleware.entity.SyncItem;
 import com.vegusa.middleware.entity.SyncPriceList;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
+import com.vegusa.msb.entity.DYNProduct;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
@@ -25,12 +28,20 @@ import javax.crypto.NoSuchPaddingException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 @RestController
 @RequestMapping("msb-ecommerce-middleware")
 public class MSBController {
+    @Autowired
+    private ImportService importService;
+
+    @Autowired
+    private ProductGeneralService generalService;
+
     private final ItemSyncService itemSyncService;
     private final ItemControlTableService ctrlTableService;
     private final InterfaceInfoService interfaceInfoService;
@@ -55,6 +66,14 @@ public class MSBController {
         this.itemPriceSyncService = itemPriceSyncService;
         this.imageSyncService = imageSyncService;
         this.webScraperService = webScraperService;
+    }
+
+    @PostMapping(value = "/set-products")
+    public void setProducts(){
+        List<String> itemIds = new ArrayList<>();
+        itemIds.add("MSB-0001205");
+
+        generalService.createProduct(itemIds);
     }
 
     @PostMapping(value = "/update-products")
@@ -126,6 +145,11 @@ public class MSBController {
             System.err.println("An error occurred while updating interface information.");
             throw new ResponseStatusException(HttpStatus.INTERNAL_SERVER_ERROR, e.getMessage(), e);
         }
+    }
+
+    @GetMapping(value = "/get-dynproducts")
+    public ResponseEntity<DYNProduct[]> getDynProduct(){
+        return ResponseEntity.ok(interfaceInfoService.getDynProducts());
     }
 
     @PostMapping(value = "/update-pricelist")
@@ -306,5 +330,10 @@ public class MSBController {
     }
     */
 
+    @PostMapping(value = "/import-seodata")
+    public Mono<ResponseEntity<String>> importSeoData(@RequestBody List<ImportSeoDTO> seoData){
+        importService.importSeoData(seoData).subscribe();
 
+        return Mono.just(ResponseEntity.accepted().body("Importing seo data"));
+    }
 }

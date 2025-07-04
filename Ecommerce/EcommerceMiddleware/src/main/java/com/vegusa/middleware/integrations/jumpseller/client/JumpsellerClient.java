@@ -42,7 +42,7 @@ public class JumpsellerClient {
                 .build();
 
         // Procesar una solicitud cada 100ms = 10 por segundo
-        reactor.core.publisher.Flux.interval(Duration.ofMillis(100))
+        reactor.core.publisher.Flux.interval(Duration.ofMillis(200))
                 .onBackpressureDrop()
                 .publishOn(Schedulers.boundedElastic())
                 .subscribe(tick -> {

@@ -1,12 +1,17 @@
 package com.vegusa.middleware.integrations.mercadolibre.client;
 
+import com.vegusa.middleware.constants.IntegrationType;
 import com.vegusa.middleware.constants.TokenType;
 import com.vegusa.middleware.dto.IntegrationTokenRequest;
+import com.vegusa.middleware.entity.IntegrationParameter;
 import com.vegusa.middleware.integrations.mercadolibre.dto.OauthMeliDTO;
 import com.vegusa.middleware.integrations.mercadolibre.oauth.TokenStorageMeli;
+import com.vegusa.middleware.repository.IntegrationParameterRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.util.LinkedMultiValueMap;
@@ -43,6 +48,9 @@ public class MercadolibreClient {
     @Autowired
     private TokenStorageMeli tokenStorage;
 
+    @Autowired
+    private IntegrationParameterRepository integrationParameterRepository;
+
     public MercadolibreClient(WebClient.Builder webClientBuilder) {
         this.webClientBuilder = webClientBuilder;
     }
@@ -57,7 +65,7 @@ public class MercadolibreClient {
                 .filter(addAuthHeaderFilter())
                 .build();
 
-        Flux.interval(Duration.ofMillis(100))
+        Flux.interval(Duration.ofSeconds(2))
                 .onBackpressureBuffer()
                 .publishOn(Schedulers.boundedElastic())
                 .subscribe(tick -> {
@@ -112,10 +120,9 @@ public class MercadolibreClient {
         return refresh;
     }
 
-    private Mono<Void> performRefreshToken() {
+    public Mono<Void> performRefreshToken() {
         WebClient formClient = webClientBuilder
                 .baseUrl(baseUrl)
-                .defaultHeader("Content-Type", MediaType.APPLICATION_FORM_URLENCODED_VALUE)
                 .build();
 
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
@@ -124,13 +131,28 @@ public class MercadolibreClient {
         formData.add("client_secret", tokenStorage.getClientSecret());
         formData.add("refresh_token", tokenStorage.getRefreshToken());
 
+        System.out.println("Token: " + tokenStorage.getRefreshToken());
+        System.out.println("Client: " + tokenStorage.getClientId());
+        System.out.println("Secret: " + tokenStorage.getClientSecret());
+
         return formClient.post()
                 .uri("/oauth/token")
                 .contentType(MediaType.APPLICATION_FORM_URLENCODED)
                 .body(BodyInserters.fromFormData(formData))
                 .retrieve()
+                .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                        clientResponse.bodyToMono(String.class)
+                                .flatMap(errorBody -> {
+                                    HttpHeaders headers = clientResponse.headers().asHttpHeaders();
+                                    String message = "Status: " + clientResponse.statusCode()
+                                            + ", Headers: " + headers
+                                            + ", Body: " + errorBody;
+                                    return Mono.error(new RuntimeException(message));
+                                })
+                )
                 .bodyToMono(OauthMeliDTO.class)
                 .doOnNext(response -> {
+                    System.out.println("Mercado libre token refresh successfully");
                     IntegrationTokenRequest<OauthMeliDTO> token = new IntegrationTokenRequest<>();
                     token.setIntegrationName(tokenStorage.getIntegrationName());
                     token.setTokenType(TokenType.BEARER);
@@ -146,13 +168,15 @@ public class MercadolibreClient {
                 .baseUrl(baseUrl)
                 .defaultHeader("Content-Type", MediaType.APPLICATION_FORM_URLENCODED_VALUE)
                 .build();
+        String code_verifier = integrationParameterRepository.getVerifier(IntegrationType.MERCADO_LIBRE.name());
 
         MultiValueMap<String, String> formData = new LinkedMultiValueMap<>();
-        formData.add("grand_type", "authorization_code");
+        formData.add("grant_type", "authorization_code");
         formData.add("client_id", tokenStorage.getClientId());
         formData.add("client_secret", tokenStorage.getClientSecret());
         formData.add("code", code);
-        formData.add("redirect_uri", "http://vecom.odo.mx/msb-ecommerce-middleware/mercadolibre/callback");
+        formData.add("redirect_uri", tokenStorage.getStoreUrl());
+        formData.add("code_verifier", code_verifier);
 
         return formClient.post()
                 .uri("/oauth/token")
@@ -167,6 +191,9 @@ public class MercadolibreClient {
                     token.setData(response);
 
                     tokenStorage.save(token);
+                })
+                .doOnError(e -> {
+                    System.err.println("Error: " + e.getMessage());
                 })
                 .then();
     }

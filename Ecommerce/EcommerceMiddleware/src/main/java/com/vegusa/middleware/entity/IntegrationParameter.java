@@ -15,6 +15,9 @@ public class IntegrationParameter {
     @Column(name = "integration_name")
     private String integrationName;
 
+    @Column(name = "site_id")
+    private String siteId;
+
     @Column(name = "client_id")
     private String clientId;
 
@@ -23,6 +26,9 @@ public class IntegrationParameter {
 
     @Column(name = "store_url")
     private String storeUrl;
+
+    @Column(name = "verifier")
+    private String verifier;
 
     @Column(name = "is_active")
     private Boolean isActive;
@@ -49,6 +55,14 @@ public class IntegrationParameter {
         this.integrationName = integrationName;
     }
 
+    public String getSiteId() {
+        return siteId;
+    }
+
+    public void setSiteId(String siteId) {
+        this.siteId = siteId;
+    }
+
     public String getClientId() {
         return clientId;
     }
@@ -71,6 +85,14 @@ public class IntegrationParameter {
 
     public void setStoreUrl(String storeUrl) {
         this.storeUrl = storeUrl;
+    }
+
+    public String getVerifier() {
+        return verifier;
+    }
+
+    public void setVerifier(String verifier) {
+        this.verifier = verifier;
     }
 
     public Boolean getActive() {

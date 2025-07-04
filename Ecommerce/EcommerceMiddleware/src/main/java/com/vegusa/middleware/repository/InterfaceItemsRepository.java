@@ -3,7 +3,10 @@ package com.vegusa.middleware.repository;
 import com.vegusa.middleware.entity.InterfaceItems;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.repository.query.Param;
 import org.springframework.stereotype.Repository;
+
+import java.util.List;
 
 @Repository
 public interface InterfaceItemsRepository extends JpaRepository<InterfaceItems, Long> {
@@ -15,4 +18,10 @@ public interface InterfaceItemsRepository extends JpaRepository<InterfaceItems, 
 
     @Query(value = "select SkipNull from product where ItemId = ?1 and DataAreaId = ?2 limit 1", nativeQuery = true)
     String getSkipNull(String itemId, String dataAreaId);
+
+    @Query(value = "select * from product where ItemId in :itemIds and DataAreaId = :dataAreaId and InterfaceId = 'DYN'", nativeQuery = true)
+    List<InterfaceItems> getProducts(@Param("itemIds") List<String> itemIds, @Param("dataAreaId") String dataAreaId);
+
+    @Query(value = "select * from product where PartNumber = :partNumber and InterfaceId = 'DYN' and DataAreaId = :dataAreaId limit 1", nativeQuery = true)
+    InterfaceItems getProductBySKU(@Param("partNumber") String partNumber, @Param("dataAreaId") String dataAreaId);
 }

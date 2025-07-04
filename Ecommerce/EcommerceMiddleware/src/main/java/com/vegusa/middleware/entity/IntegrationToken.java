@@ -62,9 +62,8 @@ public class IntegrationToken {
     @Column(name = "updated_at")
     private Instant updatedAt;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "integration_parameter_id")
-    private IntegrationParameter integrationParameter;
+    @Column(name = "integration_parameter_id")
+    private Long integrationParameter;
 
     public long getId() {
         return id;
@@ -186,11 +185,11 @@ public class IntegrationToken {
         this.updatedAt = updatedAt;
     }
 
-    public IntegrationParameter getIntegrationParameter() {
+    public Long getIntegrationParameter() {
         return integrationParameter;
     }
 
-    public void setIntegrationParameter(IntegrationParameter integrationParameter) {
+    public void setIntegrationParameter(Long integrationParameter) {
         this.integrationParameter = integrationParameter;
     }
 }

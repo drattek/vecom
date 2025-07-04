@@ -199,12 +199,12 @@ public class ProductUtils {
         product.setDescription(description);
         product.setPage_title(!values.get("SEO_TITLE").isBlank() ? values.get("SEO_TITLE") : name);
         product.setMeta_description(!values.get("META_DESCRIPTION").isBlank() ? values.get("META_DESCRIPTION") : shortDescription);
-        double weight = Double.parseDouble(!values.get("WEIGHT").isBlank() ? values.get("WEIGHT") : "0.0");
-        product.setWeight(Math.max(weight, 1.0));
-        product.setStatus("available");
-        product.setLength(Double.parseDouble(!values.get("LENGTH").isBlank() ? values.get("LENGTH") : "0.0"));
-        product.setWidth(Double.parseDouble(!values.get("WIDTH").isBlank() ? values.get("WIDTH") : "0.0"));
-        product.setHeight(Double.parseDouble(!values.get("HEIGHT").isBlank() ? values.get("HEIGHT") : "0.0"));
+//        double weight = Double.parseDouble(!values.get("WEIGHT").isBlank() ? values.get("WEIGHT") : "0.0");
+//        product.setWeight(Math.max(weight, 1.0));
+//        product.setStatus("available");
+//        product.setLength(Double.parseDouble(!values.get("LENGTH").isBlank() ? values.get("LENGTH") : "0.0"));
+//        product.setWidth(Double.parseDouble(!values.get("WIDTH").isBlank() ? values.get("WIDTH") : "0.0"));
+//        product.setHeight(Double.parseDouble(!values.get("HEIGHT").isBlank() ? values.get("HEIGHT") : "0.0"));
 
         return new JumpsellerProductDto(product);
     }

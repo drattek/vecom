@@ -2,7 +2,6 @@ package com.vegusa.middleware.integrations.mercadolibre.oauth;
 
 import com.vegusa.middleware.constants.IntegrationType;
 import com.vegusa.middleware.dto.IntegrationTokenRequest;
-import com.vegusa.middleware.entity.IntegrationParameter;
 import com.vegusa.middleware.entity.IntegrationToken;
 import com.vegusa.middleware.integrations.mercadolibre.dto.OauthMeliDTO;
 import com.vegusa.middleware.oauth.TokenAbstract;
@@ -12,12 +11,15 @@ import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
+import java.time.Duration;
 import java.time.Instant;
+import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 
 @Component
 public class TokenStorageMeli extends TokenAbstract<OauthMeliDTO> {
-    private volatile IntegrationParameter ID;
+    private volatile long ID;
+    private volatile String siteId;
     private volatile String clientId;
     private volatile String clientSecret;
     private volatile String storeUrl;
@@ -30,6 +32,8 @@ public class TokenStorageMeli extends TokenAbstract<OauthMeliDTO> {
     @Autowired
     IntegrationTokenRepository integrationTokenRepository;
 
+    public TokenStorageMeli() {}
+
     @PostConstruct
     public void run(){
         integrationParameterRepository.findByIntegrationName(getIntegrationName())
@@ -39,13 +43,30 @@ public class TokenStorageMeli extends TokenAbstract<OauthMeliDTO> {
                     this.storeUrl = parameter.getStoreUrl();
                     this.createdAtIntegration = parameter.getCreatedAt();
                     this.updatedAtIntegration = parameter.getUpdatedAt();
-                    this.ID = parameter;
+                    this.ID = parameter.getId();
+                    this.siteId = parameter.getSiteId();
                 });
     }
 
     @Override
     public String getIntegrationName(){
         return IntegrationType.MERCADO_LIBRE.name();
+    }
+
+    public long getID() {
+        return ID;
+    }
+
+    public void setID(long ID) {
+        this.ID = ID;
+    }
+
+    public String getSiteId() {
+        return siteId;
+    }
+
+    public void setSiteId(String siteId) {
+        this.siteId = siteId;
     }
 
     @Override
@@ -59,14 +80,25 @@ public class TokenStorageMeli extends TokenAbstract<OauthMeliDTO> {
 
                     return new_token;
                 });
+        ZonedDateTime expirationTime = ZonedDateTime.now().plusHours(5);
+        ZonedDateTime expirationRefreshTime = ZonedDateTime.now().plusMonths(3);
 
         token.setAccountId(token_data.getUserId());
         token.setAccessToken(token_data.getAccessToken());
         token.setRefreshToken(token_data.getRefreshToken());
         token.setExpiresIn(token_data.getExpiresIn());
-        token.setExpirationTime(Instant.now().plusMillis(token_data.getExpiresIn()));
-        token.setExpirationRefreshIn(Instant.now().plus(3, ChronoUnit.MONTHS));
+        token.setExpiresRefreshIn(token_data.getExpiresIn());
+        token.setExpirationTime(expirationTime.toInstant());
+        token.setExpirationRefreshIn(expirationRefreshTime.toInstant());
         token.setScope(token_data.getScope());
+
+        this.setAccountId(token_data.getUserId());
+        this.setAccessToken(token_data.getAccessToken());
+        this.setRefreshToken(token_data.getRefreshToken());
+        this.setExpiresIn(token_data.getExpiresIn());
+        this.setExpiresRefreshIn(token_data.getExpiresIn());
+        this.setExpirationTime(expirationTime.toInstant());
+        this.setExpirationRefreshTime(expirationRefreshTime.toInstant());
 
         integrationTokenRepository.save(token);
     }
