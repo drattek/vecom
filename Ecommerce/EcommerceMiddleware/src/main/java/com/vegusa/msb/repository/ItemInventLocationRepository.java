@@ -1,5 +1,6 @@
 package com.vegusa.msb.repository;
 
+import com.vegusa.middleware.dto.PriceProjection;
 import com.vegusa.middleware.integrations.jumpseller.dto.StockProjection;
 import com.vegusa.msb.entity.ItemInventLocation;
 import com.vegusa.msb.entity.ItemInventLocationId;
@@ -26,4 +27,10 @@ public interface ItemInventLocationRepository extends JpaRepository<ItemInventLo
 
     @Query(value = "select Articulo, [Costo promedio] from ItemInventLocation group by Articulo, [Costo promedio] order by Articulo", nativeQuery = true)
     List<Object[]> getItemCost();
+
+    @Query(value = "SELECT Articulo, [Costo promedio] FROM ItemInventLocation where Articulo IN :items group by Articulo, [Costo promedio] order by Articulo", nativeQuery = true)
+    List<Object[]> getCosts(@Param("items") List<String> items);
+
+    @Query(value = "select Articulo, [Costo promedio] as cost from ItemInventLocation where Articulo IN :items group by Articulo, [Costo promedio] order by Articulo", nativeQuery = true)
+    List<PriceProjection> getPrices(@Param("items") List<String> items);
 }

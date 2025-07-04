@@ -1,0 +1,51 @@
+package com.vegusa.middleware.integrations.jumpseller.controller.common;
+
+import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerInfoDto;
+import com.vegusa.middleware.integrations.jumpseller.dto.LanguageDto;
+import com.vegusa.middleware.integrations.jumpseller.service.common.CommonJumpsellerService;
+import org.json.JSONArray;
+import org.json.JSONObject;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
+
+import java.util.HashMap;
+
+@RestController
+@RequestMapping("msb-ecommerce-middleware/jumpseller")
+public class CommonJumpsellerController {
+    @Autowired
+    private CommonJumpsellerService commonJumpsellerService;
+
+    @Autowired
+    public CommonJumpsellerController() {}
+
+    @GetMapping(value = "/app-info")
+    public Mono<JumpsellerInfoDto> getAppInfo() {
+        try {
+            return commonJumpsellerService.getAppInfo();
+        } catch (RuntimeException e){
+            System.err.println(e.getMessage());
+        }
+        return null;
+    }
+
+    @GetMapping(value = "/app-language")
+    public Mono<LanguageDto> getLanguage(){
+        try {
+            return commonJumpsellerService.getLanguage();
+        } catch (RuntimeException e) {
+            System.err.println(e.getMessage());
+        }
+        return null;
+    }
+
+    //@PostMapping(value = "/import-category")
+    public void importCategory(@RequestBody HashMap<String, String> request){
+        System.out.println("Inserting categories to database");
+        String categories = request.get("categoryList");
+        JSONArray categoryList = new JSONObject(categories).getJSONArray("content");
+
+        commonJumpsellerService.importCategories(categoryList);
+    }
+}

@@ -48,6 +48,10 @@ public class InterfaceInfoService {
         return companyRepo.getCompany(dataAreaId);
     }
 
+    public DYNProduct[] getDynProducts(){
+        return dynProductRepo.getDYNProducts();
+    }
+
     public String updateDYNInterfaceInfo(String interfaceId, String dataAreaId, Company company) throws RuntimeException {
         JSONObject response = new JSONObject();
         Interface itf = interfaceRepo.getInterface(interfaceId, dataAreaId);

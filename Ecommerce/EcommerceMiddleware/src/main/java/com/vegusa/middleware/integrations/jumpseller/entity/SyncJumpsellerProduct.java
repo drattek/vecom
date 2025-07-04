@@ -4,6 +4,9 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+
 @Entity
 @Table(name = "syncItemJumpseller")
 @JsonIgnoreProperties(ignoreUnknown = true)
@@ -46,7 +49,7 @@ public class SyncJumpsellerProduct {
 
     @Column(name = "Price")
     @JsonProperty("price")
-    private double price;
+    private BigDecimal price;
 
     @Column(name = "Discount")
     @JsonProperty("discount")
@@ -54,7 +57,7 @@ public class SyncJumpsellerProduct {
 
     @Column(name = "Weight")
     @JsonProperty("weight")
-    private double weight;
+    private BigDecimal weight;
 
     @Column(name = "Stock")
     @JsonProperty("stock")
@@ -134,19 +137,19 @@ public class SyncJumpsellerProduct {
 
     @Column(name = "Length")
     @JsonProperty("length")
-    private double length;
+    private BigDecimal length;
 
     @Column(name = "Width")
     @JsonProperty("width")
-    private double width;
+    private BigDecimal width;
 
     @Column(name = "Height")
     @JsonProperty("height")
-    private double height;
+    private BigDecimal height;
 
     @Column(name = "Diameter")
     @JsonProperty("diameter")
-    private double diameter;
+    private BigDecimal diameter;
 
     @Column(name = "Permalink")
     @JsonProperty("permalink")
@@ -230,11 +233,11 @@ public class SyncJumpsellerProduct {
         this.daysToExpire = daysToExpire;
     }
 
-    public double getPrice() {
+    public BigDecimal getPrice() {
         return price;
     }
 
-    public void setPrice(double price) {
+    public void setPrice(BigDecimal price) {
         this.price = price;
     }
 
@@ -246,11 +249,11 @@ public class SyncJumpsellerProduct {
         this.discount = discount;
     }
 
-    public double getWeight() {
+    public BigDecimal getWeight() {
         return weight;
     }
 
-    public void setWeight(double weight) {
+    public void setWeight(BigDecimal weight) {
         this.weight = weight;
     }
 
@@ -406,35 +409,35 @@ public class SyncJumpsellerProduct {
         this.packageFormat = packageFormat;
     }
 
-    public double getLength() {
+    public BigDecimal getLength() {
         return length;
     }
 
-    public void setLength(double length) {
+    public void setLength(BigDecimal length) {
         this.length = length;
     }
 
-    public double getWidth() {
+    public BigDecimal getWidth() {
         return width;
     }
 
-    public void setWidth(double width) {
+    public void setWidth(BigDecimal width) {
         this.width = width;
     }
 
-    public double getHeight() {
+    public BigDecimal getHeight() {
         return height;
     }
 
-    public void setHeight(double height) {
+    public void setHeight(BigDecimal height) {
         this.height = height;
     }
 
-    public double getDiameter() {
+    public BigDecimal getDiameter() {
         return diameter;
     }
 
-    public void setDiameter(double diameter) {
+    public void setDiameter(BigDecimal diameter) {
         this.diameter = diameter;
     }
 

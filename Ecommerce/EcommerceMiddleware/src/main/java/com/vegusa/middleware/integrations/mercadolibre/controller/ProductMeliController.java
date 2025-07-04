@@ -1,0 +1,57 @@
+package com.vegusa.middleware.integrations.mercadolibre.controller;
+
+import com.vegusa.middleware.integrations.mercadolibre.dto.product.ProductMeliDTO;
+import com.vegusa.middleware.integrations.mercadolibre.service.product.ProductMeliService;
+import com.vegusa.middleware.integrations.mercadolibre.service.stock.StockMeliService;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.*;
+import reactor.core.publisher.Mono;
+
+import java.util.Map;
+
+@RestController
+@RequestMapping("/msb-ecommerce-middleware/mercadolibre")
+public class ProductMeliController {
+    @Autowired
+    private ProductMeliService productService;
+
+    @Autowired
+    private StockMeliService stockService;
+
+    @PostMapping(value = "/download-products")
+    public Mono<ResponseEntity<String>> downloadProducts(){
+        productService.downloadProducts().subscribe();
+
+        return Mono.just(ResponseEntity.accepted().body("Download started"));
+    }
+
+    @GetMapping(value = "/products")
+    public Mono<String> getProducts(){
+        return productService.getProducts();
+    }
+
+    @GetMapping(value = "/product")
+    public Mono<ProductMeliDTO> getProduct(@RequestParam("item_id") String itemId){
+        return productService.getProduct(itemId);
+    }
+
+    @PostMapping(value = "/create-product")
+    public Mono<String> createProduct(@RequestBody Map<String, Object> request){
+        return productService.createProduct(request);
+    }
+
+    @PostMapping(value = "/update-stock")
+    public Mono<ResponseEntity<String>> updateStock(){
+        stockService.updateStock("MSB").subscribe();
+
+        return Mono.just(ResponseEntity.accepted().body("Update stock started"));
+    }
+
+    @PostMapping(value = "/sync-images")
+    public Mono<Void> syncImages(){
+        productService.syncImages().subscribe();
+
+        return Mono.empty();
+    }
+}

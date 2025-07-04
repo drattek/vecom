@@ -16,4 +16,6 @@ public interface SyncProductJumpsellerRepository extends JpaRepository<SyncJumps
     SyncJumpsellerProduct getSyncById(Long id);
 
     Optional<SyncJumpsellerProduct> findByResponseId(long responseId);
+
+    Optional<SyncJumpsellerProduct> findByInternalCode(String internalCode);
 }

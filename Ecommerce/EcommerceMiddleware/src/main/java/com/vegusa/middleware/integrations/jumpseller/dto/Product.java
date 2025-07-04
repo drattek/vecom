@@ -2,6 +2,9 @@ package com.vegusa.middleware.integrations.jumpseller.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+import java.math.BigDecimal;
+import java.time.Instant;
+
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class Product {
     private Long id;
@@ -11,9 +14,9 @@ public class Product {
     private String meta_description;
     private String type;
     private Integer days_to_expire;
-    private Double price;
+    private BigDecimal price;
     private Double discount;
-    private Double weight;
+    private BigDecimal weight;
     private Integer stock;
     private Boolean stock_unlimited;
     private Integer stock_threshold;
@@ -33,16 +36,16 @@ public class Product {
     private String created_at;
     private String updated_at;
     private String package_format;
-    private Double length;
-    private Double width;
-    private Double height;
-    private Double diameter;
+    private BigDecimal length;
+    private BigDecimal width;
+    private BigDecimal height;
+    private BigDecimal diameter;
     private String permalink;
     private Category[] categories;
 
     public  Product(){}
 
-    public Product(Long id, String name, String page_title, String description, String meta_description, String type, Integer days_to_expire, Double price, Double discount, Double weight, Integer stock, Boolean stock_unlimited, Integer stock_threshold, Boolean stock_notification, Double cost_per_item, Double compare_at_price, Integer minimum_quantity, Integer maximum_quantity, String sku, String brand, String barcode, String google_product_category, Boolean featured, Boolean shipping_required, Boolean reviews_enabled, String status, String created_at, String updated_at, String package_format, Double length, Double width, Double height, Double diameter, String permalink, Category[] categories) {
+    public Product(Long id, String name, String page_title, String description, String meta_description, String type, Integer days_to_expire, BigDecimal price, Double discount, BigDecimal weight, Integer stock, Boolean stock_unlimited, Integer stock_threshold, Boolean stock_notification, Double cost_per_item, Double compare_at_price, Integer minimum_quantity, Integer maximum_quantity, String sku, String brand, String barcode, String google_product_category, Boolean featured, Boolean shipping_required, Boolean reviews_enabled, String status, String created_at, String updated_at, String package_format, BigDecimal length, BigDecimal width, BigDecimal height, BigDecimal diameter, String permalink, Category[] categories) {
         this.id = id;
         this.name = name;
         this.page_title = page_title;
@@ -136,11 +139,11 @@ public class Product {
         this.days_to_expire = days_to_expire;
     }
 
-    public Double getPrice() {
+    public BigDecimal getPrice() {
         return price;
     }
 
-    public void setPrice(double price) {
+    public void setPrice(BigDecimal price) {
         this.price = price;
     }
 
@@ -152,11 +155,11 @@ public class Product {
         this.discount = discount;
     }
 
-    public Double getWeight() {
+    public BigDecimal getWeight() {
         return weight;
     }
 
-    public void setWeight(double weight) {
+    public void setWeight(BigDecimal weight) {
         this.weight = weight;
     }
 
@@ -312,35 +315,35 @@ public class Product {
         this.package_format = package_format;
     }
 
-    public Double getLength() {
+    public BigDecimal getLength() {
         return length;
     }
 
-    public void setLength(double length) {
+    public void setLength(BigDecimal length) {
         this.length = length;
     }
 
-    public Double getWidth() {
+    public BigDecimal getWidth() {
         return width;
     }
 
-    public void setWidth(double width) {
+    public void setWidth(BigDecimal width) {
         this.width = width;
     }
 
-    public Double getHeight() {
+    public BigDecimal getHeight() {
         return height;
     }
 
-    public void setHeight(double height) {
+    public void setHeight(BigDecimal height) {
         this.height = height;
     }
 
-    public Double getDiameter() {
+    public BigDecimal getDiameter() {
         return diameter;
     }
 
-    public void setDiameter(double diameter) {
+    public void setDiameter(BigDecimal diameter) {
         this.diameter = diameter;
     }
 

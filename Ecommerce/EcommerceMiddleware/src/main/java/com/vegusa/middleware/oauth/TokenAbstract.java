@@ -117,6 +117,22 @@ public abstract class TokenAbstract<T> {
         this.updatedAt = updatedAt;
     }
 
+    public Instant getExpirationTime() {
+        return expirationTime;
+    }
+
+    public void setExpirationTime(Instant expirationTime) {
+        this.expirationTime = expirationTime;
+    }
+
+    public Instant getExpirationRefreshTime() {
+        return expirationRefreshTime;
+    }
+
+    public void setExpirationRefreshTime(Instant expirationRefreshTime) {
+        this.expirationRefreshTime = expirationRefreshTime;
+    }
+
     public boolean isTokenExpired(){
         return this.expirationTime == null || Instant.now().isAfter(this.expirationTime);
     }
