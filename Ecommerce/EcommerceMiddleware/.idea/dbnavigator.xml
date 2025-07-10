@@ -24,10 +24,22 @@
   </component>
   <component name="DBNavigator.Project.DatabaseConsoleManager">
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2">
-      <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select distinct ExternalId from integration_category where `IntegrationName` = 'MERCADO_LIBRE']]></console>
-      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemmeli where `CategoryId` = 'MLM456166'
+      <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemmeli where `InternalCode` = 'MSB-0000300'
+select * from productattributevalue where `ItemId` = 'MSB-0000300'
+select * from productimages where `ItemId` = 'MSB-0000300'
 
-select * from integration_images]]></console>
+select * from integration_attributes
+
+select * from syncitemjumpseller where `InternalCode` = 'MSB-0002470'
+select * from integration_product_attributes
+
+select * from syncitemjumpseller where `ResponseId` = '28919317']]></console>
+      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[SELECT DISTINCT InternalCode 
+FROM syncitemmeli 
+WHERE InternalCode NOT IN (
+    SELECT InternalCode 
+    FROM syncitemjumpseller
+);]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
@@ -35,8 +47,8 @@ select * from integration_images]]></console>
   </component>
   <component name="DBNavigator.Project.DatabaseFileManager">
     <open-files>
-      <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql" />
       <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql test" />
+      <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql" />
     </open-files>
   </component>
   <component name="DBNavigator.Project.DatabaseSessionManager">
@@ -89,7 +101,7 @@ select * from integration_images]]></console>
           <token-type value="" />
           <token-config-file value="" />
           <token-profile value="" />
-          <session-user value="vecomsqladmin@189.206.52.13" />
+          <session-user value="vecomsqladmin@207.248.114.42" />
         </database>
         <properties>
           <auto-commit value="true" />

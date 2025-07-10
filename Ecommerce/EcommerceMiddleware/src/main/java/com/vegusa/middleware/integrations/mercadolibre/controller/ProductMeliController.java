@@ -32,8 +32,8 @@ public class ProductMeliController {
     }
 
     @GetMapping(value = "/product")
-    public Mono<ProductMeliDTO> getProduct(@RequestParam("item_id") String itemId){
-        return productService.getProduct(itemId);
+    public Mono<String> getProduct(@RequestParam("item_id") String itemId){
+        return productService.getProduct2(itemId);
     }
 
 //    @PostMapping(value = "/create-product")
@@ -53,5 +53,11 @@ public class ProductMeliController {
         productService.syncImages().subscribe();
 
         return Mono.empty();
+    }
+
+    // User product
+    @GetMapping(value = "/get-user-product")
+    public Mono<String> getUserProduct(@RequestParam("item_id") String itemId){
+        return productService.getUserProduct(itemId);
     }
 }

@@ -68,7 +68,7 @@ public class ProductJumpsellerController {
         try {
             System.out.println("Start sync products");
             String dataAreaId = MWUtils.bodyValidation(request.get("dataAreaId"));
-            productJumpsellerService.syncProducts(dataAreaId).subscribe();
+            productJumpsellerService.updateProducts().subscribe();
 
             return Mono.just(ResponseEntity.accepted().body("Syn started"));
         } catch (RuntimeException e) {
@@ -82,5 +82,11 @@ public class ProductJumpsellerController {
         productJumpsellerService.changeTitle().subscribe();
 
         return Mono.empty();
+    }
+
+    // Custom field
+    @GetMapping(value = "/get-custom-field")
+    public Mono<String> getCustomFields(@RequestParam("item_id") String itemId){
+        return productJumpsellerService.getCustomFields(Long.parseLong(itemId));
     }
 }

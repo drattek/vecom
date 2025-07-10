@@ -28,6 +28,8 @@ public class ProductMeliClient {
                 client.getClient().get()
                         .uri(uriBuilder -> {
                             var builder = uriBuilder.path("/users/{user_id}/items/search");
+                            builder = builder.queryParam("offset", 100);
+                            builder = builder.queryParam("limit", 100);
 
                             if (healthy != null && !healthy.isBlank()){
                                 builder = builder.queryParam("reputation_health_gauge", healthy);
@@ -47,6 +49,15 @@ public class ProductMeliClient {
                         .uri("/items/{item_id}", itemId)
                         .retrieve()
                         .bodyToMono(ProductMeliDTO.class)
+        );
+    }
+
+    public Mono<String> getProduct2(String itemId){
+        return client.executeRateLimited(() ->
+                client.getClient().get()
+                        .uri("/items/{item_id}", itemId)
+                        .retrieve()
+                        .bodyToMono(String.class)
         );
     }
 
@@ -88,6 +99,17 @@ public class ProductMeliClient {
                                         })
                         )
                         .bodyToMono(ProductMeliDTO.class)
+        );
+    }
+
+    // User products
+
+    public Mono<String> getUserProduct(String itemId){
+        return client.executeRateLimited(() ->
+                client.getClient().get()
+                        .uri("/user-products/{user_product_id}", itemId)
+                        .retrieve()
+                        .bodyToMono(String.class)
         );
     }
 }

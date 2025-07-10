@@ -80,7 +80,7 @@ public class PriceMeliService {
         for (SyncItemMeli item : items){
             if (itemCostMap.get(item.getInternalCode()) != null && item.getStatus().equals("active")){
                 BigDecimal productCost = new BigDecimal(itemCostMap.get(item.getInternalCode()));
-                if (productCost.compareTo(BigDecimal.ZERO) > 0) {
+                if (productCost.compareTo(BigDecimal.ZERO) == 0) {
                     continue;
                 }
                 ProductCategory productCategory = productCategoryRepository.getProductCategory(item.getInternalCode(), dataAreaId);

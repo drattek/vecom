@@ -3,7 +3,6 @@ package com.vegusa.middleware.integrations.mercadolibre.client;
 import com.vegusa.middleware.constants.IntegrationType;
 import com.vegusa.middleware.constants.TokenType;
 import com.vegusa.middleware.dto.IntegrationTokenRequest;
-import com.vegusa.middleware.entity.IntegrationParameter;
 import com.vegusa.middleware.integrations.mercadolibre.dto.OauthMeliDTO;
 import com.vegusa.middleware.integrations.mercadolibre.oauth.TokenStorageMeli;
 import com.vegusa.middleware.repository.IntegrationParameterRepository;
@@ -65,7 +64,7 @@ public class MercadolibreClient {
                 .filter(addAuthHeaderFilter())
                 .build();
 
-        Flux.interval(Duration.ofSeconds(2))
+        Flux.interval(Duration.ofSeconds(3))
                 .onBackpressureBuffer()
                 .publishOn(Schedulers.boundedElastic())
                 .subscribe(tick -> {

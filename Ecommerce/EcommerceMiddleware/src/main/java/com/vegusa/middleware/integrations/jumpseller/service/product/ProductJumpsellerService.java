@@ -5,15 +5,17 @@ import com.vegusa.middleware.constants.IntegrationType;
 import com.vegusa.middleware.dto.ProductInfo;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.integrations.jumpseller.client.product.ProductJumpsellerClient;
+import com.vegusa.middleware.integrations.jumpseller.dto.*;
 import com.vegusa.middleware.integrations.jumpseller.dto.Category;
-import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
-import com.vegusa.middleware.integrations.jumpseller.dto.Product;
 import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
 import com.vegusa.middleware.integrations.jumpseller.repository.SyncProductJumpsellerRepository;
 import com.vegusa.middleware.integrations.jumpseller.utils.ProductUtils;
 import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.service.PriceService;
+import com.vegusa.middleware.service.StockService;
 import com.vegusa.middleware.utils.SyncUtils;
 import org.json.JSONArray;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -21,10 +23,7 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
@@ -62,6 +61,24 @@ public class ProductJumpsellerService {
 
     @Autowired
     private IntegrationCategoryRepository categoryRepository;
+
+    @Autowired
+    private ProductCategoriesRepository productCategoriesRepository;
+
+    @Autowired
+    private ProductImageRepository imageRepository;
+
+    @Autowired
+    private IntegrationAttributesRepository integrationAttributesRepository;
+
+    @Autowired
+    private IntegrationProductAttributesRepository integrationProductAttributesRepository;
+
+    @Autowired
+    private StockService stockService;
+
+    @Autowired
+    private PriceService priceService;
 
     @Autowired
     public ProductJumpsellerService(ProductJumpsellerClient jumpsellerClient) {
@@ -185,6 +202,185 @@ public class ProductJumpsellerService {
             return Mono.empty();
         }).then().doOnSuccess(e -> {
             System.out.println("Pricelist Jumpseller updated ended");
+        });
+    }
+
+    public Mono<Void> updateProducts(){
+        SyncJumpsellerProduct[] syncItems = syncProductJumpsellerRepository.getSyncProducts(DataArea.MSB.name());
+        List<String> itemIds = new ArrayList<>();
+        for (SyncJumpsellerProduct item : syncItems){
+            itemIds.add(item.getInternalCode());
+        }
+
+        Map<Long, IntegrationCategory> categories = categoryRepository.findByIntegrationName(IntegrationType.JUMPSELLER.name())
+                .map(list -> list.stream().collect(Collectors.toMap(
+                        IntegrationCategory::getCategoryId,
+                        category -> category
+                )))
+                .orElseGet(HashMap::new);
+        IntegrationCategory mainCategory = categories.get(346L);
+
+        Map<String, BigDecimal> prices = priceService.getPrices(itemIds);
+
+        Map<SyncJumpsellerProduct, JumpsellerProductDto> listProducts = new HashMap<>();
+        Map<String, String> crossReferences = new HashMap<>();
+        for (SyncJumpsellerProduct syncItem : syncItems){
+            Products baseProduct = syncUtils.getProductValues(syncItem.getInternalCode());
+            BigDecimal basePrice = prices.getOrDefault(syncItem.getInternalCode(), BigDecimal.ZERO);
+            ProductCategories baseCategory = productCategoriesRepository.getProductCategory(syncItem.getInternalCode(), DataArea.MSB.name());
+
+            crossReferences.put(syncItem.getInternalCode(), baseProduct.getCrossReferences());
+
+            Product product = new Product();
+            BigDecimal price = basePrice.compareTo(BigDecimal.ZERO) == 0 ? syncItem.getPrice() : basePrice;
+            product.setPrice(price.setScale(2, RoundingMode.HALF_UP));
+
+            List<Category> productCategories = new ArrayList<>();
+            Category rootCategory = new Category();
+            rootCategory.setId(Long.valueOf(mainCategory.getExternalId()));
+            rootCategory.setName(mainCategory.getExternalName());
+            productCategories.add(rootCategory);
+
+            IntegrationCategory syncCategory = categories.get(baseCategory.getCategoryRefRecId());
+            Category branchCategory = new Category();
+            branchCategory.setId(Long.valueOf(syncCategory.getExternalId()));
+            branchCategory.setName(syncCategory.getExternalName());
+            productCategories.add(branchCategory);
+
+            product.setCategories(productCategories.toArray(Category[]::new));
+
+            String name = !baseProduct.getSeoTitle().isEmpty() ? baseProduct.getSeoTitle() : syncUtils.getName(baseProduct, baseProduct.getShortDescription());
+            product.setName(name);
+            product.setPage_title(name);
+
+            String description = syncUtils.getDescription(baseProduct, name);
+            product.setDescription(description);
+            product.setMeta_description(!baseProduct.getMetaDescription().isEmpty() ? baseProduct.getMetaDescription() : description);
+
+            product.setSku(baseProduct.getPartNumber());
+            product.setStatus("available");
+
+            if (baseProduct.getWeight().compareTo(BigDecimal.ZERO) > 0){
+                product.setWeight(baseProduct.getWeight().setScale(2, RoundingMode.HALF_UP));
+            }
+            if (baseProduct.getLength().compareTo(BigDecimal.ZERO) > 0){
+                product.setLength(baseProduct.getLength().setScale(2, RoundingMode.HALF_UP));
+            }
+            if (baseProduct.getHeight().compareTo(BigDecimal.ZERO) > 0){
+                product.setHeight(baseProduct.getHeight().setScale(2, RoundingMode.HALF_UP));
+            }
+            if (baseProduct.getWidth().compareTo(BigDecimal.ZERO) > 0){
+                product.setWidth(baseProduct.getWidth().setScale(2, RoundingMode.HALF_UP));
+            }
+
+            JumpsellerProductDto dto = new JumpsellerProductDto(product);
+            listProducts.put(syncItem, dto);
+        }
+
+        return Flux.fromIterable(listProducts.entrySet()).flatMap(productEntry -> {
+            SyncJumpsellerProduct syncItem = productEntry.getKey();
+            JumpsellerProductDto product = productEntry.getValue();
+
+            return jumpsellerClient.updateProduct(syncItem.getResponseId(), product)
+                    .doOnNext(response -> {
+                        Product responseProduct = response.getProduct();
+                        SyncJumpsellerProduct syncProduct = syncProductJumpsellerRepository.findByResponseId(responseProduct.getId())
+                                .orElseGet(SyncJumpsellerProduct::new);
+                        syncProduct.setName(responseProduct.getName());
+                        syncProduct.setPageTitle(responseProduct.getPage_title());
+                        syncProduct.setDescription(responseProduct.getDescription());
+                        syncProduct.setMetaDescription(responseProduct.getMeta_description());
+                        syncProduct.setPrice(responseProduct.getPrice());
+                        syncProduct.setWeight(responseProduct.getWeight());
+                        syncProduct.setHeight(responseProduct.getHeight());
+                        syncProduct.setLength(responseProduct.getLength());
+                        syncProduct.setWidth(responseProduct.getWidth());
+                        syncProduct.setDiameter(responseProduct.getDiameter());
+                        syncProduct.setUpdatedAt(responseProduct.getUpdated_at());
+                        syncProduct.setPermalink(responseProduct.getPermalink());
+                        syncProduct.setDataAreaId(DataArea.MSB.name());
+                        syncProduct.setCompanyRefRecId(1L);
+
+                        syncProductJumpsellerRepository.save(syncProduct);
+                        System.out.println("Item " + syncItem.getInternalCode() + " successfully updated");
+
+                        setCustomAttributes(syncItem.getInternalCode(), responseProduct, crossReferences).subscribe();
+                    })
+                    .doOnError(error -> System.err.println("Error updating " + error.getMessage()));
+        }).then().doOnSuccess(e -> System.out.println("Update jumpseller products completed"));
+    }
+
+    private Mono<Void> setCustomAttributes(String itemId, Product product, Map<String, String> references){
+        List<IntegrationAttributes> attributes = integrationAttributesRepository.findByIntegrationName(IntegrationType.JUMPSELLER.name())
+                .orElseGet(ArrayList::new);
+        List<IntegrationProductAttribute> currentList = integrationProductAttributesRepository.getSyncAttributes(itemId, IntegrationType.JUMPSELLER.name());
+        Map<String, IntegrationProductAttribute> currentAttributes = new HashMap<>();
+        for (IntegrationProductAttribute item : currentList){
+            currentAttributes.put(item.getAttributeId().toString(), item);
+        }
+
+        Map<String, JumpsellerCustomFieldDTO> customFields = new HashMap<>();
+        for (IntegrationAttributes attribute : attributes){
+            CustomField custom = new CustomField();
+            custom.setId(Long.valueOf(attribute.getAttributeId()));
+            if (Objects.equals(attribute.getAttributeName(), "code")){
+                custom.setValue(itemId);
+            }
+            if (Objects.equals(attribute.getAttributeName(), "compatibility")){
+                custom.setValue(references.getOrDefault(itemId, itemId));
+            }
+            JumpsellerCustomFieldDTO dto = new JumpsellerCustomFieldDTO(custom);
+
+            IntegrationProductAttribute current = currentAttributes.get(attribute.getAttributeId());
+            if (current == null){
+                customFields.put("new", dto);
+            } else {
+                customFields.put(current.getExternalId(), dto);
+            }
+        }
+
+        if (customFields.isEmpty()){
+            return Mono.empty();
+        }
+
+        return Flux.fromIterable(customFields.entrySet()).flatMap(entry -> {
+            String type = entry.getKey();
+            JumpsellerCustomFieldDTO item = entry.getValue();
+
+            if (Objects.equals(type, "new")){
+                return jumpsellerClient.createCustomField(product.getId(), item)
+                        .doOnSuccess(result -> {
+                            Product response = result.getProduct();
+                            Field[] fields = response.getFields();
+                            Field matchField = null;
+                            for (Field field : fields){
+                                if (Objects.equals(field.getCustomFieldId(), item.getField().getId().toString())){
+                                    matchField = field;
+                                }
+                            }
+                            IntegrationProductAttribute attribute = new IntegrationProductAttribute();
+                            attribute.setAttributeId(item.getField().getId());
+                            attribute.setProductId(itemId);
+                            attribute.setValue(item.getField().getValue());
+                            if (matchField != null) attribute.setExternalId(matchField.getId());
+                            attribute.setIntegrationName(IntegrationType.JUMPSELLER.name());
+
+                            integrationProductAttributesRepository.save(attribute);
+                        })
+                        .doOnError(error -> System.err.println("Error custom field: " + error.getMessage()));
+            } else {
+                return jumpsellerClient.updateCustomField(product.getId(), type, item)
+                        .doOnSuccess(result -> {
+                            CustomField field = result.getField();
+                            IntegrationProductAttribute attribute = integrationProductAttributesRepository.findByExternalId(type)
+                                    .orElseGet(IntegrationProductAttribute::new);
+                            attribute.setValue(field.getValue());
+
+                            integrationProductAttributesRepository.save(attribute);
+                        });
+            }
+        }).then().doOnSuccess(e -> {
+            System.out.println("Custom field created for: " + itemId);
         });
     }
 
@@ -377,6 +573,7 @@ public class ProductJumpsellerService {
 
                 String description = syncUtils.getDescription(baseProduct, name);
                 product.setDescription(description);
+                product.setMeta_description(!baseProduct.getMetaDescription().isEmpty() ? baseProduct.getMetaDescription() : description);
 
                 product.setSku(baseProduct.getPartNumber());
                 product.setStatus("available");
@@ -441,6 +638,10 @@ public class ProductJumpsellerService {
                     })
                     .doOnError(error -> System.err.println("Error creating product: " + error.getMessage()));
         }).then().doOnSuccess(e -> System.out.println("Synchronization completed"));
+    }
+
+    public Mono<String> getCustomFields(long productId){
+        return jumpsellerClient.getCustomFields(productId);
     }
 }
 

@@ -55,6 +55,10 @@ public class ProductMeliService {
         return client.getProduct(itemId);
     }
 
+    public Mono<String> getProduct2(String itemId){
+        return client.getProduct2(itemId);
+    }
+
 //    public Mono<String> createProduct(Map<String, Object> data){
 //        return client.createProduct(data);
 //    }
@@ -134,10 +138,11 @@ public class ProductMeliService {
 
     public Mono<Void> syncImages(){
         PictureMeliDTO picture = new PictureMeliDTO();
-        picture.setSource("https://images.jumpseller.com/store/vegusa/28916953/im-prod-products-images/56a62fdd-7db9-4081-ac79-88fe4bc28e23-msb-0000044_0490100100w_ai_1.png?1742609769");
+        picture.setSource("https://vconstorage2.blob.core.windows.net/veg-ecomm-products/MSB-0000044_0490100100W_AI_1.png");
 
         PictureMeliDTO picture2 = new PictureMeliDTO();
-        picture2.setSource("https://images.jumpseller.com/store/vegusa/28916953/im-prod-products-images/a1bdcce8-5db9-4631-a7ed-0e0cbc2d6329-msb-0000044_0490100100w_ai_2.png?1742609772");
+        //picture2.setId("975290-MLM87351272233_072025");
+        picture2.setSource("https://vconstorage2.blob.core.windows.net/veg-ecomm-products/MSB-0000044_0490100100W_AI_2.png");
 
         PictureMeliDTO[] pictures = { picture, picture2 };
 
@@ -268,5 +273,11 @@ public class ProductMeliService {
         attributes.add(sellerSku);
 
         return attributes;
+    }
+
+    // User products
+
+    public Mono<String> getUserProduct(String itemId){
+        return client.getUserProduct(itemId);
     }
 }

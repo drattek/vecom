@@ -2,7 +2,9 @@ package com.vegusa.middleware.integrations.jumpseller.client.product;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.vegusa.middleware.integrations.jumpseller.client.JumpsellerClient;
+import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerCustomFieldDTO;
 import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
@@ -82,6 +84,41 @@ public class ProductJumpsellerClient {
                         .uri("/products/{id}.json", id)
                         .retrieve()
                         .bodyToMono(Void.class)
+        );
+    }
+
+    // custom fields
+    public Mono<JumpsellerProductDto> createCustomField(Long productId, JumpsellerCustomFieldDTO field){
+        return jumpsellerClient.executeRateLimited(() ->
+                jumpsellerClient.getClient().post()
+                        .uri("/products/{id}/fields.json", productId)
+                        .bodyValue(field)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                                clientResponse.bodyToMono(String.class)
+                                        .doOnNext(errorBody -> System.err.println("Error 4xx: " + errorBody))
+                                        .then(Mono.empty()) // No interrumpe el flujo
+                        )
+                        .bodyToMono(JumpsellerProductDto.class)
+        );
+    }
+
+    public Mono<String> getCustomFields(Long productId){
+        return jumpsellerClient.executeRateLimited(() ->
+                jumpsellerClient.getClient().get()
+                        .uri("/products/{id}/fields.json", productId)
+                        .retrieve()
+                        .bodyToMono(String.class)
+        );
+    }
+
+    public Mono<JumpsellerCustomFieldDTO> updateCustomField(Long productId, String fieldId, JumpsellerCustomFieldDTO field){
+        return jumpsellerClient.executeRateLimited(() ->
+                jumpsellerClient.getClient().put()
+                        .uri("/products/{product_id}/fields/{field_id}.json", productId, fieldId)
+                        .bodyValue(field)
+                        .retrieve()
+                        .bodyToMono(JumpsellerCustomFieldDTO.class)
         );
     }
 }

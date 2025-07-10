@@ -42,10 +42,11 @@ public class Product {
     private BigDecimal diameter;
     private String permalink;
     private Category[] categories;
+    private Field[] fields;
 
     public  Product(){}
 
-    public Product(Long id, String name, String page_title, String description, String meta_description, String type, Integer days_to_expire, BigDecimal price, Double discount, BigDecimal weight, Integer stock, Boolean stock_unlimited, Integer stock_threshold, Boolean stock_notification, Double cost_per_item, Double compare_at_price, Integer minimum_quantity, Integer maximum_quantity, String sku, String brand, String barcode, String google_product_category, Boolean featured, Boolean shipping_required, Boolean reviews_enabled, String status, String created_at, String updated_at, String package_format, BigDecimal length, BigDecimal width, BigDecimal height, BigDecimal diameter, String permalink, Category[] categories) {
+    public Product(Long id, String name, String page_title, String description, String meta_description, String type, Integer days_to_expire, BigDecimal price, Double discount, BigDecimal weight, Integer stock, Boolean stock_unlimited, Integer stock_threshold, Boolean stock_notification, Double cost_per_item, Double compare_at_price, Integer minimum_quantity, Integer maximum_quantity, String sku, String brand, String barcode, String google_product_category, Boolean featured, Boolean shipping_required, Boolean reviews_enabled, String status, String created_at, String updated_at, String package_format, BigDecimal length, BigDecimal width, BigDecimal height, BigDecimal diameter, String permalink, Category[] categories, Field[] fields) {
         this.id = id;
         this.name = name;
         this.page_title = page_title;
@@ -81,6 +82,7 @@ public class Product {
         this.diameter = diameter;
         this.permalink = permalink;
         this.categories = categories;
+        this.fields = fields;
     }
 
     public Long getId() {
@@ -361,5 +363,13 @@ public class Product {
 
     public void setCategories(Category[] categories) {
         this.categories = categories;
+    }
+
+    public Field[] getFields() {
+        return fields;
+    }
+
+    public void setFields(Field[] fields) {
+        this.fields = fields;
     }
 }
