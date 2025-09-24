@@ -2,11 +2,13 @@ package com.vegusa.middleware.integrations.jumpseller.service.product;
 
 import com.vegusa.middleware.constants.DataArea;
 import com.vegusa.middleware.constants.IntegrationType;
+import com.vegusa.middleware.constants.ProductInterface;
 import com.vegusa.middleware.dto.ProductInfo;
 import com.vegusa.middleware.entity.*;
+import com.vegusa.middleware.integrations.jumpseller.client.image.ImageJumpsellerClient;
 import com.vegusa.middleware.integrations.jumpseller.client.product.ProductJumpsellerClient;
 import com.vegusa.middleware.integrations.jumpseller.dto.*;
-import com.vegusa.middleware.integrations.jumpseller.dto.Category;
+import com.vegusa.middleware.integrations.jumpseller.dto.CategoryDTO;
 import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
 import com.vegusa.middleware.integrations.jumpseller.repository.SyncProductJumpsellerRepository;
 import com.vegusa.middleware.integrations.jumpseller.utils.ProductUtils;
@@ -15,7 +17,6 @@ import com.vegusa.middleware.service.PriceService;
 import com.vegusa.middleware.service.StockService;
 import com.vegusa.middleware.utils.SyncUtils;
 import org.json.JSONArray;
-import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
@@ -23,6 +24,7 @@ import reactor.core.publisher.Mono;
 
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.IntStream;
@@ -73,6 +75,18 @@ public class ProductJumpsellerService {
 
     @Autowired
     private IntegrationProductAttributesRepository integrationProductAttributesRepository;
+
+    @Autowired
+    private IntegrationImageRepository integrationImageRepository;
+
+    @Autowired
+    private ImageJumpsellerClient imageJumpsellerClient;
+
+    @Autowired
+    private ProductsRepository productsRepository;
+
+    @Autowired
+    private ProductAttributeValuesRepository productAttributeValuesRepository;
 
     @Autowired
     private StockService stockService;
@@ -184,14 +198,15 @@ public class ProductJumpsellerService {
                 Product product = new Product();
                 product.setName(syncItem.getName()); // Is required
                 BigDecimal price = costItem.setScale(2, RoundingMode.HALF_UP);
-                BigDecimal final_price = price; //price.add(BigDecimal.valueOf(150));
-                product.setPrice(final_price);
+                //price.add(BigDecimal.valueOf(150));
+                product.setPrice(price);
                 JumpsellerProductDto productDto = new JumpsellerProductDto(product);
 
                 return jumpsellerClient.updateProduct(syncItem.getResponseId(), productDto)
                         .doOnSuccess(result -> {
-                            System.out.println("Updated product " + syncItem.getInternalCode() + " with price " + final_price);
-                            syncItem.setPrice(final_price);
+                            Product responseProduct = result.getProduct();
+                            System.out.println("Updated product " + syncItem.getInternalCode() + " with price " + price);
+                            syncItem.setPrice(responseProduct.getPrice());
                             syncProductJumpsellerRepository.save(syncItem);
                         })
                         .doOnError(error -> {
@@ -224,6 +239,7 @@ public class ProductJumpsellerService {
 
         Map<SyncJumpsellerProduct, JumpsellerProductDto> listProducts = new HashMap<>();
         Map<String, String> crossReferences = new HashMap<>();
+        System.out.println("Normalize data");
         for (SyncJumpsellerProduct syncItem : syncItems){
             Products baseProduct = syncUtils.getProductValues(syncItem.getInternalCode());
             BigDecimal basePrice = prices.getOrDefault(syncItem.getInternalCode(), BigDecimal.ZERO);
@@ -234,24 +250,27 @@ public class ProductJumpsellerService {
             Product product = new Product();
             BigDecimal price = basePrice.compareTo(BigDecimal.ZERO) == 0 ? syncItem.getPrice() : basePrice;
             product.setPrice(price.setScale(2, RoundingMode.HALF_UP));
+            //product.setPrice(syncItem.getPrice());
 
-            List<Category> productCategories = new ArrayList<>();
-            Category rootCategory = new Category();
-            rootCategory.setId(Long.valueOf(mainCategory.getExternalId()));
-            rootCategory.setName(mainCategory.getExternalName());
-            productCategories.add(rootCategory);
+            List<CategoryDTO> productCategories = new ArrayList<>();
+            CategoryDTO rootCategoryDTO = new CategoryDTO();
+            rootCategoryDTO.setId(Long.valueOf(mainCategory.getExternalId()));
+            rootCategoryDTO.setName(mainCategory.getExternalName());
+            productCategories.add(rootCategoryDTO);
 
             IntegrationCategory syncCategory = categories.get(baseCategory.getCategoryRefRecId());
-            Category branchCategory = new Category();
-            branchCategory.setId(Long.valueOf(syncCategory.getExternalId()));
-            branchCategory.setName(syncCategory.getExternalName());
-            productCategories.add(branchCategory);
+            CategoryDTO branchCategoryDTO = new CategoryDTO();
+            branchCategoryDTO.setId(Long.valueOf(syncCategory.getExternalId()));
+            branchCategoryDTO.setName(syncCategory.getExternalName());
+            productCategories.add(branchCategoryDTO);
 
-            product.setCategories(productCategories.toArray(Category[]::new));
+            product.setCategories(productCategories.toArray(CategoryDTO[]::new));
 
             String name = !baseProduct.getSeoTitle().isEmpty() ? baseProduct.getSeoTitle() : syncUtils.getName(baseProduct, baseProduct.getShortDescription());
             product.setName(name);
             product.setPage_title(name);
+            System.out.println(name);
+
 
             String description = syncUtils.getDescription(baseProduct, name);
             product.setDescription(description);
@@ -260,28 +279,35 @@ public class ProductJumpsellerService {
             product.setSku(baseProduct.getPartNumber());
             product.setStatus("available");
 
-            if (baseProduct.getWeight().compareTo(BigDecimal.ZERO) > 0){
-                product.setWeight(baseProduct.getWeight().setScale(2, RoundingMode.HALF_UP));
+            if (baseProduct.getWeight().compareTo(BigDecimal.ONE) > 0){
+                BigDecimal weight = baseProduct.getWeight().divide(new BigDecimal("2.205"), RoundingMode.HALF_UP);
+                if (weight.compareTo(BigDecimal.ONE) >= 0){
+                    product.setWeight(weight.setScale(2, RoundingMode.HALF_UP));
+                } else {
+                    product.setWeight(BigDecimal.ONE);
+                }
+            } else {
+                product.setWeight(BigDecimal.ONE);
             }
-            if (baseProduct.getLength().compareTo(BigDecimal.ZERO) > 0){
+            if (baseProduct.getLength().compareTo(BigDecimal.ONE) > 0){
                 product.setLength(baseProduct.getLength().setScale(2, RoundingMode.HALF_UP));
+            } else {
+                product.setLength(BigDecimal.ONE);
             }
-            if (baseProduct.getHeight().compareTo(BigDecimal.ZERO) > 0){
+            if (baseProduct.getHeight().compareTo(BigDecimal.ONE) > 0){
                 product.setHeight(baseProduct.getHeight().setScale(2, RoundingMode.HALF_UP));
+            } else {
+                product.setHeight(BigDecimal.ONE);
             }
-            if (baseProduct.getWidth().compareTo(BigDecimal.ZERO) > 0){
+            if (baseProduct.getWidth().compareTo(BigDecimal.ONE) > 0){
                 product.setWidth(baseProduct.getWidth().setScale(2, RoundingMode.HALF_UP));
+            } else {
+                product.setWidth(BigDecimal.ONE);
             }
 
             JumpsellerProductDto dto = new JumpsellerProductDto(product);
-            listProducts.put(syncItem, dto);
-        }
 
-        return Flux.fromIterable(listProducts.entrySet()).flatMap(productEntry -> {
-            SyncJumpsellerProduct syncItem = productEntry.getKey();
-            JumpsellerProductDto product = productEntry.getValue();
-
-            return jumpsellerClient.updateProduct(syncItem.getResponseId(), product)
+            jumpsellerClient.updateProduct(syncItem.getResponseId(), dto)
                     .doOnNext(response -> {
                         Product responseProduct = response.getProduct();
                         SyncJumpsellerProduct syncProduct = syncProductJumpsellerRepository.findByResponseId(responseProduct.getId())
@@ -304,13 +330,77 @@ public class ProductJumpsellerService {
                         syncProductJumpsellerRepository.save(syncProduct);
                         System.out.println("Item " + syncItem.getInternalCode() + " successfully updated");
 
-                        setCustomAttributes(syncItem.getInternalCode(), responseProduct, crossReferences).subscribe();
+                        setCustomAttributes(syncItem.getInternalCode(), responseProduct).subscribe();
                     })
-                    .doOnError(error -> System.err.println("Error updating " + error.getMessage()));
-        }).then().doOnSuccess(e -> System.out.println("Update jumpseller products completed"));
+                    .doOnError(error -> System.err.println("Error updating " + error.getMessage()))
+                    .subscribe();
+
+            listProducts.put(syncItem, dto);
+        }
+
+        System.out.println("Update completed");
+
+        return Mono.empty();
     }
 
-    private Mono<Void> setCustomAttributes(String itemId, Product product, Map<String, String> references){
+    public Mono<Void> updateAttributes(){
+        SyncJumpsellerProduct[] syncItems = syncProductJumpsellerRepository.getSyncProducts(DataArea.MSB.name());
+        Map<String, List<IntegrationProductAttribute>> currentList = integrationProductAttributesRepository
+                .findByIntegrationName(IntegrationType.JUMPSELLER.name())
+                .map(list -> list.stream()
+                        .collect(Collectors.groupingBy(IntegrationProductAttribute::getProductId)))
+                .orElse(Collections.emptyMap());
+
+        return Flux.fromArray(syncItems).flatMap(syncItem -> {
+            CustomField code = new CustomField();
+            code.setId(76804L);
+            code.setValue(syncItem.getInternalCode());
+            JumpsellerCustomFieldDTO dto = new JumpsellerCustomFieldDTO(code);
+
+            IntegrationProductAttribute currentAttributes = Optional.ofNullable(currentList.get(syncItem.getInternalCode()))
+                    .orElse(Collections.emptyList())
+                    .stream()
+                    .filter(attribute -> attribute.getAttributeId() == 76804L)
+                    .findFirst()
+                    .orElse(null);
+
+            if (currentAttributes == null){
+                return jumpsellerClient.createCustomField(syncItem.getResponseId(), dto)
+                        .doOnSuccess(result -> {
+                            Product response = result.getProduct();
+                            Field[] fields = response.getFields();
+                            Field matchField = null;
+                            for (Field field : fields){
+                                if (Objects.equals(field.getCustomFieldId(), "76804")){
+                                    matchField = field;
+                                }
+                            }
+                            IntegrationProductAttribute attribute = new IntegrationProductAttribute();
+                            attribute.setAttributeId(76804L);
+                            attribute.setProductId(syncItem.getInternalCode());
+                            attribute.setValue(syncItem.getInternalCode());
+                            if (matchField != null) attribute.setExternalId(matchField.getId());
+                            attribute.setIntegrationName(IntegrationType.JUMPSELLER.name());
+
+                            integrationProductAttributesRepository.save(attribute);
+                            System.out.println("Created item: " + syncItem.getInternalCode());
+                        })
+                        .doOnError(error -> System.err.println("Error custom field: " + error.getMessage()));
+            } else {
+                return jumpsellerClient.updateCustomField(syncItem.getResponseId(), currentAttributes.getExternalId(), dto)
+                        .doOnSuccess(result -> {
+                            CustomField field = result.getField();
+                            currentAttributes.setValue(field.getValue());
+
+                            integrationProductAttributesRepository.save(currentAttributes);
+                            System.out.println("Updated item: " + syncItem.getInternalCode());
+                        })
+                        .doOnError(error -> System.err.println("Error update custom: " + error.getMessage()));
+            }
+        }).then().doOnSuccess(e -> System.out.println("Update completed"));
+    }
+
+    private Mono<Void> setCustomAttributes(String itemId, Product product){
         List<IntegrationAttributes> attributes = integrationAttributesRepository.findByIntegrationName(IntegrationType.JUMPSELLER.name())
                 .orElseGet(ArrayList::new);
         List<IntegrationProductAttribute> currentList = integrationProductAttributesRepository.getSyncAttributes(itemId, IntegrationType.JUMPSELLER.name());
@@ -320,32 +410,43 @@ public class ProductJumpsellerService {
         }
 
         Map<String, JumpsellerCustomFieldDTO> customFields = new HashMap<>();
-        for (IntegrationAttributes attribute : attributes){
-            CustomField custom = new CustomField();
-            custom.setId(Long.valueOf(attribute.getAttributeId()));
-            if (Objects.equals(attribute.getAttributeName(), "code")){
-                custom.setValue(itemId);
-            }
-            if (Objects.equals(attribute.getAttributeName(), "compatibility")){
-                custom.setValue(references.getOrDefault(itemId, itemId));
-            }
-            JumpsellerCustomFieldDTO dto = new JumpsellerCustomFieldDTO(custom);
-
-            IntegrationProductAttribute current = currentAttributes.get(attribute.getAttributeId());
-            if (current == null){
-                customFields.put("new", dto);
-            } else {
-                customFields.put(current.getExternalId(), dto);
-            }
+        CustomField code = new CustomField();
+        code.setId(76804L);
+        code.setValue(itemId);
+        JumpsellerCustomFieldDTO codeDTO = new JumpsellerCustomFieldDTO(code);
+        IntegrationProductAttribute currentCode = currentAttributes.get("76804");
+        if (currentCode == null){
+            customFields.put("new", codeDTO);
+        } else {
+            customFields.put(currentCode.getExternalId(), codeDTO);
         }
 
-        if (customFields.isEmpty()){
-            return Mono.empty();
+        CustomField compatibility = new CustomField();
+        compatibility.setId(76801L);
+        ProductAttributeValues references = productAttributeValuesRepository.getAttribute(itemId, "CROSS_REFERENCES")
+                .orElseGet(() -> null);
+        String referenceString = "";
+        if (references != null){
+            referenceString = references.getValue();
+        } else {
+            referenceString = itemId;
+        }
+        System.out.println("item: " + itemId + " references: " + referenceString);
+        compatibility.setValue(referenceString);
+        JumpsellerCustomFieldDTO compatibilityDTO = new JumpsellerCustomFieldDTO(compatibility);
+        IntegrationProductAttribute currentCompatibility = currentAttributes.get("76801");
+        if (currentCompatibility == null){
+            customFields.put("new", compatibilityDTO);
+        } else {
+            customFields.put(currentCompatibility.getExternalId(), compatibilityDTO);
         }
 
         return Flux.fromIterable(customFields.entrySet()).flatMap(entry -> {
             String type = entry.getKey();
             JumpsellerCustomFieldDTO item = entry.getValue();
+            if (item.getField().getValue().isEmpty()){
+                return Mono.empty();
+            }
 
             if (Objects.equals(type, "new")){
                 return jumpsellerClient.createCustomField(product.getId(), item)
@@ -377,7 +478,8 @@ public class ProductJumpsellerService {
                             attribute.setValue(field.getValue());
 
                             integrationProductAttributesRepository.save(attribute);
-                        });
+                        })
+                        .doOnError(error -> System.err.println("Error update custom: " + error.getMessage()));
             }
         }).then().doOnSuccess(e -> {
             System.out.println("Custom field created for: " + itemId);
@@ -530,6 +632,51 @@ public class ProductJumpsellerService {
         return str.substring(0, 1).toUpperCase() + str.substring(1).toLowerCase();
     }
 
+    private String getBrand(String brand){
+        String syncBrand = "";
+        switch (brand){
+            case "BOBCAT":
+                syncBrand = "BOBCAT";
+                break;
+            case "DOOSAN FK":
+                syncBrand = "BOBCAT MH";
+                break;
+            case "CAMSO":
+                syncBrand = "CAMSO";
+                break;
+            case "FLEXI":
+            case "FELXI":
+                syncBrand = "FLEXI";
+                break;
+            case "TVH":
+            case "GENERICAS":
+            case "DEKA":
+            case "GEN-APYMSA":
+            case "MAXILEVER":
+            case "APYMSA":
+            case "DONALDSON":
+                syncBrand = "GENERICAS";
+                break;
+            case "JLG":
+                syncBrand = "JLG";
+                break;
+            case "NISSAN":
+                syncBrand = "NISSAN";
+                break;
+            case "RALOYD":
+                syncBrand = "RAYLOD";
+                break;
+            case "UNICARRIERS":
+                syncBrand = "UNICARRIERS";
+                break;
+            default:
+                syncBrand = "OTRA";
+                break;
+        }
+
+        return syncBrand;
+    }
+
     // CREATE NEW PRODUCT FROM SYNC ITEMS MULTISTORE
 
     public Mono<Void> syncProduct(Map<String, ProductInfo> listProducts) {
@@ -542,30 +689,36 @@ public class ProductJumpsellerService {
         IntegrationCategory mainCategory = categories.get(346L);
 
         Map<String, JumpsellerProductDto> products = new HashMap<>();
+        Map<String, JumpsellerImageDTO[]> productImages = new HashMap<>();
         for (Map.Entry<String, ProductInfo> entry : listProducts.entrySet()) {
             String itemId = entry.getKey();
             ProductInfo info = entry.getValue();
             Products baseProduct = info.getProduct();
             ProductCategories baseCategory = info.getCategory();
+            List<ProductImage> images = info.getImages();
 
             if (syncProductJumpsellerRepository.findByInternalCode(itemId).isEmpty()){
                 Product product = new Product();
                 product.setPrice(info.getPrice());
                 product.setStock(info.getStock().intValue());
 
-                List<Category> productCategories = new ArrayList<>();
-                Category rootCategory = new Category();
-                rootCategory.setId(Long.valueOf(mainCategory.getExternalId()));
-                rootCategory.setName(mainCategory.getExternalName());
-                productCategories.add(rootCategory);
+                List<CategoryDTO> productCategories = new ArrayList<>();
+                CategoryDTO rootCategoryDTO = new CategoryDTO();
+                rootCategoryDTO.setId(Long.valueOf(mainCategory.getExternalId()));
+                rootCategoryDTO.setName(mainCategory.getExternalName());
+                productCategories.add(rootCategoryDTO);
 
-                IntegrationCategory syncCategory = categories.get(baseCategory.getCategoryRefRecId());
-                Category branchCategory = new Category();
-                branchCategory.setId(Long.valueOf(syncCategory.getExternalId()));
-                branchCategory.setName(syncCategory.getName());
-                productCategories.add(branchCategory);
+                if (baseCategory != null){
+                    IntegrationCategory syncCategory = categories.get(baseCategory.getCategoryRefRecId());
+                    CategoryDTO branchCategoryDTO = new CategoryDTO();
+                    branchCategoryDTO.setId(Long.valueOf(syncCategory.getExternalId()));
+                    branchCategoryDTO.setName(syncCategory.getName());
+                    productCategories.add(branchCategoryDTO);
+                }
 
-                product.setCategories(productCategories.toArray(Category[]::new));
+                product.setBrand(getBrand(baseProduct.getBrand()));
+
+                product.setCategories(productCategories.toArray(CategoryDTO[]::new));
 
                 String name = !baseProduct.getSeoTitle().isEmpty() ? baseProduct.getSeoTitle() : syncUtils.getName(baseProduct, baseProduct.getShortDescription());
                 product.setName(name);
@@ -578,21 +731,43 @@ public class ProductJumpsellerService {
                 product.setSku(baseProduct.getPartNumber());
                 product.setStatus("available");
 
-                product.setWeight(baseProduct.getWeight().setScale(2, RoundingMode.HALF_UP));
+                if (baseProduct.getWeight() != null){
+                    BigDecimal weight = baseProduct.getWeight().divide(new BigDecimal("2.20462"), RoundingMode.HALF_UP);
+                    if (weight.compareTo(BigDecimal.ONE) >= 0){
+                        product.setWeight(weight.setScale(2, RoundingMode.HALF_UP));
+                    } else {
+                        product.setWeight(BigDecimal.ONE);
+                    }
+                }
                 product.setLength(baseProduct.getLength().setScale(2, RoundingMode.HALF_UP));
                 product.setHeight(baseProduct.getHeight().setScale(2, RoundingMode.HALF_UP));
                 product.setWidth(baseProduct.getWidth().setScale(2, RoundingMode.HALF_UP));
 
                 JumpsellerProductDto dto = new JumpsellerProductDto(product);
                 products.put(itemId, dto);
+
+                // Images
+                List<JumpsellerImageDTO> imageDTO = new ArrayList<>();
+                for (ProductImage image : images){
+                    Image newImage = new Image();
+                    newImage.setUrl(image.getImageUrl());
+                    newImage.setPosition(image.getImageNumber());
+                    JumpsellerImageDTO imgDto = new JumpsellerImageDTO(newImage);
+
+                    imageDTO.add(imgDto);
+                }
+                if (!imageDTO.isEmpty()){
+                    productImages.put(itemId, imageDTO.toArray(JumpsellerImageDTO[]::new));
+                }
             }
         }
 
+        System.out.println("Creating product: " + products.size());
         return Flux.fromIterable(products.entrySet()).flatMap(productEntry -> {
             String itemId = productEntry.getKey();
             JumpsellerProductDto product = productEntry.getValue();
             return jumpsellerClient.createProduct(product)
-                    .doOnSuccess(response -> {
+                    .doOnNext(response -> {
                         Product responseProduct = response.getProduct();
                         SyncJumpsellerProduct newProduct = new SyncJumpsellerProduct();
                         newProduct.setResponseId(responseProduct.getId());
@@ -612,10 +787,10 @@ public class ProductJumpsellerService {
                         newProduct.setStockNotification(responseProduct.isStock_notification());
                         newProduct.setCostPerItem(responseProduct.getCost_per_item());
                         newProduct.setCompareAtPrice(responseProduct.getCompare_at_price());
-                        newProduct.setMinimumQuantity(responseProduct.getMinimum_quantity());
-                        newProduct.setMaximumQuantity(responseProduct.getMaximum_quantity());
+//                        newProduct.setMinimumQuantity(responseProduct.getMinimum_quantity());
+//                        newProduct.setMaximumQuantity(responseProduct.getMaximum_quantity());
                         newProduct.setSku(responseProduct.getSku());
-                        newProduct.setBrand(responseProduct.getBrand());
+                        newProduct.setBrand(getBrand(responseProduct.getBrand()));
                         newProduct.setBarcode(responseProduct.getBarcode());
                         newProduct.setGoogleProductCategory(responseProduct.getGoogle_product_category());
                         newProduct.setFeatured(responseProduct.isFeatured());
@@ -635,6 +810,9 @@ public class ProductJumpsellerService {
 
                         syncProductJumpsellerRepository.save(newProduct);
                         System.out.println("Item " + itemId + " successfully created");
+
+                        uploadImages(responseProduct.getId().toString(), itemId, productImages).subscribe();
+                        setCustomAttributes(itemId, responseProduct).subscribe();
                     })
                     .doOnError(error -> System.err.println("Error creating product: " + error.getMessage()));
         }).then().doOnSuccess(e -> System.out.println("Synchronization completed"));
@@ -642,6 +820,36 @@ public class ProductJumpsellerService {
 
     public Mono<String> getCustomFields(long productId){
         return jumpsellerClient.getCustomFields(productId);
+    }
+
+    private Mono<Void> uploadImages(String productId, String itemId, Map<String, JumpsellerImageDTO[]> images){
+        JumpsellerImageDTO[] productImages = images.get(itemId);
+        Products product = productsRepository.getProduct(itemId, ProductInterface.DYN.name()).orElseGet(Products::new);
+
+        return Flux.fromArray(productImages).flatMap(image -> {
+            return imageJumpsellerClient.uploadImage(productId, image)
+                    .doOnSuccess(result -> {
+                        Image response = result.getImage();
+                        IntegrationImage syncImage = new IntegrationImage();
+                        syncImage.setProductId(product.getId());
+                        syncImage.setInternalCode(itemId);
+                        syncImage.setProductExternalId(productId);
+                        syncImage.setExternalId(response.getId().toString());
+                        syncImage.setUrl(image.getImage().getUrl());
+                        syncImage.setExternalUrl(response.getUrl());
+                        syncImage.setPosition(response.getPosition());
+                        syncImage.setDataAreaId(DataArea.MSB.name());
+                        syncImage.setIntegrationName(IntegrationType.JUMPSELLER.name());
+                        syncImage.setIntegrationParameterId(2L);
+                        syncImage.setCompanyId(1L);
+                        syncImage.setCreatedAt(Instant.now());
+                        syncImage.setUpdatedAt(Instant.now());
+
+                        integrationImageRepository.save(syncImage);
+                    })
+                    .doOnError(error -> System.err.println("Error uploading " + image.getImage().getUrl()));
+        })
+        .then().doOnSuccess(e -> System.out.println("Images uploaded successfully " + itemId));
     }
 }
 

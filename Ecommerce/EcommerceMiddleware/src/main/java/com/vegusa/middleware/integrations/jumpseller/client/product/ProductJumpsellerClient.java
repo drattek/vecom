@@ -96,7 +96,7 @@ public class ProductJumpsellerClient {
                         .retrieve()
                         .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
                                 clientResponse.bodyToMono(String.class)
-                                        .doOnNext(errorBody -> System.err.println("Error 4xx: " + errorBody))
+                                        .doOnNext(errorBody -> System.err.println("Error 4xx create: " + errorBody + " " + productId + " " + field.getField().getId()))
                                         .then(Mono.empty()) // No interrumpe el flujo
                         )
                         .bodyToMono(JumpsellerProductDto.class)
@@ -118,6 +118,11 @@ public class ProductJumpsellerClient {
                         .uri("/products/{product_id}/fields/{field_id}.json", productId, fieldId)
                         .bodyValue(field)
                         .retrieve()
+                        .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                                clientResponse.bodyToMono(String.class)
+                                        .doOnNext(errorBody -> System.err.println("Error 4xx update: " + errorBody + " " + productId + " " + field.getField().getId()))
+                                        .then(Mono.empty()) // No interrumpe el flujo
+                        )
                         .bodyToMono(JumpsellerCustomFieldDTO.class)
         );
     }

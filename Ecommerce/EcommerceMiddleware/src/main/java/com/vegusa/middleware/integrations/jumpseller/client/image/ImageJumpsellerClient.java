@@ -21,4 +21,14 @@ public class ImageJumpsellerClient {
                         .bodyToMono(JumpsellerImageDTO[].class)
         );
     }
+
+    public Mono<JumpsellerImageDTO> uploadImage(String productId, JumpsellerImageDTO image){
+        return client.executeRateLimited(() ->
+                client.getClient().post()
+                        .uri("/products/{id}/images.json", productId)
+                        .bodyValue(image)
+                        .retrieve()
+                        .bodyToMono(JumpsellerImageDTO.class)
+        );
+    }
 }

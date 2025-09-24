@@ -7,6 +7,7 @@ import com.vegusa.middleware.integrations.jumpseller.service.product.ProductJump
 import com.vegusa.middleware.integrations.mercadolibre.service.product.ProductMeliService;
 import com.vegusa.middleware.repository.*;
 import com.vegusa.middleware.utils.SyncUtils;
+import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -62,7 +63,7 @@ public class ProductGeneralService {
                 pending.setInternalCode(itemId);
                 pending.setHasPrice(price.compareTo(BigDecimal.ZERO) != 0);
                 pending.setHasImage(!images.isEmpty());
-                pending.setHasWeight(product.getWeight().compareTo(BigDecimal.ZERO) == 0);
+                pending.setHasWeight(product.getWeight().compareTo(BigDecimal.ZERO) != 0);
 
                 pendingsRepository.save(pending);
                 continue;

@@ -89,4 +89,11 @@ public class ProductJumpsellerController {
     public Mono<String> getCustomFields(@RequestParam("item_id") String itemId){
         return productJumpsellerService.getCustomFields(Long.parseLong(itemId));
     }
+
+    @GetMapping(value = "/syn-attribute")
+    public Mono<Void> synAttribute(){
+        productJumpsellerService.updateAttributes().subscribe();
+
+        return Mono.empty();
+    }
 }

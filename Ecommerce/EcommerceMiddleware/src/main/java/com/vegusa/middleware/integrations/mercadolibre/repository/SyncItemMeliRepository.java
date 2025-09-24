@@ -15,4 +15,7 @@ public interface SyncItemMeliRepository extends JpaRepository<SyncItemMeli, Long
     SyncItemMeli[] getItems(@Param("dataAreaId") String dataAreaId);
 
     Optional<SyncItemMeli> findByInternalCode(String internalCode);
+
+    @Query(value = "select * from syncitemmeli where RecId > 1831 and Status <> 'under_review'", nativeQuery = true)
+    List<SyncItemMeli> getNewItems();
 }

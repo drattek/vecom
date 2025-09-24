@@ -3,11 +3,14 @@ package com.vegusa.msb.controller;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.vegusa.middleware.dto.ImporMeasurementDTO;
+import com.vegusa.middleware.dto.ImportImageDTO;
 import com.vegusa.middleware.dto.ImportSeoDTO;
 import com.vegusa.middleware.dto.Product;
 import com.vegusa.middleware.entity.Company;
 import com.vegusa.middleware.entity.SyncItem;
 import com.vegusa.middleware.entity.SyncPriceList;
+import com.vegusa.middleware.repository.ProductPendingsRepository;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
 import com.vegusa.msb.entity.DYNProduct;
@@ -42,6 +45,9 @@ public class MSBController {
     @Autowired
     private ProductGeneralService generalService;
 
+    @Autowired
+    private ProductPendingsRepository pendingsRepository;
+
     private final ItemSyncService itemSyncService;
     private final ItemControlTableService ctrlTableService;
     private final InterfaceInfoService interfaceInfoService;
@@ -70,8 +76,8 @@ public class MSBController {
 
     @PostMapping(value = "/set-products")
     public void setProducts(){
-        List<String> itemIds = new ArrayList<>();
-        itemIds.add("MSB-0001205");
+        List<String> itemIds = pendingsRepository.getAll();
+        //List<String> itemIds = new ArrayList<>();
 
         generalService.createProduct(itemIds);
     }
@@ -335,5 +341,15 @@ public class MSBController {
         importService.importSeoData(seoData).subscribe();
 
         return Mono.just(ResponseEntity.accepted().body("Importing seo data"));
+    }
+
+    @PostMapping(value = "/import-data")
+    public Mono<Void> importProductData(@RequestBody List<ImporMeasurementDTO> data){
+        return importService.updateAttributes(data);
+    }
+
+    @PostMapping(value = "/import-images")
+    public Mono<Void> importImagesData(@RequestBody List<ImportImageDTO> data){
+        return importService.importImages(data);
     }
 }

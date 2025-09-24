@@ -13,7 +13,7 @@ public class CategoryMeliService {
     @Autowired
     private CategoryMeliClient client;
 
-    public Mono<PredictorMeliDTO> getCategoryPredictor(String query){
+    public Mono<PredictorMeliDTO[]> getCategoryPredictor(String query){
         return client.predictCategory(query);
     }
 

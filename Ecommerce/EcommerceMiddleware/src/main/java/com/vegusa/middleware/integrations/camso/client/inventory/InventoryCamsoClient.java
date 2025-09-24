@@ -1,6 +1,7 @@
 package com.vegusa.middleware.integrations.camso.client.inventory;
 
 import com.vegusa.middleware.integrations.camso.client.CamsoClient;
+import com.vegusa.middleware.integrations.camso.dto.InventoryCamsoDTO;
 import com.vegusa.middleware.integrations.camso.oauth.TokenStorageCamso;
 import io.netty.handler.ssl.SslContextBuilder;
 import io.netty.handler.ssl.util.InsecureTrustManagerFactory;
@@ -43,7 +44,7 @@ public class InventoryCamsoClient {
                 .build();
     }
 
-    public String getInventory(){
+    public InventoryCamsoDTO getInventory(){
         try {
             String apiKey = tokenStorage.getApiKey();
             String token = tokenStorage.getAccessToken();
@@ -55,7 +56,7 @@ public class InventoryCamsoClient {
                         httpHeaders.setAccept(List.of(MediaType.APPLICATION_JSON));
                     })
                     .retrieve()
-                    .bodyToMono(String.class)
+                    .bodyToMono(InventoryCamsoDTO.class)
                     .block();
         } catch (Exception e) {
             System.out.println("Error en getInventory: " + e.getMessage());

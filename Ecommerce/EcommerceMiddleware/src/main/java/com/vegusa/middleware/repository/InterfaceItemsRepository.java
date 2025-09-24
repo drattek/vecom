@@ -10,7 +10,7 @@ import java.util.List;
 
 @Repository
 public interface InterfaceItemsRepository extends JpaRepository<InterfaceItems, Long> {
-    @Query(value = "select * from product where InterfaceId = ?1 and DataAreaId = ?2 and RecId > 19386 order by ItemId", nativeQuery = true)
+    @Query(value = "select * from product where InterfaceId = ?1 and DataAreaId = ?2 order by ItemId", nativeQuery = true)
     InterfaceItems[] getInterfaceProductsInfo(String interfaceId, String dataAreaId);
 
     @Query(value = "select * from product where ItemId = ?1 and InterfaceId = ?2 and DataAreaId = ?3", nativeQuery = true)

@@ -60,4 +60,18 @@ public class ProductMeliController {
     public Mono<String> getUserProduct(@RequestParam("item_id") String itemId){
         return productService.getUserProduct(itemId);
     }
+
+    @PostMapping(value = "/update-shipping")
+    public Mono<Void> updateShipping(){
+        productService.updateShipping().subscribe();
+
+        return Mono.empty();
+    }
+
+    @PostMapping(value = "/update-descriptions")
+    public Mono<Void> updateDescription(){
+        productService.updateDescription().subscribe();
+
+        return Mono.empty();
+    }
 }

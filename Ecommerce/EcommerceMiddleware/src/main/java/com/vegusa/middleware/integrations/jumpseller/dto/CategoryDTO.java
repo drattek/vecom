@@ -1,15 +1,15 @@
 package com.vegusa.middleware.integrations.jumpseller.dto;
 
-public class Category {
+public class CategoryDTO {
     private Long id;
     private String name;
     private String description;
     private Long parent_id;
     private String permalink;
 
-    public  Category(){}
+    public CategoryDTO(){}
 
-    public Category(Long id, String name, String description, Long parent_id, String permalink) {
+    public CategoryDTO(Long id, String name, String description, Long parent_id, String permalink) {
         this.id = id;
         this.name = name;
         this.description = description;

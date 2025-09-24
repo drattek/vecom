@@ -10,7 +10,7 @@ import java.time.Instant;
 public class Products {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
-    @Column(name = "RectId")
+    @Column(name = "RecId")
     private Long id;
 
     @Column(name = "ItemId")
@@ -31,7 +31,7 @@ public class Products {
     @Column(name = "UnitOfMeasurement")
     private String unitOfMeasurement;
 
-    @Column(name = "Category")
+    @Column(name = "category")
     private String category;
 
     @Column(name = "Brand")

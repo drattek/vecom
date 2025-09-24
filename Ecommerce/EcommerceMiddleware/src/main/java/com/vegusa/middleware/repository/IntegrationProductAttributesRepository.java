@@ -14,5 +14,10 @@ public interface IntegrationProductAttributesRepository extends JpaRepository<In
     @Query(value = "select * from integration_product_attributes where product_id = :productId and integration_name = :integrationName", nativeQuery = true)
     List<IntegrationProductAttribute> getSyncAttributes(@Param("productId") String productId, @Param("integrationName") String integrationName);
 
+    @Query(value = "select * from integration_product_attributes where product_id = :productId and integration_name = :integrationName and attribute_id = :attributeId", nativeQuery = true)
+    Optional<IntegrationProductAttribute> getProductAttribute(@Param("productId") String productId, @Param("attributeId") String attributeId, @Param("integrationName") String integrationName);
+
     Optional<IntegrationProductAttribute> findByExternalId(String externalId);
+
+    Optional<List<IntegrationProductAttribute>> findByIntegrationName(String integrationName);
 }

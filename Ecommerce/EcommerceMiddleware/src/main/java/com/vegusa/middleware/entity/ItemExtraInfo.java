@@ -66,7 +66,7 @@ public class ItemExtraInfo {
     @Column(name = "MktDescription", length = 250)
     private String mktDescription;
 
-    @Column(name = "Category", length = 20)
+    @Column(name = "CategoryDTO", length = 20)
     private String category;
 
     @Column(name = "InterfaceId", length = 20)
