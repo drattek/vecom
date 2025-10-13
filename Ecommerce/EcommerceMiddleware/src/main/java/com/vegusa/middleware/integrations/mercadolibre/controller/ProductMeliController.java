@@ -32,14 +32,14 @@ public class ProductMeliController {
     }
 
     @GetMapping(value = "/product")
-    public Mono<ProductMeliDTO> getProduct(@RequestParam("item_id") String itemId){
-        return productService.getProduct(itemId);
+    public Mono<String> getProduct(@RequestParam("item_id") String itemId){
+        return productService.getProduct2(itemId);
     }
 
-    @PostMapping(value = "/create-product")
-    public Mono<String> createProduct(@RequestBody Map<String, Object> request){
-        return productService.createProduct(request);
-    }
+//    @PostMapping(value = "/create-product")
+//    public Mono<String> createProduct(@RequestBody Map<String, Object> request){
+//        return productService.createProduct(request);
+//    }
 
     @PostMapping(value = "/update-stock")
     public Mono<ResponseEntity<String>> updateStock(){
@@ -51,6 +51,26 @@ public class ProductMeliController {
     @PostMapping(value = "/sync-images")
     public Mono<Void> syncImages(){
         productService.syncImages().subscribe();
+
+        return Mono.empty();
+    }
+
+    // User product
+    @GetMapping(value = "/get-user-product")
+    public Mono<String> getUserProduct(@RequestParam("item_id") String itemId){
+        return productService.getUserProduct(itemId);
+    }
+
+    @PostMapping(value = "/update-shipping")
+    public Mono<Void> updateShipping(){
+        productService.updateShipping().subscribe();
+
+        return Mono.empty();
+    }
+
+    @PostMapping(value = "/update-descriptions")
+    public Mono<Void> updateDescription(){
+        productService.updateDescription().subscribe();
 
         return Mono.empty();
     }

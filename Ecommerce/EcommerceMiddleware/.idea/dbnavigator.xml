@@ -11,8 +11,13 @@
   </component>
   <component name="DBNavigator.Project.DatabaseAssistantManager">
     <assistants>
-      <assistant-state connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" default-profile-name="" selected-profile-name="" selected-model-name="" assistant-type="GENERIC" selected-action="SHOW_SQL" availability="UNAVAILABLE" acknowledgement="NONE">
-        <messages />
+      <assistant-state connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" default-profile-name="" selected-conversation-id="FD3CA5077DCC426993EA934A6888A875" assistant-type="GENERIC" availability="UNAVAILABLE" acknowledgement="NONE">
+        <conversations>
+          <conversation id="FD3CA5077DCC426993EA934A6888A875" title="" session-signature="" timestamp="1758812863723">
+            <messages />
+            <context profile="" model="" action="SHOW_SQL" interactive="false" />
+          </conversation>
+        </conversations>
       </assistant-state>
     </assistants>
   </component>
@@ -24,9 +29,15 @@
   </component>
   <component name="DBNavigator.Project.DatabaseConsoleManager">
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2">
-      <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemjumpseller where `Sku` = '7354884']]></console>
-      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemmeli where `InternalCode` in ('MSB-0010249','MSB-0010026','MSB-0008485','MSB-0003661','MSB-0003662')
-select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></console>
+      <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from camso_products order by id desc
+
+update camso_products set diameter = 8.25, width = 15, height = 8.25, `length` = 8.25, weight = 206 where id = 473]]></console>
+      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemjumpseller where `Sku` = '48447FS003'
+select * from syncitemjumpseller where `InternalCode` = 'MSB-0002106'
+select * from syncitemjumpseller where `ResponseId` = '31798346'
+
+select * from productattributevalue where `ProductAttributeId` = 'SEO_TITLE'
+select * from product]]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
@@ -35,13 +46,16 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
   <component name="DBNavigator.Project.DatabaseFileManager">
     <open-files>
       <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql test" />
+      <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql" />
     </open-files>
   </component>
   <component name="DBNavigator.Project.DatabaseSessionManager">
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" />
   </component>
   <component name="DBNavigator.Project.DatasetFilterManager">
+    <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.vecom_products" active-filter-id="" />
     <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.authtokenparameter" active-filter-id="" />
+    <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.integration_attributes" active-filter-id="" />
     <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.productimagesview" active-filter-id="" />
   </component>
   <component name="DBNavigator.Project.ExecutionManager">
@@ -66,7 +80,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
   </component>
   <component name="DBNavigator.Project.Settings">
     <connections>
-      <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" active="true" signed="true">
+      <connection source-id="" id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" active="true" signed="true">
         <database>
           <name value="vegusa-mysql" />
           <description value="" />
@@ -82,6 +96,9 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <database value="vecomdb" />
           <tns-folder value="" />
           <tns-profile value="" />
+          <server-type value="" />
+          <protocol value="" />
+          <url-parameters />
           <type value="USER_PASSWORD" />
           <user value="vecomsqladmin" />
           <token-type value="" />
@@ -140,6 +157,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
             <object-type name="CHARSET" enabled="true" />
             <object-type name="TABLE" enabled="true" />
             <object-type name="VIEW" enabled="true" />
+            <object-type name="JSON_VIEW" enabled="true" />
             <object-type name="MATERIALIZED_VIEW" enabled="true" />
             <object-type name="NESTED_TABLE" enabled="true" />
             <object-type name="COLUMN" enabled="true" />
@@ -156,9 +174,9 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
             <object-type name="TYPE_ATTRIBUTE" enabled="true" />
             <object-type name="ARGUMENT" enabled="true" />
             <object-type name="JAVA_CLASS" enabled="true" />
-            <object-type name="JAVA_INNER_CLASS" enabled="true" />
             <object-type name="JAVA_FIELD" enabled="true" />
             <object-type name="JAVA_METHOD" enabled="true" />
+            <object-type name="JAVA_RESOURCE" enabled="true" />
             <object-type name="DIMENSION" enabled="true" />
             <object-type name="CLUSTER" enabled="true" />
             <object-type name="DBLINK" enabled="true" />
@@ -174,6 +192,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
         <navigation-history-size value="100" />
         <show-object-details value="false" />
         <enable-sticky-paths value="true" />
+        <enable-quick-filters value="false" />
       </general>
       <filters>
         <object-type-filter>
@@ -184,6 +203,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <object-type name="CHARSET" enabled="true" />
           <object-type name="TABLE" enabled="true" />
           <object-type name="VIEW" enabled="true" />
+          <object-type name="JSON_VIEW" enabled="true" />
           <object-type name="MATERIALIZED_VIEW" enabled="true" />
           <object-type name="NESTED_TABLE" enabled="true" />
           <object-type name="COLUMN" enabled="true" />
@@ -200,9 +220,9 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <object-type name="TYPE_ATTRIBUTE" enabled="true" />
           <object-type name="ARGUMENT" enabled="true" />
           <object-type name="JAVA_CLASS" enabled="true" />
-          <object-type name="JAVA_INNER_CLASS" enabled="true" />
           <object-type name="JAVA_FIELD" enabled="true" />
           <object-type name="JAVA_METHOD" enabled="true" />
+          <object-type name="JAVA_RESOURCE" enabled="true" />
           <object-type name="DIMENSION" enabled="true" />
           <object-type name="CLUSTER" enabled="true" />
           <object-type name="DBLINK" enabled="true" />
@@ -233,6 +253,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <object-type name="CHARSET" enabled="false" />
           <object-type name="TABLE" enabled="true" />
           <object-type name="VIEW" enabled="true" />
+          <object-type name="JSON VIEW" enabled="true" />
           <object-type name="MATERIALIZED VIEW" enabled="true" />
           <object-type name="INDEX" enabled="true" />
           <object-type name="CONSTRAINT" enabled="true" />
@@ -249,6 +270,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <object-type name="JAVA FIELD" enabled="true" />
           <object-type name="JAVA METHOD" enabled="true" />
           <object-type name="JAVA PARAMETER" enabled="true" />
+          <object-type name="JAVA RESOURCE" enabled="true" />
           <object-type name="DIMENSION" enabled="false" />
           <object-type name="CLUSTER" enabled="false" />
           <object-type name="DBLINK" enabled="false" />
@@ -348,6 +370,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <user-schema>
             <filter-element type="OBJECT" id="table" selected="true" />
             <filter-element type="OBJECT" id="view" selected="true" />
+            <filter-element type="OBJECT" id="json view" selected="true" />
             <filter-element type="OBJECT" id="materialized view" selected="true" />
             <filter-element type="OBJECT" id="index" selected="true" />
             <filter-element type="OBJECT" id="constraint" selected="true" />
@@ -365,6 +388,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <public-schema>
             <filter-element type="OBJECT" id="table" selected="false" />
             <filter-element type="OBJECT" id="view" selected="false" />
+            <filter-element type="OBJECT" id="json view" selected="false" />
             <filter-element type="OBJECT" id="materialized view" selected="false" />
             <filter-element type="OBJECT" id="index" selected="false" />
             <filter-element type="OBJECT" id="constraint" selected="false" />
@@ -382,6 +406,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <any-schema>
             <filter-element type="OBJECT" id="table" selected="true" />
             <filter-element type="OBJECT" id="view" selected="true" />
+            <filter-element type="OBJECT" id="json view" selected="true" />
             <filter-element type="OBJECT" id="materialized view" selected="true" />
             <filter-element type="OBJECT" id="index" selected="true" />
             <filter-element type="OBJECT" id="constraint" selected="true" />
@@ -410,6 +435,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <user-schema>
             <filter-element type="OBJECT" id="table" selected="true" />
             <filter-element type="OBJECT" id="view" selected="true" />
+            <filter-element type="OBJECT" id="json view" selected="true" />
             <filter-element type="OBJECT" id="materialized view" selected="true" />
             <filter-element type="OBJECT" id="index" selected="true" />
             <filter-element type="OBJECT" id="constraint" selected="true" />
@@ -427,6 +453,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <public-schema>
             <filter-element type="OBJECT" id="table" selected="true" />
             <filter-element type="OBJECT" id="view" selected="true" />
+            <filter-element type="OBJECT" id="json view" selected="true" />
             <filter-element type="OBJECT" id="materialized view" selected="true" />
             <filter-element type="OBJECT" id="index" selected="true" />
             <filter-element type="OBJECT" id="constraint" selected="true" />
@@ -444,6 +471,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
           <any-schema>
             <filter-element type="OBJECT" id="table" selected="true" />
             <filter-element type="OBJECT" id="view" selected="true" />
+            <filter-element type="OBJECT" id="json view" selected="true" />
             <filter-element type="OBJECT" id="materialized view" selected="true" />
             <filter-element type="OBJECT" id="index" selected="true" />
             <filter-element type="OBJECT" id="constraint" selected="true" />
@@ -461,6 +489,7 @@ select * from syncitemjumpseller where `InternalCode` in ('MSB-0003971')]]></con
         </extended-filter>
       </filters>
       <sorting enabled="true">
+        <sorting-element type="OBJECT" id="json view" />
         <sorting-element type="RESERVED_WORD" id="keyword" />
         <sorting-element type="RESERVED_WORD" id="datatype" />
         <sorting-element type="OBJECT" id="column" />

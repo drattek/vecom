@@ -1,51 +1,123 @@
 package com.vegusa.middleware.integrations.jumpseller.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
+import com.fasterxml.jackson.annotation.JsonProperty;
 
 import java.math.BigDecimal;
-import java.time.Instant;
 
 @JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class Product {
+    @JsonProperty("id")
     private Long id;
+
+    @JsonProperty("name")
     private String name;
+
+    @JsonProperty("page_title")
     private String page_title;
+
+    @JsonProperty("description")
     private String description;
+
+    @JsonProperty("meta_description")
     private String meta_description;
+
+    @JsonProperty("type")
     private String type;
+
+    @JsonProperty("days_to_expire")
     private Integer days_to_expire;
+
+    @JsonProperty("price")
     private BigDecimal price;
+
+    @JsonProperty("discount")
     private Double discount;
+
+    @JsonProperty("weight")
     private BigDecimal weight;
+
+    @JsonProperty("stock")
     private Integer stock;
+
+    @JsonProperty("stock_unlimited")
     private Boolean stock_unlimited;
+
+    @JsonProperty("stock_threshold")
     private Integer stock_threshold;
+
+    @JsonProperty("stock_notification")
     private Boolean stock_notification;
+
+    @JsonProperty("cost_per_item")
     private Double cost_per_item;
+
+    @JsonProperty("compare_at_price")
     private Double compare_at_price;
+
+    @JsonProperty("minimum_quantity")
     private Integer minimum_quantity;
+
+    @JsonProperty("maximum_quantity")
     private Integer maximum_quantity;
+
+    @JsonProperty("sku")
     private String sku;
+
+    @JsonProperty("brand")
     private String brand;
+
+    @JsonProperty("barcode")
     private String barcode;
+
+    @JsonProperty("google_product_category")
     private String google_product_category;
+
+    @JsonProperty("featured")
     private Boolean featured;
+
+    @JsonProperty("shipping_required")
     private Boolean shipping_required;
+
+    @JsonProperty("reviews_enabled")
     private Boolean reviews_enabled;
+
+    @JsonProperty("status")
     private String status;
+
+    @JsonProperty("created_at")
     private String created_at;
+
+    @JsonProperty("updated_at")
     private String updated_at;
+
+    @JsonProperty("package_format")
     private String package_format;
+
+    @JsonProperty("length")
     private BigDecimal length;
+
+    @JsonProperty("width")
     private BigDecimal width;
+
+    @JsonProperty("height")
     private BigDecimal height;
+
+    @JsonProperty("diameter")
     private BigDecimal diameter;
+
+    @JsonProperty("permalink")
     private String permalink;
-    private Category[] categories;
+
+    @JsonProperty("categories")
+    private CategoryDTO[] categories;
+
+    @JsonProperty("fields")
+    private Field[] fields;
 
     public  Product(){}
 
-    public Product(Long id, String name, String page_title, String description, String meta_description, String type, Integer days_to_expire, BigDecimal price, Double discount, BigDecimal weight, Integer stock, Boolean stock_unlimited, Integer stock_threshold, Boolean stock_notification, Double cost_per_item, Double compare_at_price, Integer minimum_quantity, Integer maximum_quantity, String sku, String brand, String barcode, String google_product_category, Boolean featured, Boolean shipping_required, Boolean reviews_enabled, String status, String created_at, String updated_at, String package_format, BigDecimal length, BigDecimal width, BigDecimal height, BigDecimal diameter, String permalink, Category[] categories) {
+    public Product(Long id, String name, String page_title, String description, String meta_description, String type, Integer days_to_expire, BigDecimal price, Double discount, BigDecimal weight, Integer stock, Boolean stock_unlimited, Integer stock_threshold, Boolean stock_notification, Double cost_per_item, Double compare_at_price, Integer minimum_quantity, Integer maximum_quantity, String sku, String brand, String barcode, String google_product_category, Boolean featured, Boolean shipping_required, Boolean reviews_enabled, String status, String created_at, String updated_at, String package_format, BigDecimal length, BigDecimal width, BigDecimal height, BigDecimal diameter, String permalink, CategoryDTO[] categories, Field[] fields) {
         this.id = id;
         this.name = name;
         this.page_title = page_title;
@@ -81,6 +153,7 @@ public class Product {
         this.diameter = diameter;
         this.permalink = permalink;
         this.categories = categories;
+        this.fields = fields;
     }
 
     public Long getId() {
@@ -355,11 +428,19 @@ public class Product {
         this.permalink = permalink;
     }
 
-    public Category[] getCategories() {
+    public CategoryDTO[] getCategories() {
         return categories;
     }
 
-    public void setCategories(Category[] categories) {
+    public void setCategories(CategoryDTO[] categories) {
         this.categories = categories;
+    }
+
+    public Field[] getFields() {
+        return fields;
+    }
+
+    public void setFields(Field[] fields) {
+        this.fields = fields;
     }
 }

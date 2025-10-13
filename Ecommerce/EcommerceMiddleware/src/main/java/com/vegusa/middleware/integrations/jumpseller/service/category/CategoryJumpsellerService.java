@@ -4,7 +4,7 @@ import com.vegusa.middleware.constants.DataArea;
 import com.vegusa.middleware.constants.IntegrationType;
 import com.vegusa.middleware.entity.IntegrationCategory;
 import com.vegusa.middleware.integrations.jumpseller.client.category.CategoryJumpsellerClient;
-import com.vegusa.middleware.integrations.jumpseller.dto.Category;
+import com.vegusa.middleware.integrations.jumpseller.dto.CategoryDTO;
 import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerCategoryDto;
 import com.vegusa.middleware.integrations.jumpseller.repository.SyncCategoryRepositoryJumpseller;
 import com.vegusa.middleware.integrations.jumpseller.utils.CategoryUtils;
@@ -42,16 +42,16 @@ public class CategoryJumpsellerService {
         return categoryJumpsellerClient.getAllCategories()
                 .doOnNext(categories -> {
                     for (JumpsellerCategoryDto category : categories) {
-                        Category jumpsellerCategory = category.getCategory();
+                        CategoryDTO jumpsellerCategoryDTO = category.getCategory();
                         List<IntegrationCategory> localCategories = integrationCategoryRepository.getCategories(
-                                jumpsellerCategory.getId().toString(),
+                                jumpsellerCategoryDTO.getId().toString(),
                                 DataArea.MSB.name(),
                                 IntegrationType.JUMPSELLER.name()
                         );
 
                         for (IntegrationCategory local : localCategories){
-                            System.out.println("Updating category: " + local.getName() + " with: " + jumpsellerCategory.getName());
-                            local.setExternalName(jumpsellerCategory.getName());
+                            System.out.println("Updating category: " + local.getName() + " with: " + jumpsellerCategoryDTO.getName());
+                            local.setExternalName(jumpsellerCategoryDTO.getName());
                             integrationCategoryRepository.save(local);
                         }
                     }

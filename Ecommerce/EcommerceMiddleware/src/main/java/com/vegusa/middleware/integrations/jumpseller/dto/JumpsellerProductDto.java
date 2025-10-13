@@ -2,6 +2,7 @@ package com.vegusa.middleware.integrations.jumpseller.dto;
 
 import com.fasterxml.jackson.annotation.JsonInclude;
 
+@JsonInclude(JsonInclude.Include.NON_EMPTY)
 public class JumpsellerProductDto {
     private Product product;
 

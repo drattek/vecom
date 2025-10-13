@@ -1,19 +1,19 @@
 package com.vegusa.middleware.integrations.jumpseller.dto;
 
 public class JumpsellerCategoryDto {
-    private Category category;
+    private CategoryDTO categoryDTO;
 
     public  JumpsellerCategoryDto(){}
 
-    public JumpsellerCategoryDto(Category category) {
-        this.category = category;
+    public JumpsellerCategoryDto(CategoryDTO categoryDTO) {
+        this.categoryDTO = categoryDTO;
     }
 
-    public Category getCategory() {
-        return category;
+    public CategoryDTO getCategory() {
+        return categoryDTO;
     }
 
-    public void setCategory(Category category) {
-        this.category = category;
+    public void setCategory(CategoryDTO categoryDTO) {
+        this.categoryDTO = categoryDTO;
     }
 }

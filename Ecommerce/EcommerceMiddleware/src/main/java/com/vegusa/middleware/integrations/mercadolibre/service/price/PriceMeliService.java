@@ -1,5 +1,6 @@
 package com.vegusa.middleware.integrations.mercadolibre.service.price;
 
+import com.vegusa.middleware.constants.DataArea;
 import com.vegusa.middleware.constants.IntegrationType;
 import com.vegusa.middleware.constants.PriceParameter;
 import com.vegusa.middleware.entity.Category;
@@ -50,6 +51,35 @@ public class PriceMeliService {
     @Autowired
     private ProductCategoryRepository productCategoryRepository;
 
+    public BigDecimal getPrice(BigDecimal price, String itemId){
+        // Shipping cost
+        PriceListParameter priceListShipping = priceListParameterRepository.getPriceListParameter(PriceParameter.SHIPPING_COST.name(), DataArea.MSB.name());
+        BigDecimal shippingCost = priceListShipping.getDecValue();
+
+        // Channel base percentage
+        String base_percentage = priceListRepository.getPercentage("NORMAL", "MXN", DataArea.MSB.name());
+        BigDecimal percentage_base = new BigDecimal(base_percentage);
+        String channel_percentage = channelRepository.getPercentage(IntegrationType.MERCADO_LIBRE.name(), "MXN", DataArea.MSB.name());
+        BigDecimal percentage_channel = new BigDecimal(channel_percentage);
+        BigDecimal total_percentage = percentage_base.add(percentage_channel);
+
+        Category[] categories = categoryRepository.getAllCategories(DataArea.MSB.name());
+
+        ProductCategory productCategory = productCategoryRepository.getProductCategory(itemId, DataArea.MSB.name());
+        Optional<Category> currentCategory = Arrays.stream(categories)
+                .filter(category -> Objects.equals(category.getId().getRecId(), productCategory.getCategory().getId().getRecId()))
+                .findFirst();
+
+        BigDecimal categoryPercentage = currentCategory.isPresent() ? currentCategory.get().getPercentage() : new BigDecimal("35");
+
+        BigDecimal auxCost = total_percentage
+                .add(categoryPercentage)
+                .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP)
+                .add(BigDecimal.ONE)
+                .multiply(price);
+        return getAdditionalFixedCost(auxCost, DataArea.MSB.name()).add(shippingCost).setScale(2, RoundingMode.HALF_UP);
+    }
+
     public Mono<String> getPrices(String itemId){
         return client.getPrices(itemId);
     }
@@ -79,6 +109,10 @@ public class PriceMeliService {
         Map<String, ProductMeliDTO> products = new HashMap<>();
         for (SyncItemMeli item : items){
             if (itemCostMap.get(item.getInternalCode()) != null && item.getStatus().equals("active")){
+                BigDecimal productCost = new BigDecimal(itemCostMap.get(item.getInternalCode()));
+                if (productCost.compareTo(BigDecimal.ZERO) == 0) {
+                    continue;
+                }
                 ProductCategory productCategory = productCategoryRepository.getProductCategory(item.getInternalCode(), dataAreaId);
                 Optional<Category> currentCategory = Arrays.stream(categories)
                         .filter(category -> Objects.equals(category.getId().getRecId(), productCategory.getCategory().getId().getRecId()))
@@ -86,7 +120,6 @@ public class PriceMeliService {
 
                 BigDecimal categoryPercentage = currentCategory.isPresent() ? currentCategory.get().getPercentage() : new BigDecimal("35");
 
-                BigDecimal productCost = new BigDecimal(itemCostMap.get(item.getInternalCode()));
                 BigDecimal auxCost = total_percentage
                         .add(categoryPercentage)
                         .divide(new BigDecimal("100"), 2, RoundingMode.HALF_UP)
@@ -99,7 +132,6 @@ public class PriceMeliService {
                     auxProduct.setPrice(finalCost);
                     products.put(item.getResponseId(), auxProduct);
                 }
-                //System.out.println("Item " + item.getInternalCode() + " with price: " + finalCost);
             }
         }
 

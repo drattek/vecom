@@ -1,7 +1,9 @@
 package com.vegusa.middleware.integrations.camso.controller.inventory;
 
+import com.vegusa.middleware.integrations.camso.dto.InventoryCamsoDTO;
 import com.vegusa.middleware.integrations.camso.service.InventoryCamsoService;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,7 +16,7 @@ public class InventoryCamsoController {
     private InventoryCamsoService inventoryService;
 
     @GetMapping(value = "/get-inventory")
-    public String getInventory(){
+    public InventoryCamsoDTO getInventory(){
         return inventoryService.getInventory();
     }
 }

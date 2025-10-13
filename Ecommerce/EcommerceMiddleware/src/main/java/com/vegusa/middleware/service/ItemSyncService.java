@@ -257,7 +257,7 @@ public class ItemSyncService {
                         }
                         auxCategoryRefRecId = category.getParentCategory();
                     } catch (RuntimeException e) {
-                        System.out.println("An error occurred while obtaining the Category ID. " + e.getMessage());
+                        System.out.println("An error occurred while obtaining the CategoryDTO ID. " + e.getMessage());
                     }
                 } while(auxCategoryRefRecId != 0);
             }
@@ -265,7 +265,7 @@ public class ItemSyncService {
             response.add(tags);
             return response;
         } catch (RuntimeException | JsonProcessingException e){
-            throw new RuntimeException("An error occurred while obtaining Category IDs. " + e.getMessage());
+            throw new RuntimeException("An error occurred while obtaining CategoryDTO IDs. " + e.getMessage());
         }
     }
 

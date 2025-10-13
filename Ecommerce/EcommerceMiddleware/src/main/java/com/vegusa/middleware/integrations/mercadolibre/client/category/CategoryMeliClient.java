@@ -17,7 +17,7 @@ public class CategoryMeliClient {
     @Autowired
     private TokenStorageMeli tokenStorage;
 
-    public Mono<PredictorMeliDTO> predictCategory(String query){
+    public Mono<PredictorMeliDTO[]> predictCategory(String query){
         return client.executeRateLimited(() ->
                 client.getClient().get()
                         .uri(uriBuilder -> uriBuilder
@@ -25,7 +25,7 @@ public class CategoryMeliClient {
                                 .queryParam("q", query)
                                 .build(tokenStorage.getSiteId()))
                         .retrieve()
-                        .bodyToMono(PredictorMeliDTO.class)
+                        .bodyToMono(PredictorMeliDTO[].class)
         );
     }
 

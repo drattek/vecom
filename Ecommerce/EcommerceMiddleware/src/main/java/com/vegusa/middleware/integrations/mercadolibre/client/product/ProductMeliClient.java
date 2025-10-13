@@ -1,6 +1,7 @@
 package com.vegusa.middleware.integrations.mercadolibre.client.product;
 
 import com.vegusa.middleware.integrations.mercadolibre.client.MercadolibreClient;
+import com.vegusa.middleware.integrations.mercadolibre.dto.product.DescriptionMeliDTO;
 import com.vegusa.middleware.integrations.mercadolibre.dto.product.ProductMeliDTO;
 import com.vegusa.middleware.integrations.mercadolibre.oauth.TokenStorageMeli;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,6 +29,8 @@ public class ProductMeliClient {
                 client.getClient().get()
                         .uri(uriBuilder -> {
                             var builder = uriBuilder.path("/users/{user_id}/items/search");
+                            builder = builder.queryParam("offset", 100);
+                            builder = builder.queryParam("limit", 100);
 
                             if (healthy != null && !healthy.isBlank()){
                                 builder = builder.queryParam("reputation_health_gauge", healthy);
@@ -50,7 +53,16 @@ public class ProductMeliClient {
         );
     }
 
-    public Mono<String> createProduct(Map<String, Object> data){
+    public Mono<String> getProduct2(String itemId){
+        return client.executeRateLimited(() ->
+                client.getClient().get()
+                        .uri("/items/{item_id}", itemId)
+                        .retrieve()
+                        .bodyToMono(String.class)
+        );
+    }
+
+    public Mono<ProductMeliDTO> createProduct(ProductMeliDTO data){
         return client.executeRateLimited(() ->
                 client.getClient().post()
                         .uri("/items")
@@ -61,7 +73,7 @@ public class ProductMeliClient {
                                         .doOnNext(errorBody -> System.err.println("Error 4xx: " + errorBody))
                                         .then(Mono.empty()) // No interrumpe el flujo
                         )
-                        .bodyToMono(String.class)
+                        .bodyToMono(ProductMeliDTO.class)
                         .doOnError(error -> {
                             System.err.println(error.getMessage());
                         })
@@ -79,15 +91,51 @@ public class ProductMeliClient {
                         .retrieve()
                         .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
                                 clientResponse.bodyToMono(String.class)
-                                        .flatMap(errorBody -> {
-                                            HttpHeaders headers = clientResponse.headers().asHttpHeaders();
-                                            String message = "Status: " + clientResponse.statusCode()
-                                                    + ", Headers: " + headers
-                                                    + ", Body: " + errorBody;
-                                            return Mono.error(new RuntimeException(message));
-                                        })
+                                        .doOnNext(errorBody -> System.err.println("Error 4xx: " + errorBody))
+                                        .then(Mono.empty()) // No interrumpe el flujo
                         )
                         .bodyToMono(ProductMeliDTO.class)
+        );
+    }
+
+    public Mono<String> createDescription(String itemId, DescriptionMeliDTO description){
+        return client.executeRateLimited(() ->
+                client.getClient().post()
+                        .uri("items/{item_id}/description", itemId)
+                        .bodyValue(description)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                                clientResponse.bodyToMono(String.class)
+                                        .doOnNext(errorBody -> System.err.println("Error 4xx: " + errorBody))
+                                        .then(Mono.empty()) // No interrumpe el flujo
+                        )
+                        .bodyToMono(String.class)
+        );
+    }
+
+    public Mono<String> updateDescription(String itemId, DescriptionMeliDTO description){
+        return client.executeRateLimited(() ->
+                client.getClient().put()
+                        .uri("/items/{item_id}/description?api_version=2", itemId)
+                        .bodyValue(description)
+                        .retrieve()
+                        .onStatus(HttpStatusCode::is4xxClientError, clientResponse ->
+                                clientResponse.bodyToMono(String.class)
+                                        .doOnNext(errorBody -> System.err.println("Error 4xx: " + errorBody))
+                                        .then(Mono.empty()) // No interrumpe el flujo
+                        )
+                        .bodyToMono(String.class)
+        );
+    }
+
+    // User products
+
+    public Mono<String> getUserProduct(String itemId){
+        return client.executeRateLimited(() ->
+                client.getClient().get()
+                        .uri("/user-products/{user_product_id}", itemId)
+                        .retrieve()
+                        .bodyToMono(String.class)
         );
     }
 }

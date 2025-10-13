@@ -89,9 +89,12 @@ public class ProductMeliDTO {
     @JsonProperty("attributes")
     private AttributeMeliDTO[] attributes;
 
+    @JsonProperty("shipping")
+    private ShippingMeliDTO shipping;
+
     public ProductMeliDTO() {}
 
-    public ProductMeliDTO(String id, String siteId, String title, String familyName, String sellerId, String categoryId, String userProductId, String officialStoreId, BigDecimal price, BigDecimal basePrice, BigDecimal originalPrice, String currencyId, Integer initialQuantity, Integer availableQuantity, Integer soldQuantity, String buyingMode, String listingTypeId, String condition, String permalink, PictureMeliDTO[] pictures, Boolean acceptsMercadopago, String[] tags, String status, String[] subStatus, String domainId, String[] channels, AttributeMeliDTO[] attributes) {
+    public ProductMeliDTO(String id, String siteId, String title, String familyName, String sellerId, String categoryId, String userProductId, String officialStoreId, BigDecimal price, BigDecimal basePrice, BigDecimal originalPrice, String currencyId, Integer initialQuantity, Integer availableQuantity, Integer soldQuantity, String buyingMode, String listingTypeId, String condition, String permalink, PictureMeliDTO[] pictures, Boolean acceptsMercadopago, String[] tags, String status, String[] subStatus, String domainId, String[] channels, AttributeMeliDTO[] attributes, ShippingMeliDTO shipping) {
         this.id = id;
         this.siteId = siteId;
         this.title = title;
@@ -119,6 +122,7 @@ public class ProductMeliDTO {
         this.domainId = domainId;
         this.channels = channels;
         this.attributes = attributes;
+        this.shipping = shipping;
     }
 
     public String getId() {
@@ -335,5 +339,13 @@ public class ProductMeliDTO {
 
     public void setAttributes(AttributeMeliDTO[] attributes) {
         this.attributes = attributes;
+    }
+
+    public ShippingMeliDTO getShipping() {
+        return shipping;
+    }
+
+    public void setShipping(ShippingMeliDTO shipping) {
+        this.shipping = shipping;
     }
 }

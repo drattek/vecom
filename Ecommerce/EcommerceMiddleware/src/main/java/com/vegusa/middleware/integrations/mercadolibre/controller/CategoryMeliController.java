@@ -17,7 +17,7 @@ public class CategoryMeliController {
     private CategoryMeliService categoryService;
 
     @GetMapping(value = "/category-predictor")
-    public Mono<PredictorMeliDTO> getCategoryPredictor(@RequestParam("title") String title){
+    public Mono<PredictorMeliDTO[]> getCategoryPredictor(@RequestParam("title") String title){
         if (title.isBlank()){
             return Mono.empty();
         }

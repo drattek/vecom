@@ -23,7 +23,7 @@ public class PriceMeliController {
             priceService.updatePrices("NORMAL", "MXN", "MSB").subscribe();
             return Mono.just(ResponseEntity.accepted().body("Update starting"));
         } catch (RuntimeException e){
-            System.err.println("Error: " + e.getMessage());
+            System.err.println("Error prices: " + e.getMessage());
         }
         return null;
     }
