@@ -13,6 +13,6 @@ public interface IntegrationImageRepository extends JpaRepository<IntegrationIma
     @Query(value = "select file_name from integration_images where internal_code = :internalCode and position = :position and integration_name = 'JUMPSELLER' limit 1", nativeQuery = true)
     String getFileName(@Param("internalCode") String internalCode, @Param("position") Integer position);
 
-    @Query(value = "select * from integration_images where internal_code = :itemId and file_name = :filename and integration_name = :integrationName", nativeQuery = true)
+    @Query(value = "select * from integration_images where internal_code = :itemId and url = :filename and integration_name = :integrationName", nativeQuery = true)
     Optional<IntegrationImage> getSyncImage(@Param("itemId") String itemId, @Param("filename") String filename, @Param("integrationName") String integrationName);
 }

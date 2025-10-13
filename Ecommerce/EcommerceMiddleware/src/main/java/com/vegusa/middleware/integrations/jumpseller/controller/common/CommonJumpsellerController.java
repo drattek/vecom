@@ -1,9 +1,7 @@
 package com.vegusa.middleware.integrations.jumpseller.controller.common;
 
-import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerInfoDto;
-import com.vegusa.middleware.integrations.jumpseller.dto.LanguageDto;
-import com.vegusa.middleware.integrations.jumpseller.dto.MappedBrandDTO;
-import com.vegusa.middleware.integrations.jumpseller.dto.MappedCatergoryDTO;
+import com.vegusa.middleware.dto.ImportProductDTO;
+import com.vegusa.middleware.integrations.jumpseller.dto.*;
 import com.vegusa.middleware.integrations.jumpseller.service.common.CommonJumpsellerService;
 import org.json.JSONArray;
 import org.json.JSONObject;
@@ -75,5 +73,17 @@ public class CommonJumpsellerController {
         commonJumpsellerService.syncBrands().subscribe();
 
         return Mono.empty();
+    }
+
+    @PostMapping(value = "/resync-item")
+    public JumpsellerProductDto resyncItem(@RequestBody Map<String, String> data){
+        long id = Long.parseLong(data.get("id"));
+        String internalCode = data.get("internal_code");
+        return commonJumpsellerService.getSyncProduct(id, internalCode);
+    }
+
+    @PostMapping(value = "/update-titles")
+    public void updateTitles(@RequestBody List<ImportProductDTO> data){
+        commonJumpsellerService.updateTitles(data);
     }
 }

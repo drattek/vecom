@@ -20,4 +20,7 @@ public interface IntegrationProductAttributesRepository extends JpaRepository<In
     Optional<IntegrationProductAttribute> findByExternalId(String externalId);
 
     Optional<List<IntegrationProductAttribute>> findByIntegrationName(String integrationName);
+
+    @Query(value = "select * from integration_product_attributes where product_id = :productId and integration_name = :integrationName and attribute_id = :attributeId", nativeQuery = true)
+    Optional<IntegrationProductAttribute> getAttribute(@Param("productId") String productId, @Param("integrationName") String integrationName, @Param("attributeId") String attributeId);
 }

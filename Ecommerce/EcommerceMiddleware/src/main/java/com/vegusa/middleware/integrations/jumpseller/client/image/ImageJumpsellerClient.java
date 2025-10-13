@@ -31,4 +31,13 @@ public class ImageJumpsellerClient {
                         .bodyToMono(JumpsellerImageDTO.class)
         );
     }
+
+    public Mono<Void> deleteImage(String productId, String imageId){
+        return client.executeRateLimited(() ->
+                client.getClient().delete()
+                        .uri("/products/{product}/images/{id}.json", productId, imageId)
+                        .retrieve()
+                        .bodyToMono(Void.class)
+        );
+    }
 }

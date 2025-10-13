@@ -53,7 +53,7 @@ public class SyncUtils {
         return prefix + name + " - " + product.getItemId();
     }
 
-    private String capitalize(String str) {
+    public String capitalize(String str) {
         if (str == null || str.isEmpty()) {
             return str;
         }
