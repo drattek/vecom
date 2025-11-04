@@ -2,16 +2,12 @@ package com.vegusa.middleware.integrations.mercadolibre.service.product;
 
 import com.vegusa.middleware.constants.DataArea;
 import com.vegusa.middleware.constants.IntegrationType;
-import com.vegusa.middleware.constants.PriceParameter;
 import com.vegusa.middleware.constants.ProductInterface;
 import com.vegusa.middleware.dto.ProductInfo;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.integrations.mercadolibre.client.product.ProductMeliClient;
 import com.vegusa.middleware.integrations.mercadolibre.dto.category.AttributeMeliDTO;
-import com.vegusa.middleware.integrations.mercadolibre.dto.product.DescriptionMeliDTO;
-import com.vegusa.middleware.integrations.mercadolibre.dto.product.PictureMeliDTO;
-import com.vegusa.middleware.integrations.mercadolibre.dto.product.ProductMeliDTO;
-import com.vegusa.middleware.integrations.mercadolibre.dto.product.ShippingMeliDTO;
+import com.vegusa.middleware.integrations.mercadolibre.dto.product.*;
 import com.vegusa.middleware.integrations.mercadolibre.entity.SyncItemMeli;
 import com.vegusa.middleware.integrations.mercadolibre.repository.SyncItemMeliRepository;
 import com.vegusa.middleware.integrations.mercadolibre.service.price.PriceMeliService;
@@ -25,7 +21,6 @@ import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
-import java.math.BigDecimal;
 import java.time.Instant;
 import java.util.*;
 import java.util.stream.Collectors;
@@ -56,8 +51,60 @@ public class ProductMeliService {
     @Autowired
     private ProductAttributeValuesRepository attributeValuesRepository;
 
-    public Mono<String> getProducts(){
-        return client.getProducts();
+    public void resyncProducts(){
+        String scroll_id = "";
+        List<String> response_ids = new ArrayList<>();
+        boolean flag = true;
+
+        while (flag) {
+            ListProducts tempList = client.getProducts(scroll_id).block();
+            if (tempList != null){
+                if (!tempList.getResults().isEmpty()) {
+                    response_ids.addAll(tempList.getResults());
+                    scroll_id = tempList.getScrollId();
+                } else {
+                    flag = false;
+                }
+            }
+        }
+
+        if (!response_ids.isEmpty()){
+            for (String responseId : response_ids){
+                System.out.println("Init product: " + responseId);
+                ProductMeliDTO cloudItem = client.getProduct(responseId).block();
+                if (cloudItem != null) {
+                    SyncItemMeli syncItem = syncItemMeliRepository.findByResponseId(responseId)
+                            .orElseGet(() -> {
+                                SyncItemMeli tmpSyncItem = new SyncItemMeli();
+                                tmpSyncItem.setInternalCode("");
+                                tmpSyncItem.setCode("");
+                                tmpSyncItem.setResponseId(responseId);
+
+                                return tmpSyncItem;
+                            });
+                    syncItem.setPrice(cloudItem.getPrice());
+                    syncItem.setName(cloudItem.getTitle());
+                    syncItem.setAvailable(cloudItem.getAvailableQuantity());
+                    syncItem.setCategoryId(cloudItem.getCategoryId());
+                    syncItem.setUserProductId(cloudItem.getUserProductId());
+                    syncItem.setCurrencyId(cloudItem.getCurrencyId());
+                    syncItem.setPermalink(cloudItem.getPermalink());
+                    syncItem.setStatus(cloudItem.getStatus());
+                    syncItem.setDomainId(cloudItem.getDomainId());
+                    syncItem.setChannels("marketplace,mshops");
+                    syncItem.setDataAreaId(DataArea.MSB.name());
+                    syncItem.setCompanyRefRecId(1L);
+                    syncItemMeliRepository.save(syncItem);
+                    System.out.println("Synced product: " + responseId + " - " + syncItem.getInternalCode());
+                }
+            }
+        }
+
+        System.out.println("============================ Synced ended =================================");
+    }
+
+    public void getProducts(String scroll){
+        client.getProducts(scroll);
     }
 
     public Mono<ProductMeliDTO> getProduct(String itemId){
@@ -67,10 +114,6 @@ public class ProductMeliService {
     public Mono<String> getProduct2(String itemId){
         return client.getProduct2(itemId);
     }
-
-//    public Mono<String> createProduct(Map<String, Object> data){
-//        return client.createProduct(data);
-//    }
 
     public Mono<Void> downloadProducts(){
         SyncItemMeli[] syncItems = syncItemMeliRepository.getItems("MSB");
@@ -156,7 +199,7 @@ public class ProductMeliService {
             shipping.setLocalPickUp(false);
             shipping.setFreeMethods(new String[0]);
 
-            product.setShipping(shipping);
+            //product.setShipping(shipping);
             product.setPrice(syncItem.getPrice());
 
             return client.updateProduct(product, syncItem.getResponseId())
@@ -272,7 +315,7 @@ public class ProductMeliService {
                 shipping.setFreeShipping(true);
                 shipping.setLocalPickUp(false);
                 shipping.setFreeMethods(new String[0]);
-                product.setShipping(shipping);
+                //product.setShipping(shipping);
 
                 products.put(itemId, product);
             } else {

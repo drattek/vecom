@@ -27,13 +27,26 @@ public class ProductMeliController {
     }
 
     @GetMapping(value = "/products")
-    public Mono<String> getProducts(){
-        return productService.getProducts();
+    public Mono<Void> getProducts(@RequestParam Map<String, String> data){
+        String scroll = data.get("scroll_id");
+        productService.getProducts(scroll);
+
+        return Mono.empty();
+    }
+
+    @PostMapping(value = "/resync-meli-products")
+    public void resyncMeliProducts(){
+        productService.resyncProducts();
     }
 
     @GetMapping(value = "/product")
-    public Mono<String> getProduct(@RequestParam("item_id") String itemId){
-        return productService.getProduct2(itemId);
+    public Mono<ProductMeliDTO> getProduct(@RequestParam("item_id") String itemId){
+        return productService.getProduct(itemId);
+    }
+
+    @PostMapping(value = "/products-resync")
+    public void resyncProducts(){
+
     }
 
 //    @PostMapping(value = "/create-product")

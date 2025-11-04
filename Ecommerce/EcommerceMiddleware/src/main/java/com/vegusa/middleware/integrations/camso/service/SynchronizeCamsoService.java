@@ -256,13 +256,15 @@ public class SynchronizeCamsoService {
 
                 JumpsellerProductDto dto = new JumpsellerProductDto(product);
 
-                JumpsellerProductDto result = productClient.updateProduct(syncItem.getResponseId(), dto).block();
-                if (result != null){
-                    syncItem.setPrice(result.getProduct().getPrice());
-                    syncItem.setDescription(result.getProduct().getDescription());
-                    syncItem.setStock(result.getProduct().getStock());
-                    jumpsellerRepository.save(syncItem);
-                    System.out.println("Updated item: " + item.getPartNumber());
+                if (item.getStock().intValue() != syncItem.getStock()){
+                    JumpsellerProductDto result = productClient.updateProduct(syncItem.getResponseId(), dto).block();
+                    if (result != null){
+                        syncItem.setPrice(result.getProduct().getPrice());
+                        syncItem.setDescription(result.getProduct().getDescription());
+                        syncItem.setStock(result.getProduct().getStock());
+                        jumpsellerRepository.save(syncItem);
+                        System.out.println("Updated item: " + item.getPartNumber());
+                    }
                 }
             }
         }

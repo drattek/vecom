@@ -11,10 +11,11 @@ import java.util.Optional;
 
 @Repository
 public interface SyncItemMeliRepository extends JpaRepository<SyncItemMeli, Long> {
-    @Query(value = "select * from syncitemmeli where DataAreaId = :dataAreaId", nativeQuery = true)
+    @Query(value = "select * from syncitemmeli where DataAreaId = :dataAreaId and InternalCode != ''", nativeQuery = true)
     SyncItemMeli[] getItems(@Param("dataAreaId") String dataAreaId);
 
     Optional<SyncItemMeli> findByInternalCode(String internalCode);
+    Optional<SyncItemMeli> findByResponseId(String responseId);
 
     @Query(value = "select * from syncitemmeli where RecId > 1831 and Status <> 'under_review'", nativeQuery = true)
     List<SyncItemMeli> getNewItems();
