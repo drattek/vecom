@@ -31,12 +31,8 @@
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2">
       <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from camso_products order by id desc
 
-update camso_products set diameter = 12, width = 6, height = 12, `length` = 12, weight = 38 where id = 477]]></console>
-      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from productimages order by `RecId` desc
-
-select count(*) as total from product_pendings
-
-select * from product_pendings limit 100 offset 200 order by id desc]]></console>
+update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, weight = 38, barcode = '4251325445380' where id = 478]]></console>
+      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from product where `PartNumber` = '6667352']]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
@@ -54,6 +50,7 @@ select * from product_pendings limit 100 offset 200 order by id desc]]></console
     <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.vecom_products" active-filter-id="" />
     <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.authtokenparameter" active-filter-id="" />
     <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.integration_attributes" active-filter-id="" />
+    <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.vecom_integrations" active-filter-id="" />
     <filter-actions connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" dataset="vecomdb.productimagesview" active-filter-id="" />
   </component>
   <component name="DBNavigator.Project.ExecutionManager">

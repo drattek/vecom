@@ -1,6 +1,5 @@
 package com.vegusa.middleware.integrations.jumpseller.client;
 
-import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.MediaType;
@@ -10,7 +9,6 @@ import reactor.core.publisher.Mono;
 import reactor.core.scheduler.Schedulers;
 import reactor.core.publisher.Sinks;
 
-import java.math.BigInteger;
 import java.time.Duration;
 import java.util.Queue;
 import java.util.concurrent.ConcurrentLinkedQueue;
