@@ -1,9 +1,9 @@
 package com.vegusa.middleware.service;
 
-import com.vegusa.middleware.repository.ItemScrapedInfoRepository;
-import com.vegusa.middleware.repository.ScrapedImageRepository;
-import com.vegusa.msb.entity.DYNProduct;
-import com.vegusa.msb.repository.DYNProductRepository;
+import com.vegusa.middleware.repository.local.ItemScrapedInfoRepository;
+import com.vegusa.middleware.repository.local.ScrapedImageRepository;
+import com.vegusa.middleware.model.erp.DYNProduct;
+import com.vegusa.middleware.repository.erp.DYNProductRepository;
 import jakarta.persistence.EntityManager;
 import org.json.JSONArray;
 import org.json.JSONObject;

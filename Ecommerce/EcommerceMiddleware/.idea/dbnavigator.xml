@@ -11,15 +11,19 @@
   </component>
   <component name="DBNavigator.Project.DatabaseAssistantManager">
     <assistants>
-      <assistant-state connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" default-profile-name="" selected-conversation-id="FD3CA5077DCC426993EA934A6888A875" assistant-type="GENERIC" availability="UNAVAILABLE" acknowledgement="NONE">
-        <conversations>
-          <conversation id="FD3CA5077DCC426993EA934A6888A875" title="" session-signature="" timestamp="1758812863723">
+      <assistant-state connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" assistant-type="SELECT_AI" default-profile-name="" selected-chat-id="FD3CA5077DCC426993EA934A6888A875" availability="UNAVAILABLE" acknowledgement="NONE" selected="true">
+        <chats>
+          <chat id="FD3CA5077DCC426993EA934A6888A875" title="" session-signature="" timestamp="1758812863723">
             <messages />
-            <context profile="" model="" action="SHOW_SQL" interactive="false" />
-          </conversation>
-        </conversations>
+            <context provider="" profile="" model="" action="SHOW_SQL" interactive="false" />
+          </chat>
+        </chats>
+        <tools />
       </assistant-state>
     </assistants>
+    <selection-state>
+      <model-selection />
+    </selection-state>
   </component>
   <component name="DBNavigator.Project.DatabaseBrowserManager">
     <autoscroll-to-editor value="false" />
@@ -31,8 +35,12 @@
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2">
       <console name="vegusa-mysql" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from camso_products order by id desc
 
-update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, weight = 38, barcode = '4251325445380' where id = 478]]></console>
-      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from product where `PartNumber` = '6667352']]></console>
+update camso_products set diameter = 19.5, width = 24, height = 24, `length` = 24, weight = 360 where id = 483
+
+select count(*) from productattributevalue where `ProductAttributeId` = 'MODEL_ASSINGMENT' order by `RecId` desc]]></console>
+      <console name="vegusa-mysql test" type="STANDARD" schema="vecomdb" session="Pool"><![CDATA[select * from syncitemmeli where `ResponseId` = 'MLM3476835948'
+
+update syncitemmeli set `Status` = 'under_review' where `ResponseId` = 'MLM3478627684']]></console>
     </connection>
   </component>
   <component name="DBNavigator.Project.DatabaseEditorStateManager">
@@ -42,6 +50,9 @@ update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, 
     <open-files>
       <object connection-id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" object-ref="consoles/vegusa-mysql test" />
     </open-files>
+  </component>
+  <component name="DBNavigator.Project.DatabasePrerequisiteManager">
+    <prerequisites />
   </component>
   <component name="DBNavigator.Project.DatabaseSessionManager">
     <connection id="f2a8b83c-a9d7-452a-9a9a-ffcc9bf5dfb2" />
@@ -99,7 +110,13 @@ update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, 
           <token-type value="" />
           <token-config-file value="" />
           <token-profile value="" />
-          <session-user value="vecomsqladmin@189.206.52.13" />
+          <adb-compartment-ocid value="" />
+          <adb-database-ocid value="" />
+          <azure-token-database-id-uri value="" />
+          <azure-token-tenant-id value="" />
+          <azure-token-client-id value="" />
+          <azure-token-client-certificate-file value="" />
+          <session-user value="vecomsqladmin@38.49.137.194" />
         </database>
         <properties>
           <auto-commit value="true" />
@@ -136,11 +153,20 @@ update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, 
         </details>
         <debugger>
           <compile-dependencies value="true" />
-          <tcp-driver-tunneling value="false" />
           <tcp-host-address value="" />
           <tcp-port-from value="4000" />
           <tcp-port-to value="4999" />
+          <jdwp-tunnel-type value="NONE" />
           <debugger-type value="ASK" />
+          <reverse-ssh-tunnel>
+            <host value="" />
+            <port value="22" />
+            <bind-host value="127.0.0.1" />
+            <bind-port value="0" />
+            <auth-type value="PASSWORD" />
+            <user value="" />
+            <key-file value="" />
+          </reverse-ssh-tunnel>
         </debugger>
         <object-filters hide-empty-schemas="false" hide-pseudo-columns="false" hide-audit-columns="false">
           <object-filters />
@@ -177,6 +203,7 @@ update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, 
             <object-type name="DBLINK" enabled="true" />
             <object-type name="CREDENTIAL" enabled="true" />
             <object-type name="AI_PROFILE" enabled="true" />
+            <object-type name="AI_MODEL" enabled="true" />
           </object-type-filter>
         </object-filters>
       </connection>
@@ -223,6 +250,7 @@ update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, 
           <object-type name="DBLINK" enabled="true" />
           <object-type name="CREDENTIAL" enabled="true" />
           <object-type name="AI_PROFILE" enabled="true" />
+          <object-type name="AI_MODEL" enabled="true" />
         </object-type-filter>
       </filters>
       <sorting>
@@ -530,6 +558,11 @@ update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, 
         <debug-execution-timeout value="600" />
         <parameter-history-size value="10" />
       </method-execution>
+      <method-execution>
+        <execution-timeout value="30" />
+        <debug-execution-timeout value="600" />
+        <parameter-history-size value="10" />
+      </method-execution>
     </execution-engine-settings>
     <operation-settings>
       <transactions>
@@ -580,6 +613,9 @@ update camso_products set diameter = 12, width = 4, height = 12, `length` = 12, 
       <credential-settings>
         <credentials />
       </credential-settings>
+      <profile-settings>
+        <profiles />
+      </profile-settings>
     </assistant-settings>
     <general-settings>
       <regional-settings>
