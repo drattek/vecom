@@ -1,4 +1,4 @@
-package com.vegusa.middleware.repository;
+package com.vegusa.middleware.repository.local;
 
 import com.vegusa.middleware.entity.AuthToken;
 import org.springframework.data.jpa.repository.JpaRepository;
