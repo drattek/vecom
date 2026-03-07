@@ -5,7 +5,7 @@ import com.vegusa.middleware.constants.TokenType;
 import com.vegusa.middleware.dto.IntegrationTokenRequest;
 import com.vegusa.middleware.integrations.mercadolibre.dto.OauthMeliDTO;
 import com.vegusa.middleware.integrations.mercadolibre.oauth.TokenStorageMeli;
-import com.vegusa.middleware.repository.IntegrationParameterRepository;
+import com.vegusa.middleware.repository.local.IntegrationParameterRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

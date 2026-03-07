@@ -8,7 +8,7 @@ import com.vegusa.middleware.integrations.jumpseller.dto.CategoryDTO;
 import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerCategoryDto;
 import com.vegusa.middleware.integrations.jumpseller.repository.SyncCategoryRepositoryJumpseller;
 import com.vegusa.middleware.integrations.jumpseller.utils.CategoryUtils;
-import com.vegusa.middleware.repository.IntegrationCategoryRepository;
+import com.vegusa.middleware.repository.local.IntegrationCategoryRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;

@@ -6,7 +6,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vegusa.middleware.entity.*;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import com.vegusa.middleware.utils.LogsUtils;
 import com.vegusa.oauth2_0.encrypt_decrypt.EncryptDecryptInterface;
 import com.vegusa.middleware.utils.MWUtils;

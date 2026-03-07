@@ -5,9 +5,10 @@ import com.vegusa.middleware.dto.ProductInfo;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.integrations.jumpseller.service.product.ProductJumpsellerService;
 import com.vegusa.middleware.integrations.mercadolibre.service.product.ProductMeliService;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.ProductCategoriesRepository;
+import com.vegusa.middleware.repository.local.ProductImageRepository;
+import com.vegusa.middleware.repository.local.ProductPendingsRepository;
 import com.vegusa.middleware.utils.SyncUtils;
-import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -56,6 +57,10 @@ public class ProductGeneralService {
             BigDecimal stock = stocks.getOrDefault(itemId, BigDecimal.ZERO);
             BigDecimal price = prices.getOrDefault(itemId, BigDecimal.ZERO);
             List<ProductImage> images = imageRepository.getImages(itemId);
+
+            if (product.getWeight().compareTo(BigDecimal.ZERO) == 0){
+                product.setWeight(BigDecimal.ONE);
+            }
 
             if (price.compareTo(BigDecimal.ZERO) == 0 || images.isEmpty() || product.getWeight().compareTo(BigDecimal.ZERO) == 0){
                 ProductPendings pending = pendingsRepository.findByInternalCode(itemId)

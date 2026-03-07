@@ -3,7 +3,7 @@ package com.vegusa.middleware.utils;
 import com.vegusa.middleware.constants.DataArea;
 import com.vegusa.middleware.entity.ProductAttributeValue;
 import com.vegusa.middleware.entity.Products;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
