@@ -1,7 +1,7 @@
 package com.vegusa.middleware.oauth;
 
 import com.vegusa.middleware.dto.IntegrationTokenRequest;
-import com.vegusa.middleware.repository.IntegrationTokenRepository;
+import com.vegusa.middleware.repository.local.IntegrationTokenRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 

@@ -5,16 +5,14 @@ import com.vegusa.middleware.dto.IntegrationTokenRequest;
 import com.vegusa.middleware.entity.IntegrationToken;
 import com.vegusa.middleware.integrations.mercadolibre.dto.OauthMeliDTO;
 import com.vegusa.middleware.oauth.TokenAbstract;
-import com.vegusa.middleware.repository.IntegrationParameterRepository;
-import com.vegusa.middleware.repository.IntegrationTokenRepository;
+import com.vegusa.middleware.repository.local.IntegrationParameterRepository;
+import com.vegusa.middleware.repository.local.IntegrationTokenRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Component;
 
-import java.time.Duration;
 import java.time.Instant;
 import java.time.ZonedDateTime;
-import java.time.temporal.ChronoUnit;
 
 @Component
 public class TokenStorageMeli extends TokenAbstract<OauthMeliDTO> {

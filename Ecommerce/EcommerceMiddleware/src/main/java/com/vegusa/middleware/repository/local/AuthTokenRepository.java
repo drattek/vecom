@@ -1,0 +1,12 @@
+package com.vegusa.middleware.repository.local;
+
+import com.vegusa.middleware.entity.AuthToken;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public interface AuthTokenRepository extends JpaRepository<AuthToken, Long> {
+    @Query(value = "select * from AuthToken where IntegrationCompany = ?1",nativeQuery = true)
+    AuthToken getAuthToken(String integrationCompany);
+}

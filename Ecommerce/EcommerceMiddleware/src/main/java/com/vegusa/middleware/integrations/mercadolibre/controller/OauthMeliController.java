@@ -7,7 +7,7 @@ import com.vegusa.middleware.integrations.mercadolibre.client.MercadolibreClient
 import com.vegusa.middleware.integrations.mercadolibre.dto.OauthMeliDTO;
 import com.vegusa.middleware.integrations.mercadolibre.oauth.TokenStorageMeli;
 import com.vegusa.middleware.integrations.mercadolibre.utils.CodeVerifier;
-import com.vegusa.middleware.repository.IntegrationParameterRepository;
+import com.vegusa.middleware.repository.local.IntegrationParameterRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.servlet.view.RedirectView;

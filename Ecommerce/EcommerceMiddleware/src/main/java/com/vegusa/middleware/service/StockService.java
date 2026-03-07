@@ -2,9 +2,9 @@ package com.vegusa.middleware.service;
 
 import com.vegusa.middleware.entity.SyncWarehouse;
 import com.vegusa.middleware.integrations.jumpseller.dto.StockProjection;
-import com.vegusa.middleware.repository.SyncWarehouseRepository;
+import com.vegusa.middleware.repository.local.SyncWarehouseRepository;
 import com.vegusa.middleware.utils.CommonUtils;
-import com.vegusa.msb.repository.ItemInventLocationRepository;
+import com.vegusa.middleware.repository.erp.ItemInventLocationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 

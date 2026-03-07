@@ -21,7 +21,7 @@ import javax.sql.DataSource;
 @EnableJpaRepositories(
         entityManagerFactoryRef = "dbVegMiddEntityManagerFactory",
         transactionManagerRef = "dbVegMiddTransactionManager",
-        basePackages = {"com.vegusa.middleware.repository", "com.vegusa.middleware.integrations.camso.repository", "com.vegusa.middleware.integrations.jumpseller.repository", "com.vegusa.middleware.integrations.mercadolibre.repository", "com.vegusa.middleware.integrations.multivende.repository"}
+        basePackages = {"com.vegusa.middleware.repository.local", "com.vegusa.middleware.integrations.camso.repository", "com.vegusa.middleware.integrations.jumpseller.repository", "com.vegusa.middleware.integrations.mercadolibre.repository", "com.vegusa.middleware.integrations.multivende.repository"}
 )
 public class MWDataBaseConfig {
     @Primary

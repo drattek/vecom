@@ -5,7 +5,7 @@ import com.vegusa.middleware.integrations.jumpseller.dto.JumpsellerProductDto;
 import com.vegusa.middleware.integrations.jumpseller.dto.Product;
 import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
 import com.vegusa.middleware.integrations.jumpseller.repository.SyncProductJumpsellerRepository;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;

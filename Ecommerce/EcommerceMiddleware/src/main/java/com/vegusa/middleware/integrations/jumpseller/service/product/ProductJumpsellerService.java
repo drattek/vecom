@@ -12,7 +12,7 @@ import com.vegusa.middleware.integrations.jumpseller.dto.CategoryDTO;
 import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
 import com.vegusa.middleware.integrations.jumpseller.repository.SyncProductJumpsellerRepository;
 import com.vegusa.middleware.integrations.jumpseller.utils.ProductUtils;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import com.vegusa.middleware.service.PriceService;
 import com.vegusa.middleware.service.StockService;
 import com.vegusa.middleware.utils.SyncUtils;
@@ -850,6 +850,50 @@ public class ProductJumpsellerService {
                     .doOnError(error -> System.err.println("Error uploading " + image.getImage().getUrl()));
         })
         .then().doOnSuccess(e -> System.out.println("Images uploaded successfully " + itemId));
+    }
+
+    // Model compatibility
+
+    public Void setCompatibility(){
+        SyncJumpsellerProduct[] syncItems = syncProductJumpsellerRepository.getSyncProducts(DataArea.MSB.name());
+
+        for (SyncJumpsellerProduct syncItem : syncItems){
+            ProductAttributeValues attribute = productAttributeValuesRepository.getAttribute(syncItem.getInternalCode(), "MODEL_ASSINGMENT")
+                    .orElseGet(() -> null);
+
+            if (attribute != null){
+                CustomField field = new CustomField();
+                field.setId(83944L);
+                field.setValue(attribute.getValue());
+                JumpsellerCustomFieldDTO fieldDto = new JumpsellerCustomFieldDTO(field);
+
+                jumpsellerClient.createCustomField(syncItem.getResponseId(), fieldDto)
+                        .doOnSuccess(response -> {
+                            Field[] fields = response.getProduct().getFields();
+                            Field matchField = null;
+                            for (Field f : fields){
+                                if (Objects.equals(f.getCustomFieldId(), "83944")){
+                                    matchField = f;
+                                }
+                            }
+
+                            IntegrationProductAttribute syncCode = integrationProductAttributesRepository.getAttribute(syncItem.getInternalCode(), IntegrationType.JUMPSELLER.name(), "83944")
+                                    .orElseGet(IntegrationProductAttribute::new);
+                            syncCode.setAttributeId(83944L);
+                            syncCode.setProductId(syncItem.getInternalCode());
+                            syncCode.setValue(attribute.getValue());
+                            if (matchField != null) syncCode.setExternalId(matchField.getId());
+                            syncCode.setIntegrationName(IntegrationType.JUMPSELLER.name());
+
+                            integrationProductAttributesRepository.save(syncCode);
+
+                            System.out.println("Created: " + syncItem.getResponseId() + " - " + syncItem.getInternalCode());
+                        })
+                        .block();
+            }
+        }
+
+        return null;
     }
 }
 

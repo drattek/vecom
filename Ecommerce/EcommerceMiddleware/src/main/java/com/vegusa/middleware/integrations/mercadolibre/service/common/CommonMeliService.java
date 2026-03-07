@@ -11,10 +11,10 @@ import com.vegusa.middleware.integrations.mercadolibre.dto.common.CurrencyMeliDT
 import com.vegusa.middleware.integrations.mercadolibre.entity.SyncItemMeli;
 import com.vegusa.middleware.integrations.mercadolibre.oauth.TokenStorageMeli;
 import com.vegusa.middleware.integrations.mercadolibre.repository.SyncItemMeliRepository;
-import com.vegusa.middleware.repository.CategoryRepository;
-import com.vegusa.middleware.repository.IntegrationCategoryRepository;
-import com.vegusa.middleware.repository.ProductCategoryRepository;
-import com.vegusa.middleware.repository.SyncItemRepository;
+import com.vegusa.middleware.repository.local.CategoryRepository;
+import com.vegusa.middleware.repository.local.IntegrationCategoryRepository;
+import com.vegusa.middleware.repository.local.ProductCategoryRepository;
+import com.vegusa.middleware.repository.local.SyncItemRepository;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;

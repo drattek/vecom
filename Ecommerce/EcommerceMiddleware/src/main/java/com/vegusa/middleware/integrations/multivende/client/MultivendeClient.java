@@ -4,7 +4,7 @@ import com.vegusa.middleware.entity.AuthTokenParameter;
 import com.vegusa.middleware.integrations.multivende.dto.OAuthDto;
 import com.vegusa.middleware.integrations.multivende.dto.TokenRequest;
 import com.vegusa.middleware.integrations.multivende.oauth.TokenStorageMultivende;
-import com.vegusa.middleware.repository.AuthTokenParameterRepository;
+import com.vegusa.middleware.repository.local.AuthTokenParameterRepository;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;

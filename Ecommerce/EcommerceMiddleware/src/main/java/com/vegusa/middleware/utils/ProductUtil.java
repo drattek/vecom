@@ -2,7 +2,7 @@ package com.vegusa.middleware.utils;
 
 import com.vegusa.middleware.entity.InterfaceItems;
 import com.vegusa.middleware.entity.ProductAttributeValue;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.jdbc.core.BeanPropertyRowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;

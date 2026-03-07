@@ -78,6 +78,8 @@ public class CamsoClient {
                     token.setTokenType(TokenType.BASIC_AUTH);
                     token.setData(response);
 
+                    System.out.println("token: " + response.getAccessToken());
+
                     tokenStorage.save(token);
                 })
                 .doOnError(error -> System.err.println("Error authentication: " + error.getMessage()))

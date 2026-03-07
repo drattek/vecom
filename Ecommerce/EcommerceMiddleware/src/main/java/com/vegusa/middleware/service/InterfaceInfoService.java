@@ -1,9 +1,9 @@
 package com.vegusa.middleware.service;
 
 import com.vegusa.middleware.entity.*;
-import com.vegusa.middleware.repository.*;
-import com.vegusa.msb.entity.DYNProduct;
-import com.vegusa.msb.repository.DYNProductRepository;
+import com.vegusa.middleware.model.erp.DYNProduct;
+import com.vegusa.middleware.repository.erp.DYNProductRepository;
+import com.vegusa.middleware.repository.local.*;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.core.env.Environment;
@@ -13,7 +13,6 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.util.Date;
-import java.util.Objects;
 
 @Service
 public class InterfaceInfoService {

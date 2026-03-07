@@ -1,7 +1,7 @@
 package com.vegusa.middleware.service;
 
 import com.vegusa.middleware.entity.*;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import com.vegusa.middleware.utils.MWUtils;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;

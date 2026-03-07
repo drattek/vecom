@@ -341,10 +341,6 @@ public class ProductMeliDTO {
         this.attributes = attributes;
     }
 
-    public ShippingMeliDTO getShipping() {
-        return shipping;
-    }
-
     public void setShipping(ShippingMeliDTO shipping) {
         this.shipping = shipping;
     }

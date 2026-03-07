@@ -13,7 +13,7 @@ import com.vegusa.middleware.integrations.jumpseller.entity.MapperCategory;
 import com.vegusa.middleware.integrations.jumpseller.entity.SyncJumpsellerProduct;
 import com.vegusa.middleware.integrations.jumpseller.repository.MapperCategoryRepository;
 import com.vegusa.middleware.integrations.jumpseller.repository.SyncProductJumpsellerRepository;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import com.vegusa.middleware.utils.SyncUtils;
 import org.json.JSONArray;
 import org.json.JSONObject;

@@ -2,6 +2,7 @@ package com.vegusa.middleware.integrations.mercadolibre.client.product;
 
 import com.vegusa.middleware.integrations.mercadolibre.client.MercadolibreClient;
 import com.vegusa.middleware.integrations.mercadolibre.dto.product.DescriptionMeliDTO;
+import com.vegusa.middleware.integrations.mercadolibre.dto.product.ListProducts;
 import com.vegusa.middleware.integrations.mercadolibre.dto.product.ProductMeliDTO;
 import com.vegusa.middleware.integrations.mercadolibre.oauth.TokenStorageMeli;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,6 +11,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.stereotype.Component;
 import reactor.core.publisher.Mono;
 
+import java.util.List;
 import java.util.Map;
 
 @Component
@@ -20,17 +22,21 @@ public class ProductMeliClient {
     @Autowired
     private TokenStorageMeli tokenStorage;
 
-    public Mono<String> getProducts(){
-        return getProducts(null);
+    public Mono<ListProducts> getProducts(String scroll){
+        return getProducts(null, scroll);
     }
 
-    public Mono<String> getProducts(String healthy){
+    public Mono<ListProducts> getProducts(String healthy, String scroll){
         return client.executeRateLimited(() ->
                 client.getClient().get()
                         .uri(uriBuilder -> {
                             var builder = uriBuilder.path("/users/{user_id}/items/search");
-                            builder = builder.queryParam("offset", 100);
+                            //builder = builder.queryParam("offset", offset);
                             builder = builder.queryParam("limit", 100);
+                            builder = builder.queryParam("search_type", "scan");
+                            if (scroll != null && !scroll.isEmpty()){
+                                builder = builder.queryParam("scroll_id", scroll);
+                            }
 
                             if (healthy != null && !healthy.isBlank()){
                                 builder = builder.queryParam("reputation_health_gauge", healthy);
@@ -40,7 +46,7 @@ public class ProductMeliClient {
                         }
                         )
                         .retrieve()
-                        .bodyToMono(String.class)
+                        .bodyToMono(ListProducts.class)
         );
     }
 

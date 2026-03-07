@@ -11,8 +11,8 @@ import com.vegusa.middleware.integrations.mercadolibre.client.product.ProductMel
 import com.vegusa.middleware.integrations.mercadolibre.dto.product.ProductMeliDTO;
 import com.vegusa.middleware.integrations.mercadolibre.entity.SyncItemMeli;
 import com.vegusa.middleware.integrations.mercadolibre.repository.SyncItemMeliRepository;
-import com.vegusa.middleware.repository.*;
-import com.vegusa.msb.repository.ItemInventLocationRepository;
+import com.vegusa.middleware.repository.local.*;
+import com.vegusa.middleware.repository.erp.ItemInventLocationRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Flux;

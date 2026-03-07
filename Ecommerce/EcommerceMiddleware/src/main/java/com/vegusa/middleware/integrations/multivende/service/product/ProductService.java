@@ -1,13 +1,11 @@
 package com.vegusa.middleware.integrations.multivende.service.product;
 
-import com.fasterxml.jackson.databind.JsonNode;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import com.vegusa.middleware.entity.*;
 import com.vegusa.middleware.integrations.multivende.client.product.MultivendeProduct;
 import com.vegusa.middleware.integrations.multivende.dto.EntriesDto;
 import com.vegusa.middleware.integrations.multivende.dto.Product;
 import com.vegusa.middleware.integrations.multivende.dto.Version;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import com.vegusa.middleware.utils.ProductUtil;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;

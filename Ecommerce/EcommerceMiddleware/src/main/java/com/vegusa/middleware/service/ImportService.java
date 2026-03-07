@@ -7,7 +7,7 @@ import com.vegusa.middleware.dto.ImporMeasurementDTO;
 import com.vegusa.middleware.dto.ImportImageDTO;
 import com.vegusa.middleware.dto.ImportSeoDTO;
 import com.vegusa.middleware.entity.*;
-import com.vegusa.middleware.repository.*;
+import com.vegusa.middleware.repository.local.*;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import reactor.core.publisher.Mono;

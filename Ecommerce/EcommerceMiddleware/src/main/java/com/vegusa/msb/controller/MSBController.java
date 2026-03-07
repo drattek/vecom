@@ -1,28 +1,24 @@
 package com.vegusa.msb.controller;
 
 import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.vegusa.middleware.dto.ImporMeasurementDTO;
 import com.vegusa.middleware.dto.ImportImageDTO;
 import com.vegusa.middleware.dto.ImportSeoDTO;
-import com.vegusa.middleware.dto.Product;
 import com.vegusa.middleware.entity.Company;
 import com.vegusa.middleware.entity.SyncItem;
 import com.vegusa.middleware.entity.SyncPriceList;
-import com.vegusa.middleware.repository.ProductPendingsRepository;
+import com.vegusa.middleware.repository.local.ProductPendingsRepository;
 import com.vegusa.middleware.service.*;
 import com.vegusa.middleware.utils.MWUtils;
-import com.vegusa.msb.entity.DYNProduct;
+import com.vegusa.middleware.model.erp.DYNProduct;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.server.ResponseStatusException;
-import reactor.core.publisher.Flux;
 import reactor.core.publisher.Mono;
 
 import javax.crypto.BadPaddingException;
@@ -31,7 +27,6 @@ import javax.crypto.NoSuchPaddingException;
 import java.security.InvalidAlgorithmParameterException;
 import java.security.InvalidKeyException;
 import java.security.NoSuchAlgorithmException;
-import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
