@@ -1,0 +1,121 @@
+name: Deploy EcommerceMiddleware
+
+# dev  -> Container App ecommerce-middleware-dev
+# prod -> Container App ecommerce-middleware-prod
+# Los PR solo construyen la imagen para validar que el build no esta roto.
+on:
+  push:
+    branches: [dev, prod]
+    paths:
+      - 'Ecommerce/EcommerceMiddleware/**'
+      - '.github/workflows/deploy-middleware.yml'
+  pull_request:
+    branches: [dev, prod]
+    paths:
+      - 'Ecommerce/EcommerceMiddleware/**'
+  workflow_dispatch:        # permite lanzarlo a mano desde la pestana Actions
+
+env:
+  APP_PATH: Ecommerce/EcommerceMiddleware
+  RESOURCE_GROUP: VECOM
+  ACR_NAME: acrvecom
+  IMAGE_NAME: ecommerce-middleware
+
+permissions:
+  id-token: write           # necesario para el login OIDC contra Azure
+  contents: read
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    # El environment de GitHub permite anadir reglas de aprobacion en prod.
+    # En los PR se deja vacio: no tocan Azure y no deben esperar aprobacion.
+    environment: ${{ github.event_name == 'pull_request' && '' || (github.ref_name == 'prod' && 'production' || 'development') }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Definir variables del entorno destino
+        id: vars
+        run: |
+          if [ "${{ github.ref_name }}" = "prod" ]; then
+            echo "containerapp=${IMAGE_NAME}-prod" >> "$GITHUB_OUTPUT"
+          else
+            echo "containerapp=${IMAGE_NAME}-dev" >> "$GITHUB_OUTPUT"
+          fi
+          echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      # BuildKit: el builder clasico de ACR Tasks no exporta bien las capas
+      # de Spring Boot, por eso se construye aqui y se hace push al ACR.
+      - name: Preparar Buildx
+        uses: docker/setup-buildx-action@v3
+
+      # --- Validacion en PR: solo compila, no toca Azure ---
+      - name: Build de validacion (solo PR)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.APP_PATH }}
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      # --- Deploy: solo en push a dev/prod ---
+      - name: Login en Azure (OIDC, sin contrasenas)
+        if: github.event_name != 'pull_request'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login en el ACR
+        if: github.event_name != 'pull_request'
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Construir la imagen y subirla al ACR
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ env.APP_PATH }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ steps.vars.outputs.tag }}
+            ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.ref_name }}-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Actualizar la Container App
+        if: github.event_name != 'pull_request'
+        run: |
+          az containerapp update \
+            --name "${{ steps.vars.outputs.containerapp }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${ACR_NAME}.azurecr.io/${IMAGE_NAME}:${{ steps.vars.outputs.tag }}" \
+            --output none
+
+      - name: Comprobar el health tras el despliegue
+        if: github.event_name != 'pull_request'
+        run: |
+          FQDN=$(az containerapp show \
+            --name "${{ steps.vars.outputs.containerapp }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query 'properties.configuration.ingress.fqdn' -o tsv)
+
+          echo "Esperando a que https://${FQDN}/actuator/health responda UP..."
+          for i in $(seq 1 30); do
+            if curl -fsS --max-time 10 "https://${FQDN}/actuator/health" | grep -q '"status":"UP"'; then
+              echo "::notice::Despliegue correcto en https://${FQDN}"
+              exit 0
+            fi
+            sleep 10
+          done
+
+          echo "::error::La app no respondio UP tras 5 minutos. Ultimos logs:"
+          az containerapp logs show \
+            --name "${{ steps.vars.outputs.containerapp }}" \
+            --resource-group "$RESOURCE_GROUP" --tail 50 || true
+          exit 1

@@ -1,7 +1,31 @@
+# Secretos: nunca dentro de la imagen
+.env
+*.env
+!.env.example
+
+# Control de versiones
+.git
+.gitignore
+
+# Build (se genera dentro del contenedor)
 .gradle
 build
 out
-*.log
-*.iml
-.idea/
 *.class
+*.jar
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Docs y compose (no se necesitan en la imagen)
+HELP.md
+README*.md
+docker-compose*.yml
+
+# Logs / OS
+*.log
+.DS_Store

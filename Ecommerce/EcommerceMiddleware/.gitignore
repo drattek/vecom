@@ -1,0 +1,27 @@
+# Secretos / configuracion local
+.env
+*.env
+!.env.example
+
+# Certificados y llaves
+*.p12
+*.jks
+*.pfx
+*.pem
+*.key
+
+# Build
+.gradle/
+build/
+out/
+!gradle/wrapper/gradle-wrapper.jar
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Logs / OS
+*.log
+.DS_Store

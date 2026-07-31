@@ -8,6 +8,7 @@ import jakarta.persistence.EntityManager;
 import org.json.JSONArray;
 import org.json.JSONObject;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.HttpHeaders;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,6 +22,9 @@ public class WebScraperService {
     private final ScrapedImageRepository scrapedImageRepo;
     private final ItemScrapedInfoRepository itemScrapedInfoRepo;
     private final WebClient webClient;
+
+    @Value("${webscraper.api.base-url}")
+    private String webScraperBaseUrl;
 
     @Autowired
     public WebScraperService(DYNProductRepository dynProducts,
@@ -83,7 +87,7 @@ public class WebScraperService {
         HttpHeaders headers = new HttpHeaders();
         headers.add("Content-Type", "application/json");
         return webClient.post()
-                .uri("http://localhost:8080/veg-web-scraper/image")
+                .uri(webScraperBaseUrl + "/image")
                 .headers(h -> h.addAll(headers))
                 .bodyValue(bodyValues)
                 .retrieve()
@@ -95,7 +99,7 @@ public class WebScraperService {
         HttpHeaders headers = new HttpHeaders();
         headers.add("Content-Type", "application/json");
         return webClient.post()
-                .uri("http://localhost:8080/veg-web-scraper/tvh-additional-info")
+                .uri(webScraperBaseUrl + "/tvh-additional-info")
                 .headers(h -> h.addAll(headers))
                 .bodyValue(bodyValues)
                 .retrieve()
@@ -107,7 +111,7 @@ public class WebScraperService {
         HttpHeaders headers = new HttpHeaders();
         headers.add("Content-Type", "application/json");
         return webClient.post()
-                .uri("http://localhost:8080/veg-web-scraper/uca-additional-info")
+                .uri(webScraperBaseUrl + "/uca-additional-info")
                 .headers(h -> h.addAll(headers))
                 .bodyValue(bodyValues)
                 .retrieve()

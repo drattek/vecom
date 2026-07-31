@@ -1,0 +1,22 @@
+# Uso local:  docker compose up --build
+# Lee las credenciales de .env (crealo con: cp .env.example .env)
+services:
+  middleware:
+    build:
+      context: .
+    image: ecommerce-middleware:local
+    container_name: ecommerce-middleware
+    env_file:
+      - .env
+    environment:
+      SERVER_PORT: 8080
+      SERVER_SSL_ENABLED: "false"
+    ports:
+      - "8080:8080"
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8080/actuator/health"]
+      interval: 30s
+      timeout: 5s
+      start_period: 60s
+      retries: 3
