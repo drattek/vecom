@@ -13,5 +13,5 @@
 *.key
 
 # Local-only tool state (machine-specific, not shared project config)
-.claude/settings.local.json
+.claude/
 .impeccable/config.local.json
