@@ -1,0 +1,11 @@
+{
+    "schema_version": 2,
+    "commit": "",
+    "indexed_at": "2026-08-06T19:34:03Z",
+    "project": "V-e-commerce-orchestrator",
+    "nodes": 2746,
+    "edges": 10724,
+    "original_size": 10813440,
+    "compressed_size": 1757053,
+    "compression_level": 3
+}

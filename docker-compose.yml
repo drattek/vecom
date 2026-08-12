@@ -1,0 +1,76 @@
+services:
+
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq
+
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+
+    command:
+      - redis-server
+      - --appendonly
+      - yes
+
+    ports:
+      - "6379:6379"
+
+  synapse-bridge:
+    build:
+      context: ./services/synapse-bridge
+
+    container_name: synapse-bridge
+
+    env_file:
+      - .env
+
+    environment:
+      # .env define SERVER_PORT=443 para core-orchestrator (HTTPS). synapse-bridge
+      # es HTTP plano y debe quedarse en 8080 (coincide con EXPOSE y el mapeo de puerto
+      # abajo); este override gana sobre el valor heredado de env_file.
+      SERVER_PORT: "8080"
+
+    ports:
+      - "8080:8080"
+
+    depends_on:
+      - redis
+      - rabbitmq
+
+  core-orchestrator:
+    build:
+      context: .
+      dockerfile: services/core-orchestrator/Dockerfile
+
+    container_name: core-orchestrator
+
+    environment:
+      SERVER_TLS_KEYSTORE_PATH: /app/keystore.p12
+
+    ports:
+      - "443:443"
+
+    depends_on:
+      - rabbitmq
+      - redis
+      - synapse-bridge
+
+    env_file:
+      - .env
+
+  admin-dashboard:
+    build:
+      context: ./services/admin-dashboard
+
+    container_name: admin-dashboard
+
+    ports:
+      - "5173:80"
+
+    depends_on:
+      - core-orchestrator

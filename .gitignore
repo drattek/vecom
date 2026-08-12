@@ -1,0 +1,17 @@
+**/.gradle
+**/build
+**/node_modules
+**/dist
+**/bin
+**/vendor
+
+# Secrets / credentials — never commit real values (see CLAUDE.md security note)
+.env
+.env.example
+*.p12
+*.pem
+*.key
+
+# Local-only tool state (machine-specific, not shared project config)
+.claude/settings.local.json
+.impeccable/config.local.json
