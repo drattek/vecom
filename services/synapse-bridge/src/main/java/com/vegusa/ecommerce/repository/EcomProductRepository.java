@@ -41,6 +41,6 @@ public class EcomProductRepository {
                         rs.getString("Num.Parte"),
                         rs.getString("Grupo"),
                         rs.getString("Marca")
-        ));
+        ), offset, pageSize);
     }
 }

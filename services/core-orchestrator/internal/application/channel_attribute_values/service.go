@@ -311,10 +311,22 @@ type ProvisionedAttributeOutcome struct {
 	SourceType  string `json:"sourceType,omitempty"`
 	SystemField string `json:"systemField,omitempty"`
 	AttributeID *int64 `json:"attributeId,omitempty"`
+	// DataType is the mysqlInfra.AttributeDataTypes value this attribute's
+	// ecom_attributes row was created/reused with (see
+	// mapMercadoLibreValueType) — only set when SourceType is
+	// "custom_attribute". Lets a caller that already has this attribute's
+	// live value in hand (e.g. sync.MercadoLibreListingsAuditService reading
+	// it straight off a MercadoLibre item) call SetValue with the exact
+	// dataType it needs, without re-deriving the mapping itself.
+	DataType string `json:"dataType,omitempty"`
 	// Skipped is true for an attribute this endpoint deliberately doesn't
-	// manage (see skippedExternalKeys) or one whose tags mark it
-	// hidden/read_only (MercadoLibre computes or fixes those itself — a
-	// seller-facing flow shouldn't try to set them).
+	// manage (see skippedExternalKeys) or one whose tags mark it read_only
+	// (MercadoLibre computes or fixes those itself — a seller-facing flow
+	// shouldn't try to set them). Tags.Hidden alone does NOT skip an
+	// attribute — MercadoLibre uses it to mean "not shown in the simplified
+	// publish form", not "not seller-settable" (confirmed against a real
+	// category: SELLER_PACKAGE_* come back hidden=true, read_only=false, and
+	// this integration does set them, via the system_field path below).
 	Skipped bool   `json:"skipped,omitempty"`
 	Error   string `json:"error,omitempty"`
 }
@@ -334,7 +346,7 @@ type ProvisionCategoryAttributesResult struct {
 // input.CategoryID exposes — required and optional alike, so slots exist to
 // fill in optional attributes too when the data is available (better catalog
 // completeness/exposure on the listing) — and, for each one not already
-// deliberately left alone (skippedExternalKeys, or hidden/read_only),
+// deliberately left alone (skippedExternalKeys, or read_only),
 // resolves or creates the slot it needs. Each outcome's IsRequired mirrors
 // MercadoLibre's own Tags.Required for that attribute, so a caller can still
 // tell a genuinely mandatory attribute apart from an optional one:
@@ -412,9 +424,9 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 			results = append(results, outcome)
 			continue
 		}
-		if attr.Tags.Hidden || attr.Tags.ReadOnly {
+		if attr.Tags.ReadOnly {
 			outcome.Skipped = true
-			outcome.Error = "attribute is hidden or read-only; mercadolibre computes/fixes it itself"
+			outcome.Error = "attribute is read-only; mercadolibre computes/fixes it itself"
 			results = append(results, outcome)
 			continue
 		}
@@ -451,7 +463,8 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 			continue
 		}
 
-		attribute, err := s.resolveOrCreateAttribute(attr.ID, attr.Name, mapMercadoLibreValueType(attr.ValueType), input.ActorID)
+		dataType := mapMercadoLibreValueType(attr.ValueType)
+		attribute, err := s.resolveOrCreateAttribute(attr.ID, attr.Name, dataType, input.ActorID)
 		if err != nil {
 			outcome.Error = err.Error()
 			results = append(results, outcome)
@@ -474,6 +487,7 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 
 		outcome.SourceType = "custom_attribute"
 		outcome.AttributeID = &attribute.ID
+		outcome.DataType = dataType
 		results = append(results, outcome)
 	}
 

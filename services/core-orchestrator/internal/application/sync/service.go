@@ -50,15 +50,33 @@ func (s *SyncService) ProcessERPCompleted(event domain.SyncCompletedEvent) error
 
 	log.Printf("ERP sync completed (source=%s, totalRecord=%d, pages=%d): found %d products to sync", event.Source, event.TotalRecords, event.Pages, len(keys))
 
-	for _, key := range keys {
-		product, err := s.products.FindByKey(ctx, key)
+	// Lee Redis en lotes (MGET) en vez de un GET por clave, mismo criterio que
+	// ProcessNissanExistenciasSyncCompleted.
+	products, err := s.products.FindByKeys(ctx, keys)
+	if err != nil {
+		return fmt.Errorf("reading ERP products from Redis: %w", err)
+	}
 
-		if err != nil {
+	log.Printf("ERP sync: read %d products from Redis (product:*)", len(products))
+
+	// Fuente (DYNAMICS) se resuelve una sola vez por corrida en vez de una vez por producto.
+	cache, err := prepareErpSyncCache(s.db)
+	if err != nil {
+		return fmt.Errorf("preparing ERP sync cache: %w", err)
+	}
+
+	synced, failed := 0, 0
+
+	for _, product := range products {
+		if err := s.ProcessERPProduct(product, cache); err != nil {
+			log.Printf("Error syncing product %s to MySQL: %v", product.Code, err)
+			failed++
 			continue
 		}
-
-		log.Printf("Syncing product %s", product.Code)
+		synced++
 	}
+
+	log.Printf("ERP sync finished (source=%s): %d ok, %d failed, %d total", event.Source, synced, failed, len(products))
 
 	return nil
 }

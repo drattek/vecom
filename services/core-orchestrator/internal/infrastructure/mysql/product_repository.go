@@ -254,6 +254,33 @@ func (r *ProductRepository) UpdateCategoryID(id, categoryID, updatedBy int64) er
 	return nil
 }
 
+// UpdateName sets name alone, leaving every other column untouched — used
+// when a marketplace sync (see sync.MercadoLibreListingsAuditService)
+// replaces a product's name with the marketplace's own listing title.
+func (r *ProductRepository) UpdateName(id int64, name string, updatedBy int64) error {
+	query := `
+		UPDATE ecom_products
+		SET name = ?, updated_by = ?, updated_at = NOW()
+		WHERE id = ? AND deleted_at IS NULL
+	`
+
+	result, err := r.db.Exec(query, name, updatedBy, id)
+	if err != nil {
+		return fmt.Errorf("error updating product name: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting rows affected: %w", err)
+	}
+
+	if affected == 0 {
+		return ErrProductNotFound
+	}
+
+	return nil
+}
+
 func (r *ProductRepository) SoftDelete(id int64) error {
 	query := `
 		UPDATE ecom_products

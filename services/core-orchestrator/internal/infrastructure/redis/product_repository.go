@@ -43,3 +43,39 @@ func (r *ProductRepository) ScanProducts(ctx context.Context) ([]string, error) 
 
 	return keys, iter.Err()
 }
+
+// FindByKeys lee muchas claves en lotes con MGET en vez de un GET por clave: evita un
+// round-trip a Redis por SKU cuando el catálogo ERP tiene miles de productos.
+func (r *ProductRepository) FindByKeys(ctx context.Context, keys []string) ([]*domain.Product, error) {
+	const batchSize = 500
+
+	products := make([]*domain.Product, 0, len(keys))
+
+	for start := 0; start < len(keys); start += batchSize {
+		end := start + batchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+
+		values, err := r.client.MGet(ctx, keys[start:end]...).Result()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, v := range values {
+			str, ok := v.(string)
+			if !ok {
+				continue
+			}
+
+			var product domain.Product
+			if err := json.Unmarshal([]byte(str), &product); err != nil {
+				return nil, err
+			}
+
+			products = append(products, &product)
+		}
+	}
+
+	return products, nil
+}

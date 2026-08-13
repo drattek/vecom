@@ -18,7 +18,7 @@ public class NissanExistenciasRepository {
 
     public List<NissanExistenciasDTO> getPagedExistencias(int offset, int pageSize){
         return jdbcTemplate.query("""
-                SELECT * FROM RE_VEXISTENCIAS ORDER BY PROD_CLAVE
+                SELECT * FROM RE_VEXISTENCIAS WHERE RELA_EXISTENCIAACTUAL > 0 ORDER BY PROD_CLAVE
                 OFFSET ? ROWS
                 FETCH NEXT ? ROWS ONLY
                 """, (rs, rowNum) -> new NissanExistenciasDTO(

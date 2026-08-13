@@ -58,6 +58,8 @@ func NewRouter(
 	channelAttributeMapHandler *httpHandler.ChannelAttributeMapHandler,
 	channelAttributeValueHandler *httpHandler.ChannelAttributeValueHandler,
 	mercadoLibreCompatibilitiesHandler *httpHandler.MercadoLibreCompatibilitiesHandler,
+	mercadoLibreListingsAuditHandler *httpHandler.MercadoLibreListingsAuditHandler,
+	mercadoLibreCategoryAttributesDebugHandler *httpHandler.MercadoLibreCategoryAttributesDebugHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -273,6 +275,16 @@ func NewRouter(
 		// category (sku + MercadoLibre categoryId only) — see
 		// channel_attribute_values.Service.ProvisionCategoryAttributes.
 		protected.Post("/api/marketplaces/mercadolibre/product-attributes/provision", channelAttributeValueHandler.ProvisionMercadoLibreCategoryAttributes)
+		// Scans every listing in the account (connectionId only) for the
+		// flagged price=999999/stock=0 sentinel, downloading images for each
+		// match and — when its SKU matches a local product — mirroring its
+		// attributes/category/name too — see
+		// MercadoLibreListingsAuditHandler / sync.MercadoLibreListingsAuditService.
+		protected.Post("/api/marketplaces/mercadolibre/listings/sync-flagged", mercadoLibreListingsAuditHandler.SyncFlaggedListings)
+		// TEMPORARY debug endpoint — remove once the attribute-provisioning
+		// investigation it's for is done. See
+		// MercadoLibreCategoryAttributesDebugHandler.
+		protected.Get("/api/marketplaces/mercadolibre/debug/category-attributes", mercadoLibreCategoryAttributesDebugHandler.GetCategoryAttributes)
 		// oauth/authorize is registered as a public route above (not here),
 		// since it needs to be reachable without a JWT — see the comment there.
 

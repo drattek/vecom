@@ -115,10 +115,14 @@ type CategoryDetails struct {
 
 // CategoryAttributeTags is the subset of GET /categories/{id}/attributes'
 // per-attribute "tags" object this integration reads: required marks an
-// attribute the seller must supply a value for; hidden/read_only mark ones
+// attribute the seller must supply a value for; read_only marks one
 // MercadoLibre computes or fixes itself (e.g. a category with only one
 // allowed ITEM_CONDITION value), which a seller-facing flow shouldn't try to
-// set.
+// set. hidden means only "not shown in MercadoLibre's simplified publish
+// form" — confirmed against a real category where SELLER_PACKAGE_* come back
+// hidden=true, read_only=false, and are still genuinely seller-settable — so
+// callers must not treat Hidden as equivalent to ReadOnly (see
+// channel_attribute_values.Service.ProvisionCategoryAttributes).
 type CategoryAttributeTags struct {
 	Required bool `json:"required"`
 	Hidden   bool `json:"hidden"`

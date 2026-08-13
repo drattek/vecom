@@ -151,6 +151,17 @@ func main() {
 		mercadoLibreTokenService,
 		mercadoLibreRateLimiter,
 	)
+	// Scans every listing in a MercadoLibre account for the flagged
+	// price=999999/stock=0 sentinel and downloads/mirrors it locally — see
+	// sync.MercadoLibreListingsAuditService.
+	mercadoLibreListingsAuditService := syncApp.NewMercadoLibreListingsAuditService(
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelRepository,
+		mysqlRepos.ProductRepository,
+		mercadoLibreTokenService,
+		channelAttributeValuesService,
+		mercadoLibreRateLimiter,
+	)
 	mercadoLibreProductSyncService := syncApp.NewMercadoLibreProductSyncService(
 		mysqlRepos.ProductRepository,
 		mysqlRepos.BrandsRepository,
@@ -271,6 +282,10 @@ func main() {
 	channelAttributeValueHandler := httpHandler.NewChannelAttributeValueHandler(channelAttributeValuesService)
 	mercadoLibreHandler := httpHandler.NewMercadoLibreHandler(mercadoLibreCategoryPredictorService, mercadoLibreProductSyncService, mercadoLibreTokenService)
 	mercadoLibreCompatibilitiesHandler := httpHandler.NewMercadoLibreCompatibilitiesHandler(mercadoLibreCompatibilityService)
+	mercadoLibreListingsAuditHandler := httpHandler.NewMercadoLibreListingsAuditHandler(mercadoLibreListingsAuditService)
+	// TEMPORARY debug endpoint — remove once the attribute-provisioning
+	// investigation it's for is done.
+	mercadoLibreCategoryAttributesDebugHandler := httpHandler.NewMercadoLibreCategoryAttributesDebugHandler(mercadoLibreCategoryPredictorService)
 	meliNotificationHandler := httpHandler.NewMeliNotificationHandler(meliNotificationService)
 	odooHandler := httpHandler.NewOdooHandler(odooConnectionService)
 	migrationHandler := httpHandler.NewMigrationHandler(odooCategoryMigrationService)
@@ -371,6 +386,8 @@ func main() {
 		attributeHandler, attributeOptionHandler, productAttributeHandler, channelAttributeHandler, channelAttributeMapHandler,
 		channelAttributeValueHandler,
 		mercadoLibreCompatibilitiesHandler,
+		mercadoLibreListingsAuditHandler,
+		mercadoLibreCategoryAttributesDebugHandler,
 	)
 
 	server := &http.Server{

@@ -523,6 +523,17 @@ func (s *MercadoLibreCategoryPredictorService) PredictCategories(
 	}, nil
 }
 
+// GetCategoryAttributes is a thin passthrough to the underlying (public, no
+// access token needed) GET /categories/{id}/attributes call — exposed here
+// so a caller can inspect exactly how MercadoLibre tags a category's
+// attributes (Tags.Hidden/Tags.ReadOnly/Tags.Required, ValueType, Values)
+// without needing product/connection context, e.g. to debug why
+// channel_attribute_values.Service.ProvisionCategoryAttributes silently
+// skipped a given attribute for that category.
+func (s *MercadoLibreCategoryPredictorService) GetCategoryAttributes(ctx context.Context, categoryID string) ([]mercadoLibreInfra.CategoryRequiredAttribute, error) {
+	return s.categoriesHandler.GetCategoryAttributes(ctx, categoryID)
+}
+
 // EnsureLocalCategory guarantees a local ecom_categories hierarchy exists
 // for externalCategoryID (a MercadoLibre category id, as predicted by
 // PredictCategories or returned by an item creation call) on connectionID,
