@@ -47,7 +47,7 @@ func (h *StorageDiskHandler) GetStorageDisks(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	result, err := h.service.GetPaginatedStorageDisks(offset, pageSize)
+	result, err := h.service.GetPaginatedStorageDisks(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -65,7 +65,7 @@ func (h *StorageDiskHandler) GetStorageDiskByID(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	storageDisk, err := h.service.GetStorageDiskByID(id)
+	storageDisk, err := h.service.GetStorageDiskByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, storageDisksApp.ErrInvalidStorageDiskPayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid storage disk id")
@@ -98,7 +98,7 @@ func (h *StorageDiskHandler) CreateStorageDisk(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	storageDisk, err := h.service.CreateStorageDisk(input, user.ID)
+	storageDisk, err := h.service.CreateStorageDisk(r.Context(), input, user.ID)
 	if err != nil {
 		if errors.Is(err, storageDisksApp.ErrInvalidStorageDiskPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name, code and baseUrl are required")
@@ -137,7 +137,7 @@ func (h *StorageDiskHandler) UpdateStorageDisk(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	storageDisk, err := h.service.UpdateStorageDisk(id, input, user.ID)
+	storageDisk, err := h.service.UpdateStorageDisk(r.Context(), id, input, user.ID)
 	if err != nil {
 		if errors.Is(err, storageDisksApp.ErrInvalidStorageDiskPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name, code and baseUrl are required")
@@ -174,7 +174,7 @@ func (h *StorageDiskHandler) DeleteStorageDisk(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	err = h.service.SoftDeleteStorageDisk(id, user.ID)
+	err = h.service.SoftDeleteStorageDisk(r.Context(), id, user.ID)
 	if err != nil {
 		if errors.Is(err, storageDisksApp.ErrInvalidStorageDiskPayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid storage disk id")

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -131,13 +132,17 @@ func (h *ItemsHandler) CreateItem(ctx context.Context, req CreateItemRequest) (*
 // together — MercadoLibre requires both on this endpoint), category when the
 // caller wants that kept in sync too (channel_refresh's Refresh flow;
 // omitted — CategoryID left empty — from the plain price/stock-only refresh
-// path in updateExistingListings), and the SELLER_PACKAGE_* attributes when
-// the caller wants a later ecom_product_dimensions correction to reach
-// already-listed items too. Pictures and every other create-only attribute
-// (BRAND, PART_NUMBER, ...) are still only sent via CreateItem.
+// path in updateExistingListings), the SELLER_PACKAGE_* attributes when the
+// caller wants a later ecom_product_dimensions correction to reach
+// already-listed items too, and FamilyName (title) when the caller wants a
+// naming-rule change (e.g. withNissanOriginalSuffix) backfilled onto
+// already-listed items — MercadoLibre rejects this on items that already
+// have sales (sold_quantity > 0). Pictures and every other create-only
+// attribute (BRAND, PART_NUMBER, ...) are still only sent via CreateItem.
 type UpdateItemVals struct {
 	Price             float64         `json:"price"`
 	AvailableQuantity int             `json:"available_quantity"`
+	FamilyName        string          `json:"family_name,omitempty"`
 	CategoryID        string          `json:"category_id,omitempty"`
 	Attributes        []ItemAttribute `json:"attributes,omitempty"`
 }
@@ -198,8 +203,28 @@ func (h *ItemsHandler) UpdateItemShipping(ctx context.Context, req UpdateItemShi
 	return h.putItem(ctx, req.AccessToken, req.ExternalID, payload)
 }
 
+type UpdateItemStatusRequest struct {
+	AccessToken string
+	ExternalID  string
+	Status      string
+}
+
+// UpdateItemStatus calls PUT /items/{id} with only the status field (e.g.
+// "closed", "paused", "active") — a partial update, same as
+// UpdateItemShipping, so it doesn't touch price/stock/category or anything
+// else already set on the listing.
+func (h *ItemsHandler) UpdateItemStatus(ctx context.Context, req UpdateItemStatusRequest) error {
+	payload, err := json.Marshal(struct {
+		Status string `json:"status"`
+	}{Status: req.Status})
+	if err != nil {
+		return fmt.Errorf("error encoding mercadolibre item status update request: %w", err)
+	}
+	return h.putItem(ctx, req.AccessToken, req.ExternalID, payload)
+}
+
 // putItem sends payload as the body of a PUT /items/{id} request, shared by
-// UpdateItem and UpdateItemShipping.
+// UpdateItem, UpdateItemShipping and UpdateItemStatus.
 func (h *ItemsHandler) putItem(ctx context.Context, accessToken, externalID string, payload []byte) error {
 	log.Printf("mercadolibre items: update payload for %s: %s", externalID, payload)
 
@@ -390,6 +415,10 @@ type ItemDetail struct {
 	UserProductID     string          `json:"user_product_id"`
 	Attributes        []ItemAttribute `json:"attributes"`
 	SellerCustomField string          `json:"seller_custom_field"`
+	// CatalogProductID is non-empty for catalog-linked listings; used by
+	// sync.MercadoLibreListingsAuditService to fall back to the catalog
+	// product's short_description when the per-item description endpoint 404s.
+	CatalogProductID string `json:"catalog_product_id"`
 }
 
 // GetItem calls GET /items/{id} and returns the fields ItemDetail needs.
@@ -422,6 +451,191 @@ func (h *ItemsHandler) GetItem(ctx context.Context, accessToken, externalID stri
 	}
 
 	return &item, nil
+}
+
+// ItemDescription mirrors GET /items/{id}/description — MercadoLibre keeps
+// an item's description on a separate endpoint from GetItem/ItemDetail.
+// PlainText is preferred by callers over Text when both are present (see
+// sync.MercadoLibreCompatibilityService's description sync); Text is kept as
+// a fallback for older items that only ever populated it.
+type ItemDescription struct {
+	Text      string `json:"text"`
+	PlainText string `json:"plain_text"`
+}
+
+// ErrItemDescriptionNotFound is returned by GetItemDescription on a 404 —
+// confirmed against a real item that visibly shows a description on its
+// MercadoLibre page, so this is not "the item has no description" but
+// "MercadoLibre has no separate description resource for this specific
+// item id" (observed on catalog/user-product-linked listings, which
+// display the catalog's shared description instead of their own — same
+// UserProductID linkage that also blocks POST .../compatibilities, see
+// ItemDetail's doc comment). Callers should treat this as "nothing to
+// sync", not as a hard failure.
+var ErrItemDescriptionNotFound = errors.New("mercadolibre item description not found")
+
+// GetItemDescription calls GET /items/{externalID}/description.
+func (h *ItemsHandler) GetItemDescription(ctx context.Context, accessToken, externalID string) (*ItemDescription, error) {
+	requestURL := fmt.Sprintf("%s/items/%s/description", h.client.baseURL, externalID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating mercadolibre item description request: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+accessToken)
+
+	response, err := h.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("error calling mercadolibre item description endpoint: %w", err)
+	}
+	defer response.Body.Close()
+
+	responsePayload, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading mercadolibre item description response: %w", err)
+	}
+
+	if response.StatusCode == http.StatusNotFound {
+		return nil, fmt.Errorf("%w: %w", ErrItemDescriptionNotFound, parseItemAPIError(response.StatusCode, responsePayload))
+	}
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mercadolibre item description fetch failed: %w", parseItemAPIError(response.StatusCode, responsePayload))
+	}
+
+	var description ItemDescription
+	if err := json.Unmarshal(responsePayload, &description); err != nil {
+		return nil, fmt.Errorf("error decoding mercadolibre item description response: %w", err)
+	}
+
+	return &description, nil
+}
+
+type CreateItemDescriptionRequest struct {
+	AccessToken string
+	ExternalID  string
+	PlainText   string
+}
+
+// CreateItemDescription calls POST /items/{externalID}/description to set a
+// newly-created item's description — MercadoLibre exposes this on its own
+// endpoint rather than accepting a description field on POST /items, so it
+// must be called only after CreateItem has returned the item's external id.
+func (h *ItemsHandler) CreateItemDescription(ctx context.Context, req CreateItemDescriptionRequest) error {
+	payload, err := json.Marshal(struct {
+		PlainText string `json:"plain_text"`
+	}{PlainText: req.PlainText})
+	if err != nil {
+		return fmt.Errorf("error encoding mercadolibre item description request: %w", err)
+	}
+
+	requestURL := fmt.Sprintf("%s/items/%s/description", h.client.baseURL, req.ExternalID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, requestURL, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("error creating mercadolibre item description request: %w", err)
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+req.AccessToken)
+
+	response, err := h.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("error calling mercadolibre item description create endpoint: %w", err)
+	}
+	defer response.Body.Close()
+
+	responsePayload, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("error reading mercadolibre item description create response: %w", err)
+	}
+
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		return fmt.Errorf("mercadolibre item description create failed: %w", parseItemAPIError(response.StatusCode, responsePayload))
+	}
+
+	return nil
+}
+
+// CatalogProductDetail mirrors GET /products/{id} — just enough to resolve
+// the BRAND/CAR_AND_VAN_MODEL (or MODEL)/YEAR attributes a compatibility's
+// catalog_product_id points at. See
+// CompatibilitiesHandler.GetItemCompatibilitiesExtended and
+// sync.MercadoLibreCompatibilityService's local vehicle fitment sync, which
+// decomposes this into a local ecom_vehicle_fitments row.
+type CatalogProductDetail struct {
+	ID         string          `json:"id"`
+	Name       string          `json:"name"`
+	Attributes []ItemAttribute `json:"attributes"`
+	// ShortDescription is the catalog's shared plain-text description. Read by
+	// sync.MercadoLibreListingsAuditService as a fallback source for
+	// ecom_products.description when a flagged listing is catalog/user-product
+	// linked and GET /items/{id}/description 404s for it (see
+	// ErrItemDescriptionNotFound).
+	ShortDescription CatalogShortDescription `json:"short_description"`
+}
+
+// CatalogShortDescription is GET /products/{id}'s short_description field.
+// MercadoLibre returns it as an object {type, content} on current catalog
+// products but historically sent a bare string, so UnmarshalJSON accepts a
+// string, an object, or null. Getting this wrong broke every GetCatalogProduct
+// call — and with it the whole vehicle-compatibility copy, which decodes one
+// catalog product per compatibility entry.
+type CatalogShortDescription struct {
+	Type    string `json:"type"`
+	Content string `json:"content"`
+}
+
+func (d *CatalogShortDescription) UnmarshalJSON(data []byte) error {
+	data = bytes.TrimSpace(data)
+	if len(data) == 0 || string(data) == "null" {
+		return nil
+	}
+	if data[0] == '"' {
+		var s string
+		if err := json.Unmarshal(data, &s); err != nil {
+			return err
+		}
+		d.Content = s
+		return nil
+	}
+	type alias CatalogShortDescription
+	var a alias
+	if err := json.Unmarshal(data, &a); err != nil {
+		return err
+	}
+	*d = CatalogShortDescription(a)
+	return nil
+}
+
+// GetCatalogProduct calls GET /products/{catalogProductID}.
+func (h *ItemsHandler) GetCatalogProduct(ctx context.Context, accessToken, catalogProductID string) (*CatalogProductDetail, error) {
+	requestURL := fmt.Sprintf("%s/products/%s", h.client.baseURL, catalogProductID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating mercadolibre catalog product request: %w", err)
+	}
+	request.Header.Set("Authorization", "Bearer "+accessToken)
+
+	response, err := h.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("error calling mercadolibre catalog product endpoint: %w", err)
+	}
+	defer response.Body.Close()
+
+	responsePayload, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading mercadolibre catalog product response: %w", err)
+	}
+
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("mercadolibre catalog product fetch failed: %w", parseItemAPIError(response.StatusCode, responsePayload))
+	}
+
+	var result CatalogProductDetail
+	if err := json.Unmarshal(responsePayload, &result); err != nil {
+		return nil, fmt.Errorf("error decoding mercadolibre catalog product response: %w", err)
+	}
+
+	return &result, nil
 }
 
 // SellerItemsScanPage is one page of
@@ -547,7 +761,7 @@ func (h *ItemsHandler) GetItemsSummary(ctx context.Context, accessToken string, 
 // to exactly what sync.MercadoLibreListingsAuditService needs — avoids
 // pulling every other (often heavy) item field, e.g. description or
 // variations, for a batch call.
-const mercadoLibreItemDetailFields = "id,title,price,available_quantity,category_id,domain_id,tags,user_product_id,attributes,seller_custom_field"
+const mercadoLibreItemDetailFields = "id,title,price,available_quantity,category_id,domain_id,tags,user_product_id,attributes,seller_custom_field,catalog_product_id"
 
 type multigetItemDetailEntry struct {
 	Code int        `json:"code"`

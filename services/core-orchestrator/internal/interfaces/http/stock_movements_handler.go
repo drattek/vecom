@@ -46,7 +46,7 @@ func (h *StockMovementsHandler) GetStockMovements(w http.ResponseWriter, r *http
 		}
 	}
 
-	result, err := h.service.GetPaginatedMovements(offset, pageSize)
+	result, err := h.service.GetPaginatedMovements(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -63,7 +63,7 @@ func (h *StockMovementsHandler) GetMovementByID(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	movement, err := h.service.GetMovementByID(id)
+	movement, err := h.service.GetMovementByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrStockMovementNotFound) {
 			writeJSONError(w, http.StatusNotFound, "movement not found")
@@ -100,7 +100,7 @@ func (h *StockMovementsHandler) GetMovementsByProduct(w http.ResponseWriter, r *
 		}
 	}
 
-	result, err := h.service.GetMovementsByProduct(productID, offset, pageSize)
+	result, err := h.service.GetMovementsByProduct(r.Context(), productID, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -134,7 +134,7 @@ func (h *StockMovementsHandler) CreateMovement(w http.ResponseWriter, r *http.Re
 		UpdatedBy:      user.ID,
 	}
 
-	movement, err := h.service.CreateMovement(input)
+	movement, err := h.service.CreateMovement(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, stockMovementsApp.ErrInvalidStockMovement) {
 			writeJSONError(w, http.StatusBadRequest, "productId, branchId and warehouseId are required")
@@ -156,7 +156,7 @@ func (h *StockMovementsHandler) DeleteMovement(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	err := h.service.DeleteMovement(id)
+	err := h.service.DeleteMovement(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrStockMovementNotFound) {
 			writeJSONError(w, http.StatusNotFound, "movement not found")

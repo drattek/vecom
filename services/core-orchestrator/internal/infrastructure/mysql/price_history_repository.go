@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -43,7 +44,7 @@ func NewPriceHistoryRepository(db Querier) *PriceHistoryRepository {
 	return &PriceHistoryRepository{db: db}
 }
 
-func (r *PriceHistoryRepository) FindByID(id int64) (*PriceHistoryDTO, error) {
+func (r *PriceHistoryRepository) FindByID(ctx context.Context, id int64) (*PriceHistoryDTO, error) {
 	query := `
 		SELECT id, product_id, price_list_id, currency_id, old_price, new_price, updated_by, created_at
 		FROM ecom_price_history
@@ -51,7 +52,7 @@ func (r *PriceHistoryRepository) FindByID(id int64) (*PriceHistoryDTO, error) {
 	`
 
 	var p PriceHistoryDTO
-	if err := r.db.QueryRow(query, id).Scan(&p.ID, &p.ProductID, &p.PriceListID, &p.CurrencyID,
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&p.ID, &p.ProductID, &p.PriceListID, &p.CurrencyID,
 		&p.OldPrice, &p.NewPrice, &p.UpdatedBy, &p.CreatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrPriceHistoryNotFound
@@ -62,7 +63,7 @@ func (r *PriceHistoryRepository) FindByID(id int64) (*PriceHistoryDTO, error) {
 	return &p, nil
 }
 
-func (r *PriceHistoryRepository) FindByProductID(productID int64, offset, pageSize int) (*PaginatedPriceHistory, error) {
+func (r *PriceHistoryRepository) FindByProductID(ctx context.Context, productID int64, offset, pageSize int) (*PaginatedPriceHistory, error) {
 	query := `
 		SELECT id, product_id, price_list_id, currency_id, old_price, new_price, updated_by, created_at
 		FROM ecom_price_history
@@ -71,7 +72,7 @@ func (r *PriceHistoryRepository) FindByProductID(productID int64, offset, pageSi
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, productID, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, productID, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -89,20 +90,20 @@ func (r *PriceHistoryRepository) FindByProductID(productID int64, offset, pageSi
 
 	countQuery := "SELECT COUNT(*) FROM ecom_price_history WHERE product_id = ?"
 	var total int
-	if err := r.db.QueryRow(countQuery, productID).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, productID).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedPriceHistory{Data: history, Total: total}, nil
 }
 
-func (r *PriceHistoryRepository) Create(input CreatePriceHistoryInput) (*PriceHistoryDTO, error) {
+func (r *PriceHistoryRepository) Create(ctx context.Context, input CreatePriceHistoryInput) (*PriceHistoryDTO, error) {
 	query := `
 		INSERT INTO ecom_price_history (product_id, price_list_id, currency_id, old_price, new_price, updated_by)
 		VALUES (?, ?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ProductID, input.PriceListID, input.CurrencyID,
+	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.PriceListID, input.CurrencyID,
 		input.OldPrice, input.NewPrice, input.UpdatedBy)
 	if err != nil {
 		return nil, err
@@ -113,5 +114,5 @@ func (r *PriceHistoryRepository) Create(input CreatePriceHistoryInput) (*PriceHi
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }

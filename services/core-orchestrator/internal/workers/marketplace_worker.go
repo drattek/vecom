@@ -13,6 +13,7 @@ import (
 
 	channelListingsApp "core-orchestrator/internal/application/channel_listings"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
+	"core-orchestrator/internal/shared/safe"
 )
 
 // systemSyncWorkerActorID is recorded as updated_by for ecom_channel_sync_queue
@@ -128,19 +129,24 @@ func (w *MarketplaceWorker) Start(ctx context.Context) {
 }
 
 func (w *MarketplaceWorker) runOnce(ctx context.Context) {
-	entries, err := w.queueRepository.FindPending(w.config.BatchSize)
+	entries, err := w.queueRepository.FindPending(ctx, w.config.BatchSize)
 	if err != nil {
 		log.Printf("marketplace worker: error listing pending queue entries: %v", err)
 		return
 	}
 
 	for _, entry := range entries {
-		w.processEntry(ctx, entry)
+		entry := entry
+		// Barrera de panic por fila: una entrada envenenada se loguea con stack
+		// y se saltea, sin abortar el resto del batch ni el poll.
+		safe.Do(fmt.Sprintf("marketplace worker: queue entry %d", entry.ID), func() {
+			w.processEntry(ctx, entry)
+		})
 	}
 }
 
 func (w *MarketplaceWorker) processEntry(ctx context.Context, entry mysqlInfra.ChannelSyncQueueDTO) {
-	claimed, err := w.queueRepository.Claim(entry.ID)
+	claimed, err := w.queueRepository.Claim(ctx, entry.ID)
 	if err != nil {
 		log.Printf("marketplace worker: error claiming queue entry %d: %v", entry.ID, err)
 		return
@@ -154,36 +160,36 @@ func (w *MarketplaceWorker) processEntry(ctx context.Context, entry mysqlInfra.C
 		return
 	}
 
-	connection, err := w.connectionRepository.FindByID(entry.ConnectionID)
+	connection, err := w.connectionRepository.FindByID(ctx, entry.ConnectionID)
 	if err != nil {
-		w.fail(entry.ID, fmt.Sprintf("error loading connection %d: %v", entry.ConnectionID, err))
+		w.fail(ctx, entry.ID, fmt.Sprintf("error loading connection %d: %v", entry.ConnectionID, err))
 		return
 	}
 
-	channel, err := w.channelRepository.FindByID(connection.ChannelID)
+	channel, err := w.channelRepository.FindByID(ctx, connection.ChannelID)
 	if err != nil {
-		w.fail(entry.ID, fmt.Sprintf("error loading channel %d: %v", connection.ChannelID, err))
+		w.fail(ctx, entry.ID, fmt.Sprintf("error loading channel %d: %v", connection.ChannelID, err))
 		return
 	}
 
 	syncer, ok := w.syncers[normalizeChannelCode(channel.Code)]
 	if !ok {
-		w.release(entry.ID, fmt.Sprintf("no syncer registered for channel %q", channel.Code))
+		w.release(ctx, entry.ID, fmt.Sprintf("no syncer registered for channel %q", channel.Code))
 		return
 	}
 
 	if err := syncer.Sync(ctx, entry.ProductID, entry.ConnectionID); err != nil {
 		if errors.Is(err, ErrSyncNotReady) {
-			w.release(entry.ID, err.Error())
+			w.release(ctx, entry.ID, err.Error())
 			return
 		}
 
 		log.Printf("marketplace worker: error syncing queue entry %d (product %d, connection %d): %v", entry.ID, entry.ProductID, entry.ConnectionID, err)
-		w.fail(entry.ID, err.Error())
+		w.fail(ctx, entry.ID, err.Error())
 		return
 	}
 
-	if err := w.queueRepository.MarkDone(entry.ID, systemSyncWorkerActorID); err != nil {
+	if err := w.queueRepository.MarkDone(ctx, entry.ID, systemSyncWorkerActorID); err != nil {
 		log.Printf("marketplace worker: error marking queue entry %d done: %v", entry.ID, err)
 	}
 }
@@ -194,28 +200,28 @@ func (w *MarketplaceWorker) processEntry(ctx context.Context, entry mysqlInfra.C
 // channelListingsRetrier instead of the per-channel ProductSyncer registry.
 func (w *MarketplaceWorker) processChannelListingsEntry(ctx context.Context, entry mysqlInfra.ChannelSyncQueueDTO) {
 	if w.channelListingsRetrier == nil {
-		w.release(entry.ID, "no channel listings retrier configured")
+		w.release(ctx, entry.ID, "no channel listings retrier configured")
 		return
 	}
 
 	result, err := w.channelListingsRetrier.RetryQueuedEntry(ctx, entry.ProductID, entry.ConnectionID)
 	if err != nil {
 		if errors.Is(err, channelListingsApp.ErrChannelListingsNotReady) || errors.Is(err, channelListingsApp.ErrNoPublisherForChannel) {
-			w.release(entry.ID, err.Error())
+			w.release(ctx, entry.ID, err.Error())
 			return
 		}
 
 		log.Printf("marketplace worker: error retrying channel listings queue entry %d (product %d, connection %d): %v", entry.ID, entry.ProductID, entry.ConnectionID, err)
-		w.fail(entry.ID, err.Error())
+		w.fail(ctx, entry.ID, err.Error())
 		return
 	}
 
 	if summary := outcomeErrorSummary(result); summary != "" {
-		w.fail(entry.ID, summary)
+		w.fail(ctx, entry.ID, summary)
 		return
 	}
 
-	if err := w.queueRepository.MarkDone(entry.ID, systemSyncWorkerActorID); err != nil {
+	if err := w.queueRepository.MarkDone(ctx, entry.ID, systemSyncWorkerActorID); err != nil {
 		log.Printf("marketplace worker: error marking queue entry %d done: %v", entry.ID, err)
 	}
 }
@@ -235,14 +241,14 @@ func outcomeErrorSummary(result *channelListingsApp.CreateListingsResult) string
 	return strings.Join(messages, "; ")
 }
 
-func (w *MarketplaceWorker) fail(id int64, message string) {
-	if err := w.queueRepository.MarkFailed(id, message, systemSyncWorkerActorID); err != nil {
+func (w *MarketplaceWorker) fail(ctx context.Context, id int64, message string) {
+	if err := w.queueRepository.MarkFailed(ctx, id, message, systemSyncWorkerActorID); err != nil {
 		log.Printf("marketplace worker: error marking queue entry %d failed: %v", id, err)
 	}
 }
 
-func (w *MarketplaceWorker) release(id int64, message string) {
-	if err := w.queueRepository.ReleasePending(id, message, systemSyncWorkerActorID); err != nil {
+func (w *MarketplaceWorker) release(ctx context.Context, id int64, message string) {
+	if err := w.queueRepository.ReleasePending(ctx, id, message, systemSyncWorkerActorID); err != nil {
 		log.Printf("marketplace worker: error releasing queue entry %d: %v", id, err)
 	}
 }

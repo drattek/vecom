@@ -1,7 +1,7 @@
 package mysql
 
 import (
-	"database/sql"
+	"context"
 	"errors"
 	"time"
 )
@@ -41,14 +41,14 @@ type UpdateProductPartNumberInput struct {
 }
 
 type ProductPartNumbersRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewProductPartNumbersRepository(db *sql.DB) *ProductPartNumbersRepository {
+func NewProductPartNumbersRepository(db Querier) *ProductPartNumbersRepository {
 	return &ProductPartNumbersRepository{db: db}
 }
 
-func (r *ProductPartNumbersRepository) FindPaginated(offset, pageSize int) (*PaginatedProductPartNumbers, error) {
+func (r *ProductPartNumbersRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedProductPartNumbers, error) {
 	query := `
 		SELECT product_id, part_number, type, brand_id, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_part_numbers
@@ -56,7 +56,7 @@ func (r *ProductPartNumbersRepository) FindPaginated(offset, pageSize int) (*Pag
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -73,14 +73,14 @@ func (r *ProductPartNumbersRepository) FindPaginated(offset, pageSize int) (*Pag
 
 	countQuery := "SELECT COUNT(*) FROM ecom_product_part_numbers WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedProductPartNumbers{Data: partNumbers, Total: total}, nil
 }
 
-func (r *ProductPartNumbersRepository) FindByProductID(productID int64, offset, pageSize int) (*PaginatedProductPartNumbers, error) {
+func (r *ProductPartNumbersRepository) FindByProductID(ctx context.Context, productID int64, offset, pageSize int) (*PaginatedProductPartNumbers, error) {
 	query := `
 		SELECT product_id, part_number, type, brand_id, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_part_numbers
@@ -88,7 +88,7 @@ func (r *ProductPartNumbersRepository) FindByProductID(productID int64, offset, 
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, productID, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, productID, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -105,20 +105,20 @@ func (r *ProductPartNumbersRepository) FindByProductID(productID int64, offset, 
 
 	countQuery := "SELECT COUNT(*) FROM ecom_product_part_numbers WHERE product_id = ? AND deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery, productID).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, productID).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedProductPartNumbers{Data: partNumbers, Total: total}, nil
 }
 
-func (r *ProductPartNumbersRepository) Create(input CreateProductPartNumberInput) (*ProductPartNumberDTO, error) {
+func (r *ProductPartNumbersRepository) Create(ctx context.Context, input CreateProductPartNumberInput) (*ProductPartNumberDTO, error) {
 	query := `
 		INSERT INTO ecom_product_part_numbers (product_id, part_number, type, brand_id, created_by)
 		VALUES (?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.Exec(query, input.ProductID, input.PartNumber, input.Type, input.BrandID, input.CreatedBy)
+	_, err := r.db.ExecContext(ctx, query, input.ProductID, input.PartNumber, input.Type, input.BrandID, input.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -131,21 +131,21 @@ func (r *ProductPartNumbersRepository) Create(input CreateProductPartNumberInput
 	`
 
 	var p ProductPartNumberDTO
-	if err := r.db.QueryRow(getQuery, input.ProductID, input.PartNumber).Scan(&p.ProductID, &p.PartNumber, &p.Type, &p.BrandID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, getQuery, input.ProductID, input.PartNumber).Scan(&p.ProductID, &p.PartNumber, &p.Type, &p.BrandID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 
 	return &p, nil
 }
 
-func (r *ProductPartNumbersRepository) Update(productID int64, partNumber string, input UpdateProductPartNumberInput) (*ProductPartNumberDTO, error) {
+func (r *ProductPartNumbersRepository) Update(ctx context.Context, productID int64, partNumber string, input UpdateProductPartNumberInput) (*ProductPartNumberDTO, error) {
 	query := `
 		UPDATE ecom_product_part_numbers
 		SET type = ?, brand_id = ?, updated_by = ?, updated_at = NOW()
 		WHERE product_id = ? AND part_number = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Type, input.BrandID, input.UpdatedBy, productID, partNumber)
+	result, err := r.db.ExecContext(ctx, query, input.Type, input.BrandID, input.UpdatedBy, productID, partNumber)
 	if err != nil {
 		return nil, err
 	}
@@ -166,17 +166,17 @@ func (r *ProductPartNumbersRepository) Update(productID int64, partNumber string
 	`
 
 	var p ProductPartNumberDTO
-	if err := r.db.QueryRow(getQuery, productID, partNumber).Scan(&p.ProductID, &p.PartNumber, &p.Type, &p.BrandID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, getQuery, productID, partNumber).Scan(&p.ProductID, &p.PartNumber, &p.Type, &p.BrandID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		return nil, err
 	}
 
 	return &p, nil
 }
 
-func (r *ProductPartNumbersRepository) SoftDelete(productID int64, partNumber string) error {
+func (r *ProductPartNumbersRepository) SoftDelete(ctx context.Context, productID int64, partNumber string) error {
 	query := "UPDATE ecom_product_part_numbers SET deleted_at = NOW() WHERE product_id = ? AND part_number = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, productID, partNumber)
+	result, err := r.db.ExecContext(ctx, query, productID, partNumber)
 	if err != nil {
 		return err
 	}

@@ -41,7 +41,7 @@
   --chart-3: oklch(0.439 0 0);
   --chart-4: oklch(0.371 0 0);
   --chart-5: oklch(0.269 0 0);
-  --radius: 0.625rem;
+  --radius: 0.25rem;
   --sidebar: oklch(0.985 0 0);
   --sidebar-foreground: oklch(0.145 0 0);
   --sidebar-primary: oklch(0.205 0 0);
@@ -81,7 +81,7 @@ body {
 .auth-card {
   width: min(100%, 460px);
   padding: 32px;
-  border-radius: 26px;
+  border-radius: 4px;
   border: 1px solid var(--line);
   background: linear-gradient(180deg, var(--surface) 0%, var(--surface-2) 100%);
   box-shadow: var(--shadow);
@@ -123,7 +123,7 @@ body {
 .field input {
   width: 100%;
   border: 1px solid #d8cfbf;
-  border-radius: 14px;
+  border-radius: 4px;
   font: inherit;
   padding: 12px 14px;
   background: #fff;
@@ -146,7 +146,7 @@ body {
 .submit {
   width: 100%;
   border: 0;
-  border-radius: 14px;
+  border-radius: 4px;
   padding: 12px 14px;
   margin-top: 6px;
   font: inherit;
@@ -230,7 +230,7 @@ body {
 @media (max-width: 720px) {
   .auth-card {
     padding: 26px 20px;
-    border-radius: 18px;
+    border-radius: 4px;
   }
 }
 
@@ -268,8 +268,9 @@ body {
   --color-card: var(--card);
   --color-foreground: var(--foreground);
   --color-background: var(--background);
-  --radius-sm: calc(var(--radius) * 0.6);
-  --radius-md: calc(var(--radius) * 0.8);
+  /* --radius (4px) is the floor: the smaller steps never round tighter than that. */
+  --radius-sm: max(calc(var(--radius) * 0.6), 0.25rem);
+  --radius-md: max(calc(var(--radius) * 0.8), 0.25rem);
   --radius-lg: var(--radius);
   --radius-xl: calc(var(--radius) * 1.4);
   --radius-2xl: calc(var(--radius) * 1.8);

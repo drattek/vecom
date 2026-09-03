@@ -1,6 +1,8 @@
 package product_image_import
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"net/http"
@@ -48,6 +50,7 @@ type ImportProductImagesResult struct {
 }
 
 type Service struct {
+	db                *sql.DB
 	productRepo       *mysqlInfra.ProductRepository
 	filesRepo         *mysqlInfra.FilesRepository
 	productImagesRepo *mysqlInfra.ProductImagesRepository
@@ -56,12 +59,14 @@ type Service struct {
 }
 
 func NewService(
+	db *sql.DB,
 	productRepo *mysqlInfra.ProductRepository,
 	filesRepo *mysqlInfra.FilesRepository,
 	productImagesRepo *mysqlInfra.ProductImagesRepository,
 	storageDiskRepo *mysqlInfra.StorageDiskRepository,
 ) *Service {
 	return &Service{
+		db:                db,
 		productRepo:       productRepo,
 		filesRepo:         filesRepo,
 		productImagesRepo: productImagesRepo,
@@ -70,12 +75,17 @@ func NewService(
 	}
 }
 
-func (s *Service) Import(input ImportProductImagesInput) (*ImportProductImagesResult, error) {
+// TODO(persistence): la creación de ecom_files + ecom_product_images por URL es
+// multi-sentencia. Los repos ya están listos para tx; falta reestructurar el
+// loop (lecturas/HTTP intercaladas) para envolver ambos inserts en
+// mysqlInfra.WithinTx. Hoy es recuperable: FindByPath deduplica, un retry
+// reengancha la fila de ecom_files huérfana.
+func (s *Service) Import(ctx context.Context, input ImportProductImagesInput) (*ImportProductImagesResult, error) {
 	if input.StorageDiskID <= 0 || len(input.Products) == 0 {
 		return nil, ErrInvalidImportPayload
 	}
 
-	if _, err := s.storageDiskRepo.FindByID(input.StorageDiskID); err != nil {
+	if _, err := s.storageDiskRepo.FindByID(ctx, input.StorageDiskID); err != nil {
 		if errors.Is(err, mysqlInfra.ErrStorageDiskNotFound) {
 			return nil, mysqlInfra.ErrStorageDiskNotFound
 		}
@@ -91,7 +101,7 @@ func (s *Service) Import(input ImportProductImagesInput) (*ImportProductImagesRe
 			continue
 		}
 
-		product, err := s.productRepo.FindBySKU(sku)
+		product, err := s.productRepo.FindBySKU(ctx, sku)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 				results = append(results, ImageImportResult{SKU: sku, Success: false, Error: "product not found for sku"})
@@ -118,13 +128,13 @@ func (s *Service) Import(input ImportProductImagesInput) (*ImportProductImagesRe
 				continue
 			}
 
-			file, err := s.filesRepo.FindByPath(url)
+			file, err := s.filesRepo.FindByPath(ctx, url)
 			if err != nil && !errors.Is(err, mysqlInfra.ErrFileNotFound) {
 				return nil, fmt.Errorf("error looking up file by path %q: %w", url, err)
 			}
 
 			if file == nil {
-				size, checkErr := s.checkImageURL(url)
+				size, checkErr := s.checkImageURL(ctx, url)
 				if checkErr != nil {
 					result.Error = checkErr.Error()
 					results = append(results, result)
@@ -133,7 +143,7 @@ func (s *Service) Import(input ImportProductImagesInput) (*ImportProductImagesRe
 
 				filename := fmt.Sprintf("%s_%d", sku, position)
 
-				file, err = s.filesRepo.Create(mysqlInfra.CreateFileInput{
+				file, err = s.filesRepo.Create(ctx, mysqlInfra.CreateFileInput{
 					DiskID:    input.StorageDiskID,
 					Path:      url,
 					Filename:  filename,
@@ -154,7 +164,7 @@ func (s *Service) Import(input ImportProductImagesInput) (*ImportProductImagesRe
 			// The url already had a matching ecom_files row: don't
 			// re-download/re-insert it, just make sure it is linked to
 			// this product in ecom_product_images.
-			existingProductImage, err := s.productImagesRepo.FindByProductAndFile(product.ID, file.ID)
+			existingProductImage, err := s.productImagesRepo.FindByProductAndFile(ctx, product.ID, file.ID)
 			if err != nil && !errors.Is(err, mysqlInfra.ErrProductImageNotFound) {
 				return nil, fmt.Errorf("error looking up product image for file %d: %w", file.ID, err)
 			}
@@ -168,7 +178,7 @@ func (s *Service) Import(input ImportProductImagesInput) (*ImportProductImagesRe
 				continue
 			}
 
-			productImage, err := s.productImagesRepo.Create(mysqlInfra.CreateProductImageInput{
+			productImage, err := s.productImagesRepo.Create(ctx, mysqlInfra.CreateProductImageInput{
 				ProductID: product.ID,
 				FileID:    file.ID,
 				IsFirst:   isFirst,
@@ -194,8 +204,8 @@ func (s *Service) Import(input ImportProductImagesInput) (*ImportProductImagesRe
 // checkImageURL issues a HEAD request to confirm the image exists at the
 // given URL. It returns the reported size (from Content-Length) when
 // available, or 0 if the server does not report one.
-func (s *Service) checkImageURL(url string) (int64, error) {
-	req, err := http.NewRequest(http.MethodHead, url, nil)
+func (s *Service) checkImageURL(ctx context.Context, url string) (int64, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodHead, url, nil)
 	if err != nil {
 		return 0, fmt.Errorf("invalid image url: %w", err)
 	}

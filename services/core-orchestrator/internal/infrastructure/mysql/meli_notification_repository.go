@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -44,10 +45,10 @@ type CreateMeliNotificationInput struct {
 }
 
 type MeliNotificationRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewMeliNotificationRepository(db *sql.DB) *MeliNotificationRepository {
+func NewMeliNotificationRepository(db Querier) *MeliNotificationRepository {
 	return &MeliNotificationRepository{db: db}
 }
 
@@ -60,7 +61,7 @@ const meliNotificationColumns = `
 // FindByNotificationID looks up a previously stored notification by
 // MercadoLibre's own `_id`, used by the application layer to make Create
 // idempotent against MercadoLibre's at-least-once redelivery.
-func (r *MeliNotificationRepository) FindByNotificationID(notificationID string) (*MeliNotificationDTO, error) {
+func (r *MeliNotificationRepository) FindByNotificationID(ctx context.Context, notificationID string) (*MeliNotificationDTO, error) {
 	query := `
 		SELECT ` + meliNotificationColumns + `
 		FROM ecom_meli_notifications
@@ -68,7 +69,7 @@ func (r *MeliNotificationRepository) FindByNotificationID(notificationID string)
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, notificationID)
+	row := r.db.QueryRowContext(ctx, query, notificationID)
 	notification, err := scanMeliNotification(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -80,7 +81,7 @@ func (r *MeliNotificationRepository) FindByNotificationID(notificationID string)
 	return &notification, nil
 }
 
-func (r *MeliNotificationRepository) FindByID(id int64) (*MeliNotificationDTO, error) {
+func (r *MeliNotificationRepository) FindByID(ctx context.Context, id int64) (*MeliNotificationDTO, error) {
 	query := `
 		SELECT ` + meliNotificationColumns + `
 		FROM ecom_meli_notifications
@@ -88,7 +89,7 @@ func (r *MeliNotificationRepository) FindByID(id int64) (*MeliNotificationDTO, e
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	notification, err := scanMeliNotification(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -100,14 +101,14 @@ func (r *MeliNotificationRepository) FindByID(id int64) (*MeliNotificationDTO, e
 	return &notification, nil
 }
 
-func (r *MeliNotificationRepository) Create(input CreateMeliNotificationInput) (*MeliNotificationDTO, error) {
+func (r *MeliNotificationRepository) Create(ctx context.Context, input CreateMeliNotificationInput) (*MeliNotificationDTO, error) {
 	query := `
 		INSERT INTO ecom_meli_notifications
 			(notification_id, resource, topic, meli_user_id, application_id, delivery_attempts, meli_sent_at, meli_received_at, raw_payload, status)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending')
 	`
 
-	result, err := r.db.Exec(
+	result, err := r.db.ExecContext(ctx,
 		query,
 		input.NotificationID,
 		input.Resource,
@@ -128,7 +129,7 @@ func (r *MeliNotificationRepository) Create(input CreateMeliNotificationInput) (
 		return nil, fmt.Errorf("error getting meli notification id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
 func scanMeliNotification(scanner interface{ Scan(dest ...any) error }) (MeliNotificationDTO, error) {

@@ -46,7 +46,7 @@ func (h *ChannelHandler) GetChannels(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.service.GetPaginatedChannels(offset, pageSize)
+	result, err := h.service.GetPaginatedChannels(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -64,7 +64,7 @@ func (h *ChannelHandler) GetChannelByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	channel, err := h.service.GetChannelByID(id)
+	channel, err := h.service.GetChannelByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, channelsApp.ErrInvalidChannelPayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid channel id")
@@ -97,7 +97,7 @@ func (h *ChannelHandler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	channel, err := h.service.CreateChannel(input, user.ID)
+	channel, err := h.service.CreateChannel(r.Context(), input, user.ID)
 	if err != nil {
 		if errors.Is(err, channelsApp.ErrInvalidChannelPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name and code are required; status must be valid")
@@ -140,7 +140,7 @@ func (h *ChannelHandler) UpdateChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	channel, err := h.service.UpdateChannel(id, input, user.ID)
+	channel, err := h.service.UpdateChannel(r.Context(), id, input, user.ID)
 	if err != nil {
 		if errors.Is(err, channelsApp.ErrInvalidChannelPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name and code are required; status must be valid")
@@ -181,7 +181,7 @@ func (h *ChannelHandler) DeleteChannel(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.SoftDeleteChannel(id, user.ID)
+	err = h.service.SoftDeleteChannel(r.Context(), id, user.ID)
 	if err != nil {
 		if errors.Is(err, channelsApp.ErrInvalidChannelPayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid channel id")

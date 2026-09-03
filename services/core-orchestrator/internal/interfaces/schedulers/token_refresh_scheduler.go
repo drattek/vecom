@@ -13,11 +13,13 @@ package schedulers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"strings"
 	"time"
 
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
+	"core-orchestrator/internal/shared/safe"
 )
 
 // TokenRefresher is implemented by any per-marketplace service capable of
@@ -88,7 +90,7 @@ func (s *TokenRefreshScheduler) Start(ctx context.Context) {
 func (s *TokenRefreshScheduler) runOnce(ctx context.Context) {
 	threshold := time.Now().UTC().Add(s.config.ExpiryLookahead)
 
-	due, err := s.statusRepository.FindDueForRefresh(threshold)
+	due, err := s.statusRepository.FindDueForRefresh(ctx, threshold)
 	if err != nil {
 		log.Printf("token refresh scheduler: error listing due connections: %v", err)
 		return
@@ -97,20 +99,26 @@ func (s *TokenRefreshScheduler) runOnce(ctx context.Context) {
 	log.Printf("token refresh scheduler: poll found %d connection(s) due for refresh (threshold=%s)", len(due), threshold.Format(time.RFC3339))
 
 	for _, connection := range due {
+		connection := connection
+
 		refresher, ok := s.refreshers[normalizeChannelCode(connection.ChannelCode)]
 		if !ok {
 			log.Printf("token refresh scheduler: connection %d (channel %s) is due but has no registered refresher, skipping", connection.ConnectionID, connection.ChannelCode)
 			continue
 		}
 
-		log.Printf("token refresh scheduler: connection %d (channel %s) — token expires at %s, invoking refresher", connection.ConnectionID, connection.ChannelCode, connection.ExpiresAt.Format(time.RFC3339))
+		// Barrera de panic por conexión: un panic refrescando una no debe
+		// impedir el refresh de las demás ni tumbar el scheduler.
+		safe.Do(fmt.Sprintf("token refresh scheduler: connection %d", connection.ConnectionID), func() {
+			log.Printf("token refresh scheduler: connection %d (channel %s) — token expires at %s, invoking refresher", connection.ConnectionID, connection.ChannelCode, connection.ExpiresAt.Format(time.RFC3339))
 
-		if _, err := refresher.EnsureValidAccessToken(ctx, connection.ConnectionID); err != nil {
-			log.Printf("token refresh scheduler: connection %d (channel %s) — error refreshing token: %v", connection.ConnectionID, connection.ChannelCode, err)
-			continue
-		}
+			if _, err := refresher.EnsureValidAccessToken(ctx, connection.ConnectionID); err != nil {
+				log.Printf("token refresh scheduler: connection %d (channel %s) — error refreshing token: %v", connection.ConnectionID, connection.ChannelCode, err)
+				return
+			}
 
-		log.Printf("token refresh scheduler: connection %d (channel %s) — token check complete", connection.ConnectionID, connection.ChannelCode)
+			log.Printf("token refresh scheduler: connection %d (channel %s) — token check complete", connection.ConnectionID, connection.ChannelCode)
+		})
 	}
 }
 

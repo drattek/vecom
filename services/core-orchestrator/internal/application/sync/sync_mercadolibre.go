@@ -2,6 +2,7 @@ package sync
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -116,11 +117,11 @@ func (s *MercadoLibreTokenService) EnsureValidAccessToken(ctx context.Context, c
 	refreshed := false
 
 	defer func() {
-		s.recordConnectionStatus(connectionID, err, refreshed, refreshedExpiration)
+		s.recordConnectionStatus(ctx, connectionID, err, refreshed, refreshedExpiration)
 	}()
 
 	log.Printf("mercadolibre token: connection %d — loading settings", connectionID)
-	settings, err := s.settingsRepository.FindByConnectionID(connectionID)
+	settings, err := s.settingsRepository.FindByConnectionID(ctx, connectionID)
 	if err != nil {
 		return "", fmt.Errorf("error loading connection settings: %w", err)
 	}
@@ -193,7 +194,7 @@ func (s *MercadoLibreTokenService) EnsureValidAccessToken(ctx context.Context, c
 	refreshed = true
 	refreshedExpiration = newExpirationTime
 
-	_, err = s.settingsRepository.Update(accessTokenSetting.ID, mysqlInfra.UpdateConnectionSettingInput{
+	_, err = s.settingsRepository.Update(ctx, accessTokenSetting.ID, mysqlInfra.UpdateConnectionSettingInput{
 		Value:       refreshResponse.AccessToken,
 		IsEncrypted: true,
 		UpdatedBy:   updatedBy,
@@ -202,7 +203,7 @@ func (s *MercadoLibreTokenService) EnsureValidAccessToken(ctx context.Context, c
 		return "", fmt.Errorf("error updating access_token: %w", err)
 	}
 
-	_, err = s.settingsRepository.Update(refreshTokenSetting.ID, mysqlInfra.UpdateConnectionSettingInput{
+	_, err = s.settingsRepository.Update(ctx, refreshTokenSetting.ID, mysqlInfra.UpdateConnectionSettingInput{
 		Value:       refreshResponse.RefreshToken,
 		IsEncrypted: true,
 		UpdatedBy:   updatedBy,
@@ -211,7 +212,7 @@ func (s *MercadoLibreTokenService) EnsureValidAccessToken(ctx context.Context, c
 		return "", fmt.Errorf("error updating refresh_token: %w", err)
 	}
 
-	_, err = s.settingsRepository.Update(expirationTimeSetting.ID, mysqlInfra.UpdateConnectionSettingInput{
+	_, err = s.settingsRepository.Update(ctx, expirationTimeSetting.ID, mysqlInfra.UpdateConnectionSettingInput{
 		Value:       newExpirationTime.UTC().Format(time.RFC3339),
 		IsEncrypted: true,
 		UpdatedBy:   updatedBy,
@@ -227,7 +228,7 @@ func (s *MercadoLibreTokenService) EnsureValidAccessToken(ctx context.Context, c
 // into ecom_connection_status: whether the connection is currently authenticated,
 // its last authentication error (if any), and, when a token refresh actually
 // happened, when it happened and when the new token expires.
-func (s *MercadoLibreTokenService) recordConnectionStatus(connectionID int64, opErr error, refreshed bool, expiresAt time.Time) {
+func (s *MercadoLibreTokenService) recordConnectionStatus(ctx context.Context, connectionID int64, opErr error, refreshed bool, expiresAt time.Time) {
 	if s.statusRepository == nil {
 		return
 	}
@@ -248,7 +249,7 @@ func (s *MercadoLibreTokenService) recordConnectionStatus(connectionID int64, op
 		input.ExpiresAt = &expiresAt
 	}
 
-	if _, err := s.statusRepository.Upsert(input); err != nil {
+	if _, err := s.statusRepository.Upsert(ctx, input); err != nil {
 		log.Printf("Error recording connection status for connection %d: %v", connectionID, err)
 	}
 }
@@ -270,12 +271,12 @@ func (s *MercadoLibreTokenService) refreshAccessToken(ctx context.Context, clien
 // redirect_url already stored in ecom_connection_settings for connectionID
 // (the redirect_url must match exactly what's registered in the MercadoLibre
 // developer app).
-func (s *MercadoLibreTokenService) GetAuthorizationURL(connectionID int64) (string, error) {
+func (s *MercadoLibreTokenService) GetAuthorizationURL(ctx context.Context, connectionID int64) (string, error) {
 	if connectionID <= 0 {
 		return "", ErrInvalidMercadoLibreConnection
 	}
 
-	settings, err := s.settingsRepository.FindByConnectionID(connectionID)
+	settings, err := s.settingsRepository.FindByConnectionID(ctx, connectionID)
 	if err != nil {
 		return "", fmt.Errorf("error loading connection settings: %w", err)
 	}
@@ -313,10 +314,10 @@ func (s *MercadoLibreTokenService) ExchangeAuthorizationCode(ctx context.Context
 	refreshed := false
 
 	defer func() {
-		s.recordConnectionStatus(connectionID, err, refreshed, refreshedExpiration)
+		s.recordConnectionStatus(ctx, connectionID, err, refreshed, refreshedExpiration)
 	}()
 
-	settings, loadErr := s.settingsRepository.FindByConnectionID(connectionID)
+	settings, loadErr := s.settingsRepository.FindByConnectionID(ctx, connectionID)
 	if loadErr != nil {
 		err = fmt.Errorf("error loading connection settings: %w", loadErr)
 		return err
@@ -367,15 +368,15 @@ func (s *MercadoLibreTokenService) ExchangeAuthorizationCode(ctx context.Context
 	refreshed = true
 	refreshedExpiration = newExpirationTime
 
-	if upsertErr := s.upsertSetting(settingsByKey, connectionID, "access_token", tokenResponse.AccessToken, actorID); upsertErr != nil {
+	if upsertErr := s.upsertSetting(ctx, settingsByKey, connectionID, "access_token", tokenResponse.AccessToken, actorID); upsertErr != nil {
 		err = fmt.Errorf("error saving access_token: %w", upsertErr)
 		return err
 	}
-	if upsertErr := s.upsertSetting(settingsByKey, connectionID, "refresh_token", tokenResponse.RefreshToken, actorID); upsertErr != nil {
+	if upsertErr := s.upsertSetting(ctx, settingsByKey, connectionID, "refresh_token", tokenResponse.RefreshToken, actorID); upsertErr != nil {
 		err = fmt.Errorf("error saving refresh_token: %w", upsertErr)
 		return err
 	}
-	if upsertErr := s.upsertSetting(settingsByKey, connectionID, "expiration_time", newExpirationTime.UTC().Format(time.RFC3339), actorID); upsertErr != nil {
+	if upsertErr := s.upsertSetting(ctx, settingsByKey, connectionID, "expiration_time", newExpirationTime.UTC().Format(time.RFC3339), actorID); upsertErr != nil {
 		err = fmt.Errorf("error saving expiration_time: %w", upsertErr)
 		return err
 	}
@@ -389,9 +390,9 @@ func (s *MercadoLibreTokenService) ExchangeAuthorizationCode(ctx context.Context
 // in settingsByKey (loaded fresh from FindByConnectionID), or updates it in
 // place otherwise. Values are always stored encrypted, matching how
 // EnsureValidAccessToken stores access_token/refresh_token/expiration_time.
-func (s *MercadoLibreTokenService) upsertSetting(settingsByKey map[string]mysqlInfra.ConnectionSettingDTO, connectionID int64, keyName, value string, actorID int64) error {
+func (s *MercadoLibreTokenService) upsertSetting(ctx context.Context, settingsByKey map[string]mysqlInfra.ConnectionSettingDTO, connectionID int64, keyName, value string, actorID int64) error {
 	if existing, ok := settingsByKey[keyName]; ok {
-		_, err := s.settingsRepository.Update(existing.ID, mysqlInfra.UpdateConnectionSettingInput{
+		_, err := s.settingsRepository.Update(ctx, existing.ID, mysqlInfra.UpdateConnectionSettingInput{
 			Value:       value,
 			IsEncrypted: true,
 			UpdatedBy:   actorID,
@@ -399,7 +400,7 @@ func (s *MercadoLibreTokenService) upsertSetting(settingsByKey map[string]mysqlI
 		return err
 	}
 
-	_, err := s.settingsRepository.Create(mysqlInfra.CreateConnectionSettingInput{
+	_, err := s.settingsRepository.Create(ctx, mysqlInfra.CreateConnectionSettingInput{
 		ConnectionID: connectionID,
 		KeyName:      keyName,
 		Value:        value,
@@ -485,7 +486,7 @@ func (s *MercadoLibreCategoryPredictorService) PredictCategories(
 	}
 
 	log.Printf("mercadolibre predictor: connection %d — resolving site id", connectionID)
-	resolvedSiteID, err := s.resolveSiteID(connectionID, siteID)
+	resolvedSiteID, err := s.resolveSiteID(ctx, connectionID, siteID)
 	if err != nil {
 		return nil, err
 	}
@@ -534,6 +535,35 @@ func (s *MercadoLibreCategoryPredictorService) GetCategoryAttributes(ctx context
 	return s.categoriesHandler.GetCategoryAttributes(ctx, categoryID)
 }
 
+// BrowseRootCategories is a thin passthrough to
+// GET /sites/{siteID}/categories — siteID's top-level category list, used as
+// the entry point for walking MercadoLibre's category tree one level at a
+// time (see BrowseCategory for the next level). connectionID is only used to
+// resolve a valid access token (see CategoriesHandler.GetSiteCategoriesRaw
+// for why one is required despite MercadoLibre documenting this endpoint as
+// public) — it does not otherwise scope which categories come back, since
+// those are a property of siteID alone.
+func (s *MercadoLibreCategoryPredictorService) BrowseRootCategories(ctx context.Context, connectionID int64, siteID string) (json.RawMessage, error) {
+	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return s.categoriesHandler.GetSiteCategoriesRaw(ctx, accessToken, siteID)
+}
+
+// BrowseCategory is a thin passthrough to GET /categories/{categoryID},
+// returning MercadoLibre's full response as-is — including
+// children_categories — rather than GetCategoryAttributes'/GetCategory's
+// narrower typed subsets. connectionID is only used to resolve a valid
+// access token, same as BrowseRootCategories.
+func (s *MercadoLibreCategoryPredictorService) BrowseCategory(ctx context.Context, connectionID int64, categoryID string) (json.RawMessage, error) {
+	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	return s.categoriesHandler.GetCategoryRaw(ctx, accessToken, categoryID)
+}
+
 // EnsureLocalCategory guarantees a local ecom_categories hierarchy exists
 // for externalCategoryID (a MercadoLibre category id, as predicted by
 // PredictCategories or returned by an item creation call) on connectionID,
@@ -545,7 +575,7 @@ func (s *MercadoLibreCategoryPredictorService) GetCategoryAttributes(ctx context
 // same (externalCategoryID, connectionID) pair reuses that row and never
 // calls MercadoLibre or writes to ecom_categories again.
 func (s *MercadoLibreCategoryPredictorService) EnsureLocalCategory(ctx context.Context, connectionID int64, externalCategoryID string, actorID int64) (int64, error) {
-	existing, err := s.channelCategoryMapRepository.FindByExternalCategoryAndConnection(externalCategoryID, connectionID)
+	existing, err := s.channelCategoryMapRepository.FindByExternalCategoryAndConnection(ctx, externalCategoryID, connectionID)
 	if err != nil && !errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
 		return 0, fmt.Errorf("error loading channel category map for external category %q: %w", externalCategoryID, err)
 	}
@@ -572,7 +602,7 @@ func (s *MercadoLibreCategoryPredictorService) EnsureLocalCategory(ctx context.C
 			return 0, fmt.Errorf("mercadolibre category %q has an empty name in its path", node.ID)
 		}
 
-		existingCategory, err := s.categoriesRepository.FindByNameAndParentID(name, parentLocalID)
+		existingCategory, err := s.categoriesRepository.FindByNameAndParentID(ctx, name, parentLocalID)
 		if err != nil && !errors.Is(err, mysqlInfra.ErrCategoryNotFound) {
 			return 0, fmt.Errorf("error looking up category %q: %w", name, err)
 		}
@@ -581,7 +611,7 @@ func (s *MercadoLibreCategoryPredictorService) EnsureLocalCategory(ctx context.C
 		if existingCategory != nil {
 			categoryID = existingCategory.ID
 		} else {
-			created, err := s.categoriesRepository.Create(mysqlInfra.CreateCategoryInput{
+			created, err := s.categoriesRepository.Create(ctx, mysqlInfra.CreateCategoryInput{
 				Name:      name,
 				ParentID:  parentLocalID,
 				CreatedBy: actorID,
@@ -598,7 +628,7 @@ func (s *MercadoLibreCategoryPredictorService) EnsureLocalCategory(ctx context.C
 	}
 
 	leafName := strings.TrimSpace(path[len(path)-1].Name)
-	if _, err := s.channelCategoryMapRepository.Upsert(mysqlInfra.UpsertChannelCategoryMapInput{
+	if _, err := s.channelCategoryMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelCategoryMapInput{
 		CategoryID:           leafLocalID,
 		ConnectionID:         connectionID,
 		ExternalCategoryID:   externalCategoryID,
@@ -611,13 +641,13 @@ func (s *MercadoLibreCategoryPredictorService) EnsureLocalCategory(ctx context.C
 	return leafLocalID, nil
 }
 
-func (s *MercadoLibreCategoryPredictorService) resolveSiteID(connectionID int64, siteID string) (string, error) {
+func (s *MercadoLibreCategoryPredictorService) resolveSiteID(ctx context.Context, connectionID int64, siteID string) (string, error) {
 	trimmedSiteID := strings.TrimSpace(strings.ToUpper(siteID))
 	if trimmedSiteID != "" {
 		return trimmedSiteID, nil
 	}
 
-	settings, err := s.settingsRepository.FindByConnectionID(connectionID)
+	settings, err := s.settingsRepository.FindByConnectionID(ctx, connectionID)
 	if err != nil {
 		return "", fmt.Errorf("error loading connection settings: %w", err)
 	}

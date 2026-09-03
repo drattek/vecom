@@ -1,6 +1,7 @@
 package consumers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 
@@ -8,8 +9,8 @@ import (
 	"core-orchestrator/internal/domain"
 )
 
-func StockPageProcessedConsumer(service *sync.SyncService) func([]byte) error {
-	return func(body []byte) error {
+func StockPageProcessedConsumer(service *sync.SyncService) func(context.Context, []byte) error {
+	return func(ctx context.Context, body []byte) error {
 		var event domain.PageProcessedEvent
 
 		err := json.Unmarshal(body, &event)
@@ -20,6 +21,6 @@ func StockPageProcessedConsumer(service *sync.SyncService) func([]byte) error {
 
 		log.Printf("[stock.page.processed] received: %+v", event)
 
-		return service.ProcessStockPageProcessed(event)
+		return service.ProcessStockPageProcessed(ctx, event)
 	}
 }

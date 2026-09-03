@@ -1,6 +1,8 @@
 package compatibility
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"log"
 	"strings"
@@ -16,14 +18,15 @@ var (
 )
 
 type EquipmentTypeService struct {
+	db         *sql.DB
 	repository *mysqlInfra.EquipmentTypesRepository
 }
 
-func NewEquipmentTypeService(repository *mysqlInfra.EquipmentTypesRepository) *EquipmentTypeService {
-	return &EquipmentTypeService{repository: repository}
+func NewEquipmentTypeService(db *sql.DB, repository *mysqlInfra.EquipmentTypesRepository) *EquipmentTypeService {
+	return &EquipmentTypeService{db: db, repository: repository}
 }
 
-func (s *EquipmentTypeService) GetPaginatedEquipmentTypes(offset, pageSize int) (*mysqlInfra.PaginatedEquipmentTypes, error) {
+func (s *EquipmentTypeService) GetPaginatedEquipmentTypes(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedEquipmentTypes, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -34,38 +37,39 @@ func (s *EquipmentTypeService) GetPaginatedEquipmentTypes(offset, pageSize int) 
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *EquipmentTypeService) GetEquipmentTypeByID(id int64) (*mysqlInfra.EquipmentTypeDTO, error) {
+func (s *EquipmentTypeService) GetEquipmentTypeByID(ctx context.Context, id int64) (*mysqlInfra.EquipmentTypeDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidEquipmentType
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *EquipmentTypeService) CreateEquipmentType(input mysqlInfra.CreateEquipmentTypeInput) (*mysqlInfra.EquipmentTypeDTO, error) {
+func (s *EquipmentTypeService) CreateEquipmentType(ctx context.Context, input mysqlInfra.CreateEquipmentTypeInput) (*mysqlInfra.EquipmentTypeDTO, error) {
 	if strings.TrimSpace(input.Name) == "" || input.CreatedBy <= 0 {
 		return nil, ErrInvalidEquipmentType
 	}
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *EquipmentTypeService) UpdateEquipmentType(id int64, input mysqlInfra.UpdateEquipmentTypeInput) (*mysqlInfra.EquipmentTypeDTO, error) {
+func (s *EquipmentTypeService) UpdateEquipmentType(ctx context.Context, id int64, input mysqlInfra.UpdateEquipmentTypeInput) (*mysqlInfra.EquipmentTypeDTO, error) {
 	if id <= 0 || strings.TrimSpace(input.Name) == "" || input.UpdatedBy <= 0 {
 		return nil, ErrInvalidEquipmentType
 	}
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *EquipmentTypeService) DeleteEquipmentType(id int64) error {
+func (s *EquipmentTypeService) DeleteEquipmentType(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidEquipmentType
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 type VehicleFitmentService struct {
+	db                                    *sql.DB
 	repository                            *mysqlInfra.VehicleFitmentsRepository
 	brandRepository                       *mysqlInfra.BrandsRepository
 	productRepository                     *mysqlInfra.ProductRepository
@@ -74,6 +78,7 @@ type VehicleFitmentService struct {
 }
 
 func NewVehicleFitmentService(
+	db *sql.DB,
 	repository *mysqlInfra.VehicleFitmentsRepository,
 	brandRepository *mysqlInfra.BrandsRepository,
 	productRepository *mysqlInfra.ProductRepository,
@@ -81,6 +86,7 @@ func NewVehicleFitmentService(
 	pendingRepository *mysqlInfra.PendingProductVehicleFitmentsRepository,
 ) *VehicleFitmentService {
 	return &VehicleFitmentService{
+		db:                                    db,
 		repository:                            repository,
 		brandRepository:                       brandRepository,
 		productRepository:                     productRepository,
@@ -89,7 +95,7 @@ func NewVehicleFitmentService(
 	}
 }
 
-func (s *VehicleFitmentService) GetPaginatedFitments(offset, pageSize int) (*mysqlInfra.PaginatedVehicleFitments, error) {
+func (s *VehicleFitmentService) GetPaginatedFitments(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedVehicleFitments, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -100,38 +106,38 @@ func (s *VehicleFitmentService) GetPaginatedFitments(offset, pageSize int) (*mys
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *VehicleFitmentService) GetFitmentByID(id int64) (*mysqlInfra.VehicleFitmentDTO, error) {
+func (s *VehicleFitmentService) GetFitmentByID(ctx context.Context, id int64) (*mysqlInfra.VehicleFitmentDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidVehicleFitment
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *VehicleFitmentService) CreateFitment(input mysqlInfra.CreateVehicleFitmentInput) (*mysqlInfra.VehicleFitmentDTO, error) {
+func (s *VehicleFitmentService) CreateFitment(ctx context.Context, input mysqlInfra.CreateVehicleFitmentInput) (*mysqlInfra.VehicleFitmentDTO, error) {
 	if err := validateVehicleFitment(input.BrandID, input.Model, input.YearStart, input.YearEnd, input.CreatedBy); err != nil {
 		return nil, err
 	}
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *VehicleFitmentService) UpdateFitment(id int64, input mysqlInfra.UpdateVehicleFitmentInput) (*mysqlInfra.VehicleFitmentDTO, error) {
+func (s *VehicleFitmentService) UpdateFitment(ctx context.Context, id int64, input mysqlInfra.UpdateVehicleFitmentInput) (*mysqlInfra.VehicleFitmentDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidVehicleFitment
 	}
 	if err := validateVehicleFitment(input.BrandID, input.Model, input.YearStart, input.YearEnd, input.UpdatedBy); err != nil {
 		return nil, err
 	}
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *VehicleFitmentService) DeleteFitment(id int64) error {
+func (s *VehicleFitmentService) DeleteFitment(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidVehicleFitment
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 func validateVehicleFitment(brandID int64, model string, yearStart int, yearEnd *int, actorID int64) error {
@@ -190,7 +196,13 @@ type BulkVehicleFitmentResult struct {
 // has that SKU yet, the link is recorded in ecom_pending_product_vehicle_fitments
 // and gets resolved automatically once a product with that SKU is created
 // (see products.ProductService.CreateProduct).
-func (s *VehicleFitmentService) BulkImportFitments(items []BulkVehicleFitmentItem, actorID int64) ([]BulkVehicleFitmentResult, error) {
+//
+// TODO(persistence): cada ítem escribe hasta en 3 tablas (ecom_brands,
+// ecom_vehicle_fitments, ecom_product_vehicle_compatibility/ecom_pending_*);
+// envolver el cuerpo del loop en mysqlInfra.WithinTx (linkProductIfRequested
+// tendría que aceptar repos escopeados al tx). Hoy es recuperable porque cada
+// paso maneja *AlreadyExists de forma idempotente.
+func (s *VehicleFitmentService) BulkImportFitments(ctx context.Context, items []BulkVehicleFitmentItem, actorID int64) ([]BulkVehicleFitmentResult, error) {
 	if actorID <= 0 {
 		return nil, ErrInvalidVehicleFitment
 	}
@@ -208,16 +220,16 @@ func (s *VehicleFitmentService) BulkImportFitments(items []BulkVehicleFitmentIte
 			continue
 		}
 
-		brand, err := s.brandRepository.FindByName(brandName)
+		brand, err := s.brandRepository.FindByName(ctx, brandName)
 		if errors.Is(err, mysqlInfra.ErrBrandNotFound) {
-			brand, err = s.brandRepository.Create(mysqlInfra.CreateBrandInput{Name: brandName, CreatedBy: actorID})
+			brand, err = s.brandRepository.Create(ctx, mysqlInfra.CreateBrandInput{Name: brandName, CreatedBy: actorID})
 		}
 		if err != nil {
 			results = append(results, BulkVehicleFitmentResult{Index: i, Status: BulkVehicleFitmentError, Error: err.Error()})
 			continue
 		}
 
-		fitment, err := s.repository.Create(mysqlInfra.CreateVehicleFitmentInput{
+		fitment, err := s.repository.Create(ctx, mysqlInfra.CreateVehicleFitmentInput{
 			BrandID:   brand.ID,
 			Model:     model,
 			YearStart: item.YearStart,
@@ -230,7 +242,7 @@ func (s *VehicleFitmentService) BulkImportFitments(items []BulkVehicleFitmentIte
 				continue
 			}
 
-			existing, findErr := s.repository.FindByUniqueKey(brand.ID, model, item.YearStart, item.YearEnd)
+			existing, findErr := s.repository.FindByUniqueKey(ctx, brand.ID, model, item.YearStart, item.YearEnd)
 			if findErr != nil {
 				results = append(results, BulkVehicleFitmentResult{Index: i, Status: BulkVehicleFitmentSkipped, Error: findErr.Error()})
 				continue
@@ -240,7 +252,7 @@ func (s *VehicleFitmentService) BulkImportFitments(items []BulkVehicleFitmentIte
 				Index:   i,
 				Status:  BulkVehicleFitmentSkipped,
 				Fitment: existing,
-				Product: s.linkProductIfRequested(item.SKU, existing.ID, motor, position, side, actorID),
+				Product: s.linkProductIfRequested(ctx, item.SKU, existing.ID, motor, position, side, actorID),
 			})
 			continue
 		}
@@ -249,7 +261,7 @@ func (s *VehicleFitmentService) BulkImportFitments(items []BulkVehicleFitmentIte
 			Index:   i,
 			Status:  BulkVehicleFitmentCreated,
 			Fitment: fitment,
-			Product: s.linkProductIfRequested(item.SKU, fitment.ID, motor, position, side, actorID),
+			Product: s.linkProductIfRequested(ctx, item.SKU, fitment.ID, motor, position, side, actorID),
 		})
 	}
 
@@ -263,19 +275,19 @@ func (s *VehicleFitmentService) BulkImportFitments(items []BulkVehicleFitmentIte
 // front-right, can both target the same fitment). These three are part of the
 // "same combination" the caller must not duplicate, so they flow into both the
 // real compatibility row and the pending/staging row the same way.
-func (s *VehicleFitmentService) linkProductIfRequested(sku string, fitmentID int64, motor, position, side string, actorID int64) *BulkProductLinkResult {
+func (s *VehicleFitmentService) linkProductIfRequested(ctx context.Context, sku string, fitmentID int64, motor, position, side string, actorID int64) *BulkProductLinkResult {
 	sku = strings.TrimSpace(sku)
 	if sku == "" {
 		return nil
 	}
 
-	product, err := s.productRepository.FindBySKU(sku)
+	product, err := s.productRepository.FindBySKU(ctx, sku)
 	if err != nil {
 		if !errors.Is(err, mysqlInfra.ErrProductNotFound) {
 			return &BulkProductLinkResult{Status: BulkVehicleFitmentError, Error: err.Error()}
 		}
 
-		_, pendingErr := s.pendingRepository.Create(mysqlInfra.CreatePendingProductVehicleFitmentInput{
+		_, pendingErr := s.pendingRepository.Create(ctx, mysqlInfra.CreatePendingProductVehicleFitmentInput{
 			SKU:              sku,
 			VehicleFitmentID: fitmentID,
 			Motor:            motor,
@@ -289,7 +301,7 @@ func (s *VehicleFitmentService) linkProductIfRequested(sku string, fitmentID int
 		return &BulkProductLinkResult{Status: BulkVehicleFitmentPending}
 	}
 
-	compat, err := s.productVehicleCompatibilityRepository.Create(mysqlInfra.CreateProductVehicleCompatibilityInput{
+	compat, err := s.productVehicleCompatibilityRepository.Create(ctx, mysqlInfra.CreateProductVehicleCompatibilityInput{
 		ProductID:        product.ID,
 		VehicleFitmentID: fitmentID,
 		Motor:            motor,
@@ -327,12 +339,12 @@ type ResolvedPendingFitmentsBySKU struct {
 // omitted from the response since it isn't a new compatibility. Per-row
 // failures are logged and skipped rather than aborting the whole scan, so one
 // bad row doesn't block the rest from resolving.
-func (s *VehicleFitmentService) ResolvePendingFitments(actorID int64) ([]ResolvedPendingFitmentsBySKU, error) {
+func (s *VehicleFitmentService) ResolvePendingFitments(ctx context.Context, actorID int64) ([]ResolvedPendingFitmentsBySKU, error) {
 	if actorID <= 0 {
 		return nil, ErrInvalidVehicleFitment
 	}
 
-	pending, err := s.pendingRepository.FindAllUnresolved()
+	pending, err := s.pendingRepository.FindAllUnresolved(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -341,7 +353,7 @@ func (s *VehicleFitmentService) ResolvePendingFitments(actorID int64) ([]Resolve
 	order := make([]string, 0)
 
 	for _, item := range pending {
-		product, err := s.productRepository.FindBySKU(item.SKU)
+		product, err := s.productRepository.FindBySKU(ctx, item.SKU)
 		if err != nil {
 			if !errors.Is(err, mysqlInfra.ErrProductNotFound) {
 				log.Printf("error looking up product for pending vehicle fitment %d (sku %s): %v", item.ID, item.SKU, err)
@@ -349,22 +361,37 @@ func (s *VehicleFitmentService) ResolvePendingFitments(actorID int64) ([]Resolve
 			continue
 		}
 
-		compat, err := s.productVehicleCompatibilityRepository.Create(mysqlInfra.CreateProductVehicleCompatibilityInput{
-			ProductID:        product.ID,
-			VehicleFitmentID: item.VehicleFitmentID,
-			Motor:            item.Motor,
-			Position:         item.Position,
-			Side:             item.Side,
-			CreatedBy:        actorID,
-		})
-		alreadyExisted := errors.Is(err, mysqlInfra.ErrProductVehicleCompatibilityAlreadyExists)
-		if err != nil && !alreadyExisted {
-			log.Printf("error resolving pending vehicle fitment %d (sku %s): %v", item.ID, item.SKU, err)
-			continue
-		}
+		// Crear la compatibilidad y marcar la fila pendiente como resuelta van
+		// juntas en una transacción: si el MarkResolved falla, la compatibilidad
+		// recién creada también se revierte y la próxima corrida reintenta
+		// limpio, en vez de dejar una compat creada con la fila aún pendiente.
+		var compatID int64
+		var alreadyExisted bool
+		txErr := mysqlInfra.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
+			compatRepo := mysqlInfra.NewProductVehicleCompatibilityRepository(tx)
+			pendingRepo := mysqlInfra.NewPendingProductVehicleFitmentsRepository(tx)
 
-		if markErr := s.pendingRepository.MarkResolved(item.ID, product.ID, actorID); markErr != nil {
-			log.Printf("error marking pending vehicle fitment %d resolved (sku %s): %v", item.ID, item.SKU, markErr)
+			compat, createErr := compatRepo.Create(ctx, mysqlInfra.CreateProductVehicleCompatibilityInput{
+				ProductID:        product.ID,
+				VehicleFitmentID: item.VehicleFitmentID,
+				Motor:            item.Motor,
+				Position:         item.Position,
+				Side:             item.Side,
+				CreatedBy:        actorID,
+			})
+			alreadyExisted = errors.Is(createErr, mysqlInfra.ErrProductVehicleCompatibilityAlreadyExists)
+			if createErr != nil && !alreadyExisted {
+				return createErr
+			}
+			if !alreadyExisted {
+				compatID = compat.ID
+			}
+
+			return pendingRepo.MarkResolved(ctx, item.ID, product.ID, actorID)
+		})
+		if txErr != nil {
+			log.Printf("error resolving pending vehicle fitment %d (sku %s): %v", item.ID, item.SKU, txErr)
+			continue
 		}
 
 		if alreadyExisted {
@@ -379,7 +406,7 @@ func (s *VehicleFitmentService) ResolvePendingFitments(actorID int64) ([]Resolve
 		}
 		group.Compatibilities = append(group.Compatibilities, ResolvedPendingCompatibility{
 			VehicleFitmentID: item.VehicleFitmentID,
-			CompatibilityID:  compat.ID,
+			CompatibilityID:  compatID,
 		})
 	}
 
@@ -392,14 +419,15 @@ func (s *VehicleFitmentService) ResolvePendingFitments(actorID int64) ([]Resolve
 }
 
 type EquipmentFitmentService struct {
+	db         *sql.DB
 	repository *mysqlInfra.EquipmentFitmentsRepository
 }
 
-func NewEquipmentFitmentService(repository *mysqlInfra.EquipmentFitmentsRepository) *EquipmentFitmentService {
-	return &EquipmentFitmentService{repository: repository}
+func NewEquipmentFitmentService(db *sql.DB, repository *mysqlInfra.EquipmentFitmentsRepository) *EquipmentFitmentService {
+	return &EquipmentFitmentService{db: db, repository: repository}
 }
 
-func (s *EquipmentFitmentService) GetPaginatedFitments(offset, pageSize int) (*mysqlInfra.PaginatedEquipmentFitments, error) {
+func (s *EquipmentFitmentService) GetPaginatedFitments(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedEquipmentFitments, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -410,38 +438,38 @@ func (s *EquipmentFitmentService) GetPaginatedFitments(offset, pageSize int) (*m
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *EquipmentFitmentService) GetFitmentByID(id int64) (*mysqlInfra.EquipmentFitmentDTO, error) {
+func (s *EquipmentFitmentService) GetFitmentByID(ctx context.Context, id int64) (*mysqlInfra.EquipmentFitmentDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidEquipmentFitment
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *EquipmentFitmentService) CreateFitment(input mysqlInfra.CreateEquipmentFitmentInput) (*mysqlInfra.EquipmentFitmentDTO, error) {
+func (s *EquipmentFitmentService) CreateFitment(ctx context.Context, input mysqlInfra.CreateEquipmentFitmentInput) (*mysqlInfra.EquipmentFitmentDTO, error) {
 	if err := validateEquipmentFitment(input.BrandID, input.EquipmentTypeID, input.Model, input.Serie, input.CreatedBy); err != nil {
 		return nil, err
 	}
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *EquipmentFitmentService) UpdateFitment(id int64, input mysqlInfra.UpdateEquipmentFitmentInput) (*mysqlInfra.EquipmentFitmentDTO, error) {
+func (s *EquipmentFitmentService) UpdateFitment(ctx context.Context, id int64, input mysqlInfra.UpdateEquipmentFitmentInput) (*mysqlInfra.EquipmentFitmentDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidEquipmentFitment
 	}
 	if err := validateEquipmentFitment(input.BrandID, input.EquipmentTypeID, input.Model, input.Serie, input.UpdatedBy); err != nil {
 		return nil, err
 	}
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *EquipmentFitmentService) DeleteFitment(id int64) error {
+func (s *EquipmentFitmentService) DeleteFitment(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidEquipmentFitment
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 // validateEquipmentFitment enforces that at least one of model/serie is
@@ -463,14 +491,15 @@ func validateEquipmentFitment(brandID, equipmentTypeID int64, model, serie *stri
 }
 
 type ProductVehicleCompatibilityService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ProductVehicleCompatibilityRepository
 }
 
-func NewProductVehicleCompatibilityService(repository *mysqlInfra.ProductVehicleCompatibilityRepository) *ProductVehicleCompatibilityService {
-	return &ProductVehicleCompatibilityService{repository: repository}
+func NewProductVehicleCompatibilityService(db *sql.DB, repository *mysqlInfra.ProductVehicleCompatibilityRepository) *ProductVehicleCompatibilityService {
+	return &ProductVehicleCompatibilityService{db: db, repository: repository}
 }
 
-func (s *ProductVehicleCompatibilityService) GetByProduct(productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductVehicleCompatibilities, error) {
+func (s *ProductVehicleCompatibilityService) GetByProduct(ctx context.Context, productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductVehicleCompatibilities, error) {
 	if productID <= 0 {
 		return nil, ErrInvalidProductCompatibility
 	}
@@ -484,32 +513,33 @@ func (s *ProductVehicleCompatibilityService) GetByProduct(productID int64, offse
 		pageSize = 100
 	}
 
-	return s.repository.FindByProductID(productID, offset, pageSize)
+	return s.repository.FindByProductID(ctx, productID, offset, pageSize)
 }
 
-func (s *ProductVehicleCompatibilityService) Create(input mysqlInfra.CreateProductVehicleCompatibilityInput) (*mysqlInfra.ProductVehicleCompatibilityDTO, error) {
+func (s *ProductVehicleCompatibilityService) Create(ctx context.Context, input mysqlInfra.CreateProductVehicleCompatibilityInput) (*mysqlInfra.ProductVehicleCompatibilityDTO, error) {
 	if input.ProductID <= 0 || input.VehicleFitmentID <= 0 || input.CreatedBy <= 0 {
 		return nil, ErrInvalidProductCompatibility
 	}
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ProductVehicleCompatibilityService) Delete(id int64) error {
+func (s *ProductVehicleCompatibilityService) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidProductCompatibility
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 type ProductEquipmentCompatibilityService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ProductEquipmentCompatibilityRepository
 }
 
-func NewProductEquipmentCompatibilityService(repository *mysqlInfra.ProductEquipmentCompatibilityRepository) *ProductEquipmentCompatibilityService {
-	return &ProductEquipmentCompatibilityService{repository: repository}
+func NewProductEquipmentCompatibilityService(db *sql.DB, repository *mysqlInfra.ProductEquipmentCompatibilityRepository) *ProductEquipmentCompatibilityService {
+	return &ProductEquipmentCompatibilityService{db: db, repository: repository}
 }
 
-func (s *ProductEquipmentCompatibilityService) GetByProduct(productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductEquipmentCompatibilities, error) {
+func (s *ProductEquipmentCompatibilityService) GetByProduct(ctx context.Context, productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductEquipmentCompatibilities, error) {
 	if productID <= 0 {
 		return nil, ErrInvalidProductCompatibility
 	}
@@ -523,19 +553,19 @@ func (s *ProductEquipmentCompatibilityService) GetByProduct(productID int64, off
 		pageSize = 100
 	}
 
-	return s.repository.FindByProductID(productID, offset, pageSize)
+	return s.repository.FindByProductID(ctx, productID, offset, pageSize)
 }
 
-func (s *ProductEquipmentCompatibilityService) Create(input mysqlInfra.CreateProductEquipmentCompatibilityInput) (*mysqlInfra.ProductEquipmentCompatibilityDTO, error) {
+func (s *ProductEquipmentCompatibilityService) Create(ctx context.Context, input mysqlInfra.CreateProductEquipmentCompatibilityInput) (*mysqlInfra.ProductEquipmentCompatibilityDTO, error) {
 	if input.ProductID <= 0 || input.EquipmentFitmentID <= 0 || input.CreatedBy <= 0 {
 		return nil, ErrInvalidProductCompatibility
 	}
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ProductEquipmentCompatibilityService) Delete(id int64) error {
+func (s *ProductEquipmentCompatibilityService) Delete(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidProductCompatibility
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }

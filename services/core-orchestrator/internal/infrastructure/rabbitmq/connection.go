@@ -9,9 +9,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func newConnection() (*amqp.Connection, error) {
-	cfg := config.Load()
-
+func newConnection(cfg config.Config) (*amqp.Connection, error) {
 	url := fmt.Sprintf("amqp://%s:%s@%s:%s/",
 		cfg.RabbitMQUser,
 		cfg.RabbitMQPassword,

@@ -43,3 +43,39 @@ func (r *InventoryRepository) ScanInventory(ctx context.Context) ([]string, erro
 
 	return keys, iter.Err()
 }
+
+// FindByKeys lee muchas claves en lotes con MGET en vez de un GET por clave, mismo criterio
+// que NissanRepository.FindByKeys.
+func (r *InventoryRepository) FindByKeys(ctx context.Context, keys []string) ([]*domain.Inventory, error) {
+	const batchSize = 500
+
+	inventories := make([]*domain.Inventory, 0, len(keys))
+
+	for start := 0; start < len(keys); start += batchSize {
+		end := start + batchSize
+		if end > len(keys) {
+			end = len(keys)
+		}
+
+		values, err := r.client.MGet(ctx, keys[start:end]...).Result()
+		if err != nil {
+			return nil, err
+		}
+
+		for _, v := range values {
+			str, ok := v.(string)
+			if !ok {
+				continue
+			}
+
+			var inventory domain.Inventory
+			if err := json.Unmarshal([]byte(str), &inventory); err != nil {
+				return nil, err
+			}
+
+			inventories = append(inventories, &inventory)
+		}
+	}
+
+	return inventories, nil
+}

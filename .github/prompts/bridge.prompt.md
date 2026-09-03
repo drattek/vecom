@@ -1,5 +1,9 @@
 # Bridge Prompt
 
+## Idioma
+
+Responde siempre en español.
+
 ## Scope
 
 Aplicable a cambios en `services/synapse-bridge`.

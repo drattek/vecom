@@ -1,6 +1,8 @@
 package files
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -11,6 +13,7 @@ var ErrFileNotFound = errors.New("file not found")
 var ErrInvalidFilePayload = errors.New("invalid file payload")
 
 type FileService struct {
+	db         *sql.DB
 	repository *mysqlInfra.FilesRepository
 }
 
@@ -29,11 +32,11 @@ type UpsertFileInput struct {
 	IsPublic         bool
 }
 
-func NewFileService(repository *mysqlInfra.FilesRepository) *FileService {
-	return &FileService{repository: repository}
+func NewFileService(db *sql.DB, repository *mysqlInfra.FilesRepository) *FileService {
+	return &FileService{db: db, repository: repository}
 }
 
-func (s *FileService) GetPaginatedFiles(offset, pageSize int) (*mysqlInfra.PaginatedFiles, error) {
+func (s *FileService) GetPaginatedFiles(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedFiles, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -46,15 +49,15 @@ func (s *FileService) GetPaginatedFiles(offset, pageSize int) (*mysqlInfra.Pagin
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *FileService) GetFileByID(id int64) (*mysqlInfra.FileDTO, error) {
+func (s *FileService) GetFileByID(ctx context.Context, id int64) (*mysqlInfra.FileDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidFilePayload
 	}
 
-	file, err := s.repository.FindByID(id)
+	file, err := s.repository.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrFileNotFound) {
 			return nil, ErrFileNotFound
@@ -65,13 +68,13 @@ func (s *FileService) GetFileByID(id int64) (*mysqlInfra.FileDTO, error) {
 	return file, nil
 }
 
-func (s *FileService) CreateFile(input UpsertFileInput, actorID int64) (*mysqlInfra.FileDTO, error) {
+func (s *FileService) CreateFile(ctx context.Context, input UpsertFileInput, actorID int64) (*mysqlInfra.FileDTO, error) {
 	normalized, err := normalizeAndValidate(input)
 	if err != nil {
 		return nil, err
 	}
 
-	file, err := s.repository.Create(mysqlInfra.CreateFileInput{
+	file, err := s.repository.Create(ctx, mysqlInfra.CreateFileInput{
 		DiskID:           normalized.DiskID,
 		Path:             normalized.Path,
 		Filename:         normalized.Filename,
@@ -93,7 +96,7 @@ func (s *FileService) CreateFile(input UpsertFileInput, actorID int64) (*mysqlIn
 	return file, nil
 }
 
-func (s *FileService) UpdateFile(id int64, input UpsertFileInput, actorID int64) (*mysqlInfra.FileDTO, error) {
+func (s *FileService) UpdateFile(ctx context.Context, id int64, input UpsertFileInput, actorID int64) (*mysqlInfra.FileDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidFilePayload
 	}
@@ -103,7 +106,7 @@ func (s *FileService) UpdateFile(id int64, input UpsertFileInput, actorID int64)
 		return nil, err
 	}
 
-	file, err := s.repository.Update(id, mysqlInfra.UpdateFileInput{
+	file, err := s.repository.Update(ctx, id, mysqlInfra.UpdateFileInput{
 		DiskID:           normalized.DiskID,
 		Path:             normalized.Path,
 		Filename:         normalized.Filename,
@@ -128,12 +131,12 @@ func (s *FileService) UpdateFile(id int64, input UpsertFileInput, actorID int64)
 	return file, nil
 }
 
-func (s *FileService) SoftDeleteFile(id int64, actorID int64) error {
+func (s *FileService) SoftDeleteFile(ctx context.Context, id int64, actorID int64) error {
 	if id <= 0 {
 		return ErrInvalidFilePayload
 	}
 
-	err := s.repository.SoftDelete(id, actorID)
+	err := s.repository.SoftDelete(ctx, id, actorID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrFileNotFound) {
 			return ErrFileNotFound

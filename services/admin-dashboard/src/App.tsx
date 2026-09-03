@@ -8,6 +8,7 @@ import { registerUnauthorizedHandler } from './lib/api.ts'
 import { DashboardPage } from './pages/DashboardPage.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
 import { ProductsPage } from './pages/ProductsPage.tsx'
+import { ProfilePage } from './pages/ProfilePage.tsx'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { ProtectedLayout } from './layouts/ProtectedLayout.tsx'
 import { TooltipProvider } from './components/ui/tooltip.tsx'
@@ -15,6 +16,11 @@ import { SettingsSectionPage } from './pages/settings/SettingsSectionPage.tsx'
 import { ChannelsPage } from './pages/settings/ChannelsPage.tsx'
 import { StorageDiskPage } from './pages/settings/StorageDiskPage.tsx'
 import { FilesPage } from './pages/settings/FilesPage.tsx'
+import { BranchesPage } from './pages/settings/BranchesPage.tsx'
+import { WarehousesPage } from './pages/settings/WarehousesPage.tsx'
+import { ConnectionsPage } from './pages/settings/ConnectionsPage.tsx'
+import { BrandsPage } from './pages/settings/BrandsPage.tsx'
+import { CategoriesPage } from './pages/settings/CategoriesPage.tsx'
 
 const queryClient = new QueryClient()
 
@@ -30,6 +36,7 @@ function AppRoutes() {
         }
       >
         <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/profile" element={<ProfilePage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/settings" element={<SettingsPage />}>
@@ -47,21 +54,11 @@ function AppRoutes() {
           />
           <Route
             path="company-branches"
-            element={
-              <SettingsSectionPage
-                title="Sucursales"
-                description="Gestiona la estructura de sucursales y su disponibilidad operativa."
-              />
-            }
+            element={<BranchesPage />}
           />
           <Route
             path="company-warehouses"
-            element={
-              <SettingsSectionPage
-                title="Almacenes"
-                description="Define almacenes, capacidad y asignaciones para inventario."
-              />
-            }
+            element={<WarehousesPage />}
           />
           <Route
             path="company-currencies"
@@ -87,12 +84,15 @@ function AppRoutes() {
           />
           <Route
             path="marketplace-connections"
-            element={
-              <SettingsSectionPage
-                title="Conexiones"
-                description="Administra credenciales y estados de conexión con marketplaces."
-              />
-            }
+            element={<ConnectionsPage />}
+          />
+          <Route
+            path="marketplace-brands"
+            element={<BrandsPage />}
+          />
+          <Route
+            path="marketplace-categories"
+            element={<CategoriesPage />}
           />
         </Route>
       </Route>

@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -48,16 +49,16 @@ type UpdateVehicleFitmentInput struct {
 }
 
 type VehicleFitmentsRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewVehicleFitmentsRepository(db *sql.DB) *VehicleFitmentsRepository {
+func NewVehicleFitmentsRepository(db Querier) *VehicleFitmentsRepository {
 	return &VehicleFitmentsRepository{db: db}
 }
 
-func (r *VehicleFitmentsRepository) FindPaginated(offset, pageSize int) (*PaginatedVehicleFitments, error) {
+func (r *VehicleFitmentsRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedVehicleFitments, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_vehicle_fitments WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_vehicle_fitments WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting vehicle fitments: %w", err)
 	}
@@ -70,7 +71,7 @@ func (r *VehicleFitmentsRepository) FindPaginated(offset, pageSize int) (*Pagina
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying vehicle fitments: %w", err)
 	}
@@ -98,7 +99,7 @@ func (r *VehicleFitmentsRepository) FindPaginated(offset, pageSize int) (*Pagina
 	}, nil
 }
 
-func (r *VehicleFitmentsRepository) FindByID(id int64) (*VehicleFitmentDTO, error) {
+func (r *VehicleFitmentsRepository) FindByID(ctx context.Context, id int64) (*VehicleFitmentDTO, error) {
 	query := `
 		SELECT id, brand_id, model, year_start, year_end, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_vehicle_fitments
@@ -106,11 +107,11 @@ func (r *VehicleFitmentsRepository) FindByID(id int64) (*VehicleFitmentDTO, erro
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanVehicleFitmentRow(row)
 }
 
-func (r *VehicleFitmentsRepository) FindByUniqueKey(brandID int64, model string, yearStart int, yearEnd *int) (*VehicleFitmentDTO, error) {
+func (r *VehicleFitmentsRepository) FindByUniqueKey(ctx context.Context, brandID int64, model string, yearStart int, yearEnd *int) (*VehicleFitmentDTO, error) {
 	query := `
 		SELECT id, brand_id, model, year_start, year_end, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_vehicle_fitments
@@ -118,17 +119,17 @@ func (r *VehicleFitmentsRepository) FindByUniqueKey(brandID int64, model string,
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, brandID, model, yearStart, yearEnd)
+	row := r.db.QueryRowContext(ctx, query, brandID, model, yearStart, yearEnd)
 	return scanVehicleFitmentRow(row)
 }
 
-func (r *VehicleFitmentsRepository) Create(input CreateVehicleFitmentInput) (*VehicleFitmentDTO, error) {
+func (r *VehicleFitmentsRepository) Create(ctx context.Context, input CreateVehicleFitmentInput) (*VehicleFitmentDTO, error) {
 	query := `
 		INSERT INTO ecom_vehicle_fitments (brand_id, model, year_start, year_end, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.BrandID, input.Model, input.YearStart, input.YearEnd, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.BrandID, input.Model, input.YearStart, input.YearEnd, input.CreatedBy)
 	if err != nil {
 		if isDuplicateKeyError(err) {
 			return nil, ErrVehicleFitmentAlreadyExists
@@ -144,17 +145,17 @@ func (r *VehicleFitmentsRepository) Create(input CreateVehicleFitmentInput) (*Ve
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *VehicleFitmentsRepository) Update(id int64, input UpdateVehicleFitmentInput) (*VehicleFitmentDTO, error) {
+func (r *VehicleFitmentsRepository) Update(ctx context.Context, id int64, input UpdateVehicleFitmentInput) (*VehicleFitmentDTO, error) {
 	query := `
 		UPDATE ecom_vehicle_fitments
 		SET brand_id = ?, model = ?, year_start = ?, year_end = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.BrandID, input.Model, input.YearStart, input.YearEnd, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.BrandID, input.Model, input.YearStart, input.YearEnd, input.UpdatedBy, id)
 	if err != nil {
 		if isDuplicateKeyError(err) {
 			return nil, ErrVehicleFitmentAlreadyExists
@@ -174,17 +175,17 @@ func (r *VehicleFitmentsRepository) Update(id int64, input UpdateVehicleFitmentI
 		return nil, ErrVehicleFitmentNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *VehicleFitmentsRepository) SoftDelete(id int64) error {
+func (r *VehicleFitmentsRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_vehicle_fitments
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting vehicle fitment: %w", err)
 	}

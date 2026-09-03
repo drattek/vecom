@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -44,9 +45,9 @@ func NewBranchesRepository(db Querier) *BranchesRepository {
 	return &BranchesRepository{db: db}
 }
 
-func (r *BranchesRepository) FindPaginated(offset, pageSize int) (*PaginatedBranches, error) {
+func (r *BranchesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedBranches, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_branches WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_branches WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting branches: %w", err)
 	}
@@ -59,7 +60,7 @@ func (r *BranchesRepository) FindPaginated(offset, pageSize int) (*PaginatedBran
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying branches: %w", err)
 	}
@@ -87,7 +88,7 @@ func (r *BranchesRepository) FindPaginated(offset, pageSize int) (*PaginatedBran
 	}, nil
 }
 
-func (r *BranchesRepository) FindByID(id int64) (*BranchDTO, error) {
+func (r *BranchesRepository) FindByID(ctx context.Context, id int64) (*BranchDTO, error) {
 	query := `
 		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_branches
@@ -95,11 +96,11 @@ func (r *BranchesRepository) FindByID(id int64) (*BranchDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanBranchRow(row)
 }
 
-func (r *BranchesRepository) FindByName(name string) (*BranchDTO, error) {
+func (r *BranchesRepository) FindByName(ctx context.Context, name string) (*BranchDTO, error) {
 	query := `
 		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_branches
@@ -107,17 +108,17 @@ func (r *BranchesRepository) FindByName(name string) (*BranchDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, name)
+	row := r.db.QueryRowContext(ctx, query, name)
 	return scanBranchRow(row)
 }
 
-func (r *BranchesRepository) Create(input CreateBranchInput) (*BranchDTO, error) {
+func (r *BranchesRepository) Create(ctx context.Context, input CreateBranchInput) (*BranchDTO, error) {
 	query := `
 		INSERT INTO ecom_branches (name, created_by, created_at, updated_at)
 		VALUES (?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating branch: %w", err)
 	}
@@ -127,17 +128,17 @@ func (r *BranchesRepository) Create(input CreateBranchInput) (*BranchDTO, error)
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *BranchesRepository) Update(id int64, input UpdateBranchInput) (*BranchDTO, error) {
+func (r *BranchesRepository) Update(ctx context.Context, id int64, input UpdateBranchInput) (*BranchDTO, error) {
 	query := `
 		UPDATE ecom_branches
 		SET name = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating branch: %w", err)
 	}
@@ -151,17 +152,17 @@ func (r *BranchesRepository) Update(id int64, input UpdateBranchInput) (*BranchD
 		return nil, ErrBranchNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *BranchesRepository) SoftDelete(id int64) error {
+func (r *BranchesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_branches
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting branch: %w", err)
 	}

@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -53,7 +54,7 @@ func NewProductPricesRepository(db Querier) *ProductPricesRepository {
 	return &ProductPricesRepository{db: db}
 }
 
-func (r *ProductPricesRepository) FindPaginated(offset, pageSize int) (*PaginatedProductPrices, error) {
+func (r *ProductPricesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedProductPrices, error) {
 	query := `
 		SELECT id, product_id, price_list_id, price, currency, margin, 
 		       tax_included, updated_by, created_at, updated_at
@@ -61,7 +62,7 @@ func (r *ProductPricesRepository) FindPaginated(offset, pageSize int) (*Paginate
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -79,14 +80,14 @@ func (r *ProductPricesRepository) FindPaginated(offset, pageSize int) (*Paginate
 
 	countQuery := "SELECT COUNT(*) FROM ecom_product_prices"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedProductPrices{Data: prices, Total: total}, nil
 }
 
-func (r *ProductPricesRepository) FindByID(id int64) (*ProductPriceDTO, error) {
+func (r *ProductPricesRepository) FindByID(ctx context.Context, id int64) (*ProductPriceDTO, error) {
 	query := `
 		SELECT id, product_id, price_list_id, price, currency, margin, 
 		       tax_included, updated_by, created_at, updated_at
@@ -95,7 +96,7 @@ func (r *ProductPricesRepository) FindByID(id int64) (*ProductPriceDTO, error) {
 	`
 
 	var p ProductPriceDTO
-	if err := r.db.QueryRow(query, id).Scan(&p.ID, &p.ProductID, &p.PriceListID, &p.Price,
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&p.ID, &p.ProductID, &p.PriceListID, &p.Price,
 		&p.Currency, &p.Margin, &p.TaxIncluded, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProductPriceNotFound
@@ -106,7 +107,7 @@ func (r *ProductPricesRepository) FindByID(id int64) (*ProductPriceDTO, error) {
 	return &p, nil
 }
 
-func (r *ProductPricesRepository) FindByProductID(productID int64) ([]ProductPriceDTO, error) {
+func (r *ProductPricesRepository) FindByProductID(ctx context.Context, productID int64) ([]ProductPriceDTO, error) {
 	query := `
 		SELECT id, product_id, price_list_id, price, currency, margin, 
 		       tax_included, updated_by, created_at, updated_at
@@ -114,7 +115,7 @@ func (r *ProductPricesRepository) FindByProductID(productID int64) ([]ProductPri
 		WHERE product_id = ?
 	`
 
-	rows, err := r.db.Query(query, productID)
+	rows, err := r.db.QueryContext(ctx, query, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -133,7 +134,7 @@ func (r *ProductPricesRepository) FindByProductID(productID int64) ([]ProductPri
 	return prices, nil
 }
 
-func (r *ProductPricesRepository) FindByProductAndPriceList(productID, priceListID int64) (*ProductPriceDTO, error) {
+func (r *ProductPricesRepository) FindByProductAndPriceList(ctx context.Context, productID, priceListID int64) (*ProductPriceDTO, error) {
 	query := `
 		SELECT id, product_id, price_list_id, price, currency, margin,
 		       tax_included, updated_by, created_at, updated_at
@@ -143,7 +144,7 @@ func (r *ProductPricesRepository) FindByProductAndPriceList(productID, priceList
 	`
 
 	var p ProductPriceDTO
-	if err := r.db.QueryRow(query, productID, priceListID).Scan(&p.ID, &p.ProductID, &p.PriceListID, &p.Price,
+	if err := r.db.QueryRowContext(ctx, query, productID, priceListID).Scan(&p.ID, &p.ProductID, &p.PriceListID, &p.Price,
 		&p.Currency, &p.Margin, &p.TaxIncluded, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProductPriceNotFound
@@ -154,24 +155,29 @@ func (r *ProductPricesRepository) FindByProductAndPriceList(productID, priceList
 	return &p, nil
 }
 
-// FindEffectivePrice resolves the price a product should be sold at in a
-// given currency: among every active, currently-valid price list carrying
-// a price for the product in that currency, it picks the one from the
-// highest-priority price list (ecom_price_list.priority).
-func (r *ProductPricesRepository) FindEffectivePrice(productID, currencyID int64) (*ProductPriceDTO, error) {
+// FindEffectivePrice resolves the price a product should be sold at, across
+// every currency: among every active, currently-valid price list carrying a
+// price for the product (regardless of that list's currency), it picks the
+// one from the highest-priority price list (ecom_price_list.priority). The
+// returned row's Currency may not be the caller's target currency — callers
+// needing a specific currency (e.g. MXN for marketplace sync) must convert
+// via ExchangeRatesRepository themselves; see
+// application/pricing.EffectivePriceResolver, the only intended caller for
+// that use case.
+func (r *ProductPricesRepository) FindEffectivePrice(ctx context.Context, productID int64) (*ProductPriceDTO, error) {
 	query := `
 		SELECT pp.id, pp.product_id, pp.price_list_id, pp.price, pp.currency, pp.margin,
 		       pp.tax_included, pp.updated_by, pp.created_at, pp.updated_at
 		FROM ecom_product_prices pp
 		INNER JOIN ecom_price_list pl ON pl.id = pp.price_list_id AND pl.deleted_at IS NULL
-		WHERE pp.product_id = ? AND pp.currency = ?
+		WHERE pp.product_id = ?
 		  AND pl.status = 'active' AND CURDATE() BETWEEN pl.valid_from AND pl.valid_to
 		ORDER BY pl.priority DESC, pp.updated_at DESC
 		LIMIT 1
 	`
 
 	var p ProductPriceDTO
-	if err := r.db.QueryRow(query, productID, currencyID).Scan(&p.ID, &p.ProductID, &p.PriceListID, &p.Price,
+	if err := r.db.QueryRowContext(ctx, query, productID).Scan(&p.ID, &p.ProductID, &p.PriceListID, &p.Price,
 		&p.Currency, &p.Margin, &p.TaxIncluded, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProductPriceNotFound
@@ -182,13 +188,13 @@ func (r *ProductPricesRepository) FindEffectivePrice(productID, currencyID int64
 	return &p, nil
 }
 
-func (r *ProductPricesRepository) Create(input CreateProductPriceInput) (*ProductPriceDTO, error) {
+func (r *ProductPricesRepository) Create(ctx context.Context, input CreateProductPriceInput) (*ProductPriceDTO, error) {
 	query := `
 		INSERT INTO ecom_product_prices (product_id, price_list_id, price, currency, margin, tax_included, updated_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ProductID, input.PriceListID, input.Price,
+	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.PriceListID, input.Price,
 		input.Currency, input.Margin, input.TaxIncluded, input.UpdatedBy)
 	if err != nil {
 		return nil, err
@@ -199,17 +205,17 @@ func (r *ProductPricesRepository) Create(input CreateProductPriceInput) (*Produc
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ProductPricesRepository) Update(id int64, input UpdateProductPriceInput) (*ProductPriceDTO, error) {
+func (r *ProductPricesRepository) Update(ctx context.Context, id int64, input UpdateProductPriceInput) (*ProductPriceDTO, error) {
 	query := `
 		UPDATE ecom_product_prices
 		SET price = ?, margin = ?, tax_included = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ?
 	`
 
-	result, err := r.db.Exec(query, input.Price, input.Margin, input.TaxIncluded, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Price, input.Margin, input.TaxIncluded, input.UpdatedBy, id)
 	if err != nil {
 		return nil, err
 	}
@@ -223,13 +229,13 @@ func (r *ProductPricesRepository) Update(id int64, input UpdateProductPriceInput
 		return nil, ErrProductPriceNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ProductPricesRepository) Delete(id int64) error {
+func (r *ProductPricesRepository) Delete(ctx context.Context, id int64) error {
 	query := "DELETE FROM ecom_product_prices WHERE id = ?"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

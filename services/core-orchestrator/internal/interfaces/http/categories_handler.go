@@ -26,7 +26,7 @@ func NewCategoryHandler(service *categoriesApp.CategoryService) *CategoryHandler
 }
 
 func (h *CategoryHandler) GetCategories(w http.ResponseWriter, r *http.Request) {
-	categories, err := h.service.GetCategories()
+	categories, err := h.service.GetCategories(r.Context())
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -44,7 +44,7 @@ func (h *CategoryHandler) GetCategoryByID(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	category, err := h.service.GetCategoryByID(id)
+	category, err := h.service.GetCategoryByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrCategoryNotFound) {
 			writeJSONError(w, http.StatusNotFound, "category not found")
@@ -66,7 +66,7 @@ func (h *CategoryHandler) GetCategoryChildren(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	children, err := h.service.GetCategoryChildren(id)
+	children, err := h.service.GetCategoryChildren(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, categoriesApp.ErrInvalidCategoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid category id")
@@ -100,7 +100,7 @@ func (h *CategoryHandler) CreateCategory(w http.ResponseWriter, r *http.Request)
 		CreatedBy: user.ID,
 	}
 
-	category, err := h.service.CreateCategory(input)
+	category, err := h.service.CreateCategory(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, categoriesApp.ErrInvalidCategoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
@@ -140,7 +140,7 @@ func (h *CategoryHandler) UpdateCategory(w http.ResponseWriter, r *http.Request)
 		UpdatedBy: user.ID,
 	}
 
-	category, err := h.service.UpdateCategory(id, input)
+	category, err := h.service.UpdateCategory(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, categoriesApp.ErrInvalidCategoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
@@ -166,7 +166,7 @@ func (h *CategoryHandler) DeleteCategory(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = h.service.DeleteCategory(id)
+	err = h.service.DeleteCategory(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrCategoryNotFound) {
 			writeJSONError(w, http.StatusNotFound, "category not found")

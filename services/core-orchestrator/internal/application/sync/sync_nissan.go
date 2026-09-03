@@ -44,41 +44,60 @@ type nissanSyncCache struct {
 	priceListID   int64
 	branchIDs     map[string]int64
 	warehouseIDs  map[int64]int64
+
+	// pendingOldPartNumbers/pendingNewPartNumbers son los part numbers que, al momento de
+	// arrancar la corrida, tenían una sucesión (ecom_part_number_supersessions) pendiente de
+	// resolver por ese lado. run() solo llama a ResolveForProduct para un SKU si aparece en
+	// alguno de estos sets (o si el propio registro declara una sucesión), en vez de hacerlo
+	// siempre — evita 2 SELECT redundantes por cada uno de los miles de SKUs que nunca tienen
+	// una sucesión relacionada. syncPartNumberSupersession agrega a pendingNewPartNumbers en
+	// caliente cuando crea/actualiza una sucesión cuyo sucesor todavía no existe, para que si
+	// ese SKU aparece más adelante en esta misma corrida, también dispare su resolución.
+	pendingOldPartNumbers map[string]bool
+	pendingNewPartNumbers map[string]bool
 }
 
 // prepareNissanSyncCache resuelve fuente/moneda/lista de precios una vez, antes de procesar
 // cualquier SKU, en vez de dentro de la transacción de cada uno.
-func prepareNissanSyncCache(db *sql.DB) (*nissanSyncCache, error) {
+func prepareNissanSyncCache(ctx context.Context, db *sql.DB) (*nissanSyncCache, error) {
 	sourcesRepo := mysqlRepo.NewSourcesRepository(db)
 	currenciesRepo := mysqlRepo.NewCurrenciesRepository(db)
 	priceListRepo := mysqlRepo.NewPriceListRepository(db)
 
-	source, err := findOrCreateNissanSource(sourcesRepo)
+	source, err := findOrCreateNissanSource(ctx, sourcesRepo)
 	if err != nil {
 		return nil, fmt.Errorf("resolving Nissan source: %w", err)
 	}
 
-	mxn, err := currenciesRepo.FindByCode(mxnCurrencyCode)
+	mxn, err := currenciesRepo.FindByCode(ctx, mxnCurrencyCode)
 	if err != nil {
 		return nil, fmt.Errorf("MXN currency not found in ecom_currencies: %w", err)
 	}
 
-	priceList, err := findOrCreateNissanPriceList(priceListRepo, mxn.ID)
+	priceList, err := findOrCreateNissanPriceList(ctx, priceListRepo, mxn.ID)
 	if err != nil {
 		return nil, fmt.Errorf("resolving price list %q: %w", nissanPriceList, err)
 	}
 
+	partNumberSupersessionsRepo := mysqlRepo.NewPartNumberSupersessionsRepository(db)
+	pendingOld, pendingNew, err := partNumberSupersessionsRepo.FindPendingPartNumbers(ctx, source.ID)
+	if err != nil {
+		return nil, fmt.Errorf("preloading pending part number supersessions: %w", err)
+	}
+
 	return &nissanSyncCache{
-		sourceID:      source.ID,
-		mxnCurrencyID: mxn.ID,
-		priceListID:   priceList.ID,
-		branchIDs:     make(map[string]int64),
-		warehouseIDs:  make(map[int64]int64),
+		sourceID:              source.ID,
+		mxnCurrencyID:         mxn.ID,
+		priceListID:           priceList.ID,
+		branchIDs:             make(map[string]int64),
+		warehouseIDs:          make(map[int64]int64),
+		pendingOldPartNumbers: pendingOld,
+		pendingNewPartNumbers: pendingNew,
 	}, nil
 }
 
-func findOrCreateNissanSource(repo *mysqlRepo.SourcesRepository) (*mysqlRepo.SourceDTO, error) {
-	source, err := repo.FindByCode(nissanSourceCode)
+func findOrCreateNissanSource(ctx context.Context, repo *mysqlRepo.SourcesRepository) (*mysqlRepo.SourceDTO, error) {
+	source, err := repo.FindByCode(ctx, nissanSourceCode)
 	if err == nil {
 		return source, nil
 	}
@@ -86,24 +105,24 @@ func findOrCreateNissanSource(repo *mysqlRepo.SourcesRepository) (*mysqlRepo.Sou
 		return nil, err
 	}
 
-	return repo.Create(mysqlRepo.CreateSourceInput{
+	return repo.Create(ctx, mysqlRepo.CreateSourceInput{
 		Code:      nissanSourceCode,
 		Name:      nissanSourceName,
 		CreatedBy: systemUserID,
 	})
 }
 
-func findOrCreateNissanPriceList(repo *mysqlRepo.PriceListRepository, currencyID int64) (*mysqlRepo.PriceListDTO, error) {
+func findOrCreateNissanPriceList(ctx context.Context, repo *mysqlRepo.PriceListRepository, currencyID int64) (*mysqlRepo.PriceListDTO, error) {
 	today := time.Now().Format("2006-01-02")
 	tomorrow := time.Now().AddDate(0, 0, 1).Format("2006-01-02")
 
-	priceList, err := repo.FindByName(nissanPriceList)
+	priceList, err := repo.FindByName(ctx, nissanPriceList)
 	if err != nil {
 		if !errors.Is(err, mysqlRepo.ErrPriceListNotFound) {
 			return nil, err
 		}
 
-		priceList, err = repo.Create(mysqlRepo.CreatePriceListInput{
+		priceList, err = repo.Create(ctx, mysqlRepo.CreatePriceListInput{
 			Name:      nissanPriceList,
 			Currency:  currencyID,
 			Priority:  0,
@@ -118,7 +137,7 @@ func findOrCreateNissanPriceList(repo *mysqlRepo.PriceListRepository, currencyID
 	}
 
 	// La lista debe extenderse en cada sync, exista o se acabe de crear.
-	return repo.Update(priceList.ID, mysqlRepo.UpdatePriceListInput{
+	return repo.Update(ctx, priceList.ID, mysqlRepo.UpdatePriceListInput{
 		Name:      nissanPriceList,
 		Currency:  currencyID,
 		Priority:  0,
@@ -129,37 +148,50 @@ func findOrCreateNissanPriceList(repo *mysqlRepo.PriceListRepository, currencyID
 	})
 }
 
-// ProcessNissanExistencia persiste en MySQL un registro de existencias de Nissan leído
-// de Redis: producto (ecom_products), stock (ecom_product_stock/ecom_stock_movements) y
-// precio (ecom_product_prices/ecom_price_history). Las escrituras que esto implica corren
-// dentro de una única transacción: si cualquier paso falla, se revierte todo en vez de
-// dejar, por ejemplo, stock actualizado sin su movimiento correspondiente. Fuente, moneda,
-// lista de precios, sucursal y almacén ya vienen resueltos en cache, por lo que esta
-// transacción solo toca producto/stock/precio.
-func (s *SyncService) ProcessNissanExistencia(ctx context.Context, e *domain.Existencia, cache *nissanSyncCache) error {
-	tx, err := s.db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("beginning transaction: %w", err)
-	}
+// nissanSyncBatchSize es cuántos registros de Nissan se procesan dentro de una misma
+// transacción MySQL. Antes cada uno de los 8000+ SKUs abría y confirmaba su propia
+// transacción, y cada COMMIT implica un fsync — con miles de SKUs eso por sí solo dominaba
+// el tiempo total del sync. Compartir la transacción entre un lote reduce esa cantidad de
+// commits en el mismo orden que el tamaño del lote. Un registro que falla dentro del lote no
+// aborta a los demás (ver ProcessNissanExistenciaBatch): en MySQL, a diferencia de Postgres,
+// un error de aplicación (fila no encontrada, etc.) no deja la transacción inutilizable para
+// las siguientes sentencias.
+const nissanSyncBatchSize = 250
 
-	if err := newNissanSyncTx(tx).run(e, cache); err != nil {
-		if rbErr := tx.Rollback(); rbErr != nil {
-			return fmt.Errorf("%w (rollback also failed: %v)", err, rbErr)
+// ProcessNissanExistenciaBatch persiste en MySQL un lote de registros de existencias de
+// Nissan leídos de Redis: producto (ecom_products), stock (ecom_product_stock/
+// ecom_stock_movements) y precio (ecom_product_prices/ecom_price_history), todos dentro de
+// una única transacción compartida por el lote (ver nissanSyncBatchSize). Devuelve cuántos
+// registros se sincronizaron correctamente; los que fallan se saltan sin abortar el resto
+// del lote, igual que antes cuando cada registro tenía su propia transacción.
+func (s *SyncService) ProcessNissanExistenciaBatch(ctx context.Context, batch []*domain.Existencia, cache *nissanSyncCache) (synced, failed int, err error) {
+	// Un solo BEGIN/COMMIT por lote (ver nissanSyncBatchSize): con miles de SKUs,
+	// una transacción por registro hacía que el fsync del COMMIT dominara el sync.
+	// Un registro que falla se saltea sin abortar el lote (en MySQL un error de
+	// aplicación no inutiliza la transacción para las siguientes sentencias).
+	txErr := mysqlRepo.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
+		t := newNissanSyncTx(tx)
+		for _, e := range batch {
+			if runErr := t.run(ctx, e, cache); runErr != nil {
+				failed++
+				continue
+			}
+			synced++
 		}
-		return err
+		return nil
+	})
+	if txErr != nil {
+		return synced, failed, fmt.Errorf("committing batch transaction: %w", txErr)
 	}
 
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("committing transaction: %w", err)
-	}
-
-	return nil
+	return synced, failed, nil
 }
 
 // nissanSyncTx agrupa los repos MySQL "scoped" a una única *sql.Tx: cada instancia se usa
-// para un solo ProcessNissanExistencia y se descarta al terminar (se hace commit/rollback
-// por fuera, en ProcessNissanExistencia). Fuente/moneda/lista de precios ya no viven aquí:
-// se resuelven una sola vez por corrida en nissanSyncCache.
+// para un lote entero de registros (ver ProcessNissanExistenciaBatch) y se descarta al
+// terminar (el commit se hace por fuera, en ProcessNissanExistenciaBatch). Fuente/moneda/
+// lista de precios ya no viven aquí: se resuelven una sola vez por corrida en
+// nissanSyncCache.
 type nissanSyncTx struct {
 	productRepo                 *mysqlRepo.ProductRepository
 	branchesRepo                *mysqlRepo.BranchesRepository
@@ -184,66 +216,60 @@ func newNissanSyncTx(tx *sql.Tx) *nissanSyncTx {
 	}
 }
 
-// run ejecuta el flujo para un registro. Primero resuelve si el SKU ya existe: si existe
-// y su stock/precio actuales en MySQL son idénticos a lo que llegó de Nissan, corta ahí
-// (return nil) sin tocar ecom_products/ecom_product_stock/ecom_product_prices — en estado
-// estable la gran mayoría de los 50k+ SKUs no cambian entre una corrida y la siguiente, y
-// escribir cada uno de todas formas (UPDATE + INSERT movimiento + UPDATE precio) era lo que
-// hacía tan lento el sync completo. Si el SKU es nuevo, o si cambió stock o precio, se
-// ejecuta el flujo completo (product_id -> branch_id/warehouse_id -> stock -> precio).
-func (t *nissanSyncTx) run(e *domain.Existencia, cache *nissanSyncCache) error {
-	existingProduct, err := t.productRepo.FindBySKU(e.Code)
+// run ejecuta el flujo para un registro. Si el SKU ya existe en ecom_products, esa fila
+// nunca se toca: run solo crea el producto la primera vez que aparece (createNissanProduct)
+// y en cualquier corrida posterior va derecho a stock/precio. syncProductStock y
+// syncNissanPrice ya comparan contra lo que hay en MySQL antes de escribir (mismo criterio
+// de "no escribir si no cambió" que evitaba las UPDATE/INSERT redundantes en los 50k+ SKUs
+// que, en estado estable, no cambian entre una corrida y la siguiente), así que no hace
+// falta un chequeo combinado por separado.
+func (t *nissanSyncTx) run(ctx context.Context, e *domain.Existencia, cache *nissanSyncCache) error {
+	existingProduct, err := t.productRepo.FindBySKU(ctx, e.Code)
 	isNewProduct := errors.Is(err, mysqlRepo.ErrProductNotFound)
 	if err != nil && !isNewProduct {
 		return fmt.Errorf("looking up product %s: %w", e.Code, err)
 	}
 
-	branchID, err := t.resolveBranch(e.AgencyName, cache)
+	branchID, err := t.resolveBranch(ctx, e.AgencyName, cache)
 	if err != nil {
 		return fmt.Errorf("resolving branch %q: %w", e.AgencyName, err)
 	}
 
-	warehouseID, err := t.resolveWarehouse(e.AgencyName, branchID, cache)
+	warehouseID, err := t.resolveWarehouse(ctx, e.AgencyName, branchID, cache)
 	if err != nil {
 		return fmt.Errorf("resolving warehouse %q: %w", e.AgencyName, err)
 	}
 
-	// Independiente del "unchanged" de stock/precio: PROD_SUPERSESION puede empezar a
-	// reportarse (o cambiar) para un SKU cuyo stock/precio no se movieron en esta corrida.
-	if err := t.syncPartNumberSupersession(cache.sourceID, e); err != nil {
+	if err := t.syncPartNumberSupersession(ctx, cache, e); err != nil {
 		return fmt.Errorf("syncing part number supersession for product %s: %w", e.Code, err)
 	}
 
-	if !isNewProduct {
-		unchanged, err := t.stockAndPriceUnchanged(existingProduct.ID, branchID, warehouseID, cache.priceListID, e)
+	productID := int64(0)
+	if isNewProduct {
+		product, err := t.createNissanProduct(ctx, e, cache)
 		if err != nil {
-			return fmt.Errorf("checking current state for %s: %w", e.Code, err)
+			return fmt.Errorf("creating product %s: %w", e.Code, err)
 		}
-		if unchanged {
-			// Aun sin cambios de stock/precio, hay que reintentar la resolución: una
-			// sucesión pendiente pudo haber quedado esperando a este producto (que ya
-			// existía) desde una corrida anterior.
-			if err := t.partNumberSupersessionsRepo.ResolveForProduct(cache.sourceID, existingProduct.ID, e.Code, systemUserID); err != nil {
-				return fmt.Errorf("resolving part number supersessions for product %s: %w", e.Code, err)
-			}
-			return nil
+		productID = product.ID
+	} else {
+		productID = existingProduct.ID
+	}
+
+	// Solo vale la pena llamar a ResolveForProduct (2 SELECT) si este SKU realmente puede
+	// tener algo que resolver: declara una sucesión él mismo, o aparece en alguno de los sets
+	// precargados en cache (ver pendingOldPartNumbers/pendingNewPartNumbers). Para la gran
+	// mayoría de los SKUs, que nunca participan de una sucesión, esto evita la consulta.
+	if e.SupersededByPartNumber != "" || cache.pendingOldPartNumbers[e.Code] || cache.pendingNewPartNumbers[e.Code] {
+		if err := t.partNumberSupersessionsRepo.ResolveForProduct(ctx, cache.sourceID, productID, e.Code, systemUserID); err != nil {
+			return fmt.Errorf("resolving part number supersessions for product %s: %w", e.Code, err)
 		}
 	}
 
-	product, err := t.upsertNissanProduct(e, existingProduct, isNewProduct, cache)
-	if err != nil {
-		return fmt.Errorf("upserting product %s: %w", e.Code, err)
-	}
-
-	if err := t.partNumberSupersessionsRepo.ResolveForProduct(cache.sourceID, product.ID, e.Code, systemUserID); err != nil {
-		return fmt.Errorf("resolving part number supersessions for product %s: %w", e.Code, err)
-	}
-
-	if err := t.syncProductStock(product.ID, branchID, warehouseID, e.Stock); err != nil {
+	if err := t.syncProductStock(ctx, productID, branchID, warehouseID, e.Stock); err != nil {
 		return fmt.Errorf("syncing stock for product %s: %w", e.Code, err)
 	}
 
-	if err := t.syncNissanPrice(product.ID, cache.mxnCurrencyID, cache.priceListID, e.CostProm); err != nil {
+	if err := t.syncNissanPrice(ctx, productID, cache.mxnCurrencyID, cache.priceListID, e.CostProm); err != nil {
 		return fmt.Errorf("syncing price for product %s: %w", e.Code, err)
 	}
 
@@ -252,7 +278,7 @@ func (t *nissanSyncTx) run(e *domain.Existencia, cache *nissanSyncCache) error {
 
 // syncPartNumberSupersession guarda o actualiza el estado actual de la sucesión reportada por
 // PROD_SUPERSESION para este renglón, con el mismo criterio de "no escribir si no cambió" que
-// stockAndPriceUnchanged/syncProductStock/syncNissanPrice: la gran mayoría de los SKUs no
+// syncProductStock/syncNissanPrice: la gran mayoría de los SKUs no
 // traen supersesión, y entre los que sí, la mayoría no cambia de una corrida a otra.
 //
 // El lado "viejo" (old_part_number) no necesita resolverse aquí: siempre es el propio e.Code,
@@ -261,19 +287,19 @@ func (t *nissanSyncTx) run(e *domain.Existencia, cache *nissanSyncCache) error {
 // activamente aquí — si el producto sucesor ya existe, se vincula en el momento en vez de
 // esperar a que ese producto pase por su propio run() (lo cual solo pasa si su SKU aparece en
 // esta misma corrida o en una futura).
-func (t *nissanSyncTx) syncPartNumberSupersession(sourceID int64, e *domain.Existencia) error {
+func (t *nissanSyncTx) syncPartNumberSupersession(ctx context.Context, cache *nissanSyncCache, e *domain.Existencia) error {
 	if e.SupersededByPartNumber == "" {
 		return nil
 	}
 
 	var row *mysqlRepo.PartNumberSupersessionDTO
 
-	existing, err := t.partNumberSupersessionsRepo.FindByOldPartNumber(sourceID, e.Code)
+	existing, err := t.partNumberSupersessionsRepo.FindByOldPartNumber(ctx, cache.sourceID, e.Code)
 	switch {
 	case err == nil:
 		row = existing
 		if existing.NewPartNumber != e.SupersededByPartNumber {
-			row, err = t.partNumberSupersessionsRepo.Update(existing.ID, mysqlRepo.UpdatePartNumberSupersessionInput{
+			row, err = t.partNumberSupersessionsRepo.Update(ctx, existing.ID, mysqlRepo.UpdatePartNumberSupersessionInput{
 				NewPartNumber: e.SupersededByPartNumber,
 				UpdatedBy:     systemUserID,
 			})
@@ -282,8 +308,8 @@ func (t *nissanSyncTx) syncPartNumberSupersession(sourceID int64, e *domain.Exis
 			}
 		}
 	case errors.Is(err, mysqlRepo.ErrPartNumberSupersessionNotFound):
-		row, err = t.partNumberSupersessionsRepo.Create(mysqlRepo.CreatePartNumberSupersessionInput{
-			SourceID:      sourceID,
+		row, err = t.partNumberSupersessionsRepo.Create(ctx, mysqlRepo.CreatePartNumberSupersessionInput{
+			SourceID:      cache.sourceID,
 			OldPartNumber: e.Code,
 			NewPartNumber: e.SupersededByPartNumber,
 			CreatedBy:     systemUserID,
@@ -301,53 +327,29 @@ func (t *nissanSyncTx) syncPartNumberSupersession(sourceID int64, e *domain.Exis
 		return nil
 	}
 
-	successor, err := t.productRepo.FindBySourceAndPartNumber(sourceID, e.SupersededByPartNumber)
+	successor, err := t.productRepo.FindBySourceAndPartNumber(ctx, cache.sourceID, e.SupersededByPartNumber)
 	if errors.Is(err, mysqlRepo.ErrProductNotFound) {
 		// El sucesor todavía no existe como producto: la fila queda con new_product_id en
-		// NULL, y se resolverá más adelante cuando ese SKU pase por su propio run() (ver
-		// ResolveForProduct en run()).
+		// NULL. Se marca en cache para que, si ese SKU aparece más adelante en esta misma
+		// corrida, run() sepa que debe llamar a ResolveForProduct (si no aparece en esta
+		// corrida, se resolverá en la siguiente vía pendingNewPartNumbers precargado en
+		// prepareNissanSyncCache).
+		cache.pendingNewPartNumbers[e.SupersededByPartNumber] = true
 		return nil
 	}
 	if err != nil {
 		return fmt.Errorf("looking up successor product for part number %s: %w", e.SupersededByPartNumber, err)
 	}
 
-	return t.partNumberSupersessionsRepo.MarkNewResolved(row.ID, successor.ID, systemUserID)
+	return t.partNumberSupersessionsRepo.MarkNewResolved(ctx, row.ID, successor.ID, systemUserID)
 }
 
-// stockAndPriceUnchanged compara el stock/precio que ya está en MySQL contra lo que llegó
-// de Nissan para este SKU. Si cualquiera de los dos no existe todavía (primera vez que este
-// producto tiene stock o precio en esta sucursal/lista), se considera "cambiado" para que el
-// flujo normal lo cree.
-func (t *nissanSyncTx) stockAndPriceUnchanged(productID, branchID, warehouseID, priceListID int64, e *domain.Existencia) (bool, error) {
-	stock, err := t.productStockRepo.FindByProductBranchWarehouse(productID, branchID, warehouseID)
-	if errors.Is(err, mysqlRepo.ErrProductStockNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-	if stock.AvailableQty != e.Stock {
-		return false, nil
-	}
-
-	price, err := t.productPricesRepo.FindByProductAndPriceList(productID, priceListID)
-	if errors.Is(err, mysqlRepo.ErrProductPriceNotFound) {
-		return false, nil
-	}
-	if err != nil {
-		return false, err
-	}
-
-	return price.Price == fmt.Sprintf("%.2f", e.CostProm), nil
-}
-
-func (t *nissanSyncTx) resolveBranch(name string, cache *nissanSyncCache) (int64, error) {
+func (t *nissanSyncTx) resolveBranch(ctx context.Context, name string, cache *nissanSyncCache) (int64, error) {
 	if id, ok := cache.branchIDs[name]; ok {
 		return id, nil
 	}
 
-	branch, err := t.findOrCreateBranch(name)
+	branch, err := t.findOrCreateBranch(ctx, name)
 	if err != nil {
 		return 0, err
 	}
@@ -356,12 +358,12 @@ func (t *nissanSyncTx) resolveBranch(name string, cache *nissanSyncCache) (int64
 	return branch.ID, nil
 }
 
-func (t *nissanSyncTx) resolveWarehouse(name string, branchID int64, cache *nissanSyncCache) (int64, error) {
+func (t *nissanSyncTx) resolveWarehouse(ctx context.Context, name string, branchID int64, cache *nissanSyncCache) (int64, error) {
 	if id, ok := cache.warehouseIDs[branchID]; ok {
 		return id, nil
 	}
 
-	warehouse, err := t.findOrCreateWarehouse(name, branchID)
+	warehouse, err := t.findOrCreateWarehouse(ctx, name, branchID)
 	if err != nil {
 		return 0, err
 	}
@@ -370,43 +372,26 @@ func (t *nissanSyncTx) resolveWarehouse(name string, branchID int64, cache *niss
 	return warehouse.ID, nil
 }
 
-func (t *nissanSyncTx) upsertNissanProduct(e *domain.Existencia, existing *mysqlRepo.ProductDTO, isNew bool, cache *nissanSyncCache) (*mysqlRepo.ProductDTO, error) {
-	productType := nissanProductType(e.Type)
-
-	if isNew {
-		return t.productRepo.Create(mysqlRepo.CreateProductInput{
-			SKU:         e.Code,
-			PartNumber:  e.Code,
-			Name:        e.Description,
-			ProductType: productType,
-			IsSellable:  true,
-			IsStockable: true,
-			SourceID:    cache.sourceID,
-			CreatedBy:   systemUserID,
-		})
-	}
-
-	// Preserva campos que no pertenecen a este sync (marca, categoría, status, descripción
-	// larga) para no pisar curación manual hecha desde el admin-dashboard.
-	return t.productRepo.Update(existing.ID, mysqlRepo.UpdateProductInput{
-		SKU:              e.Code,
-		PartNumber:       e.Code,
-		Name:             e.Description,
-		Description:      existing.Description,
-		ShortDescription: existing.ShortDescription,
-		BrandID:          existing.BrandID,
-		CategoryID:       existing.CategoryID,
-		ProductType:      productType,
-		Status:           existing.Status,
-		IsSellable:       existing.IsSellable,
-		IsStockable:      existing.IsStockable,
-		SourceID:         cache.sourceID,
-		UpdatedBy:        systemUserID,
+// createNissanProduct crea la fila en ecom_products la primera vez que un SKU de Nissan
+// aparece. Un SKU ya existente nunca pasa por acá: run va derecho a stock/precio sin tocar
+// ecom_products, para no pisar curación manual hecha desde el admin-dashboard (marca,
+// categoría, status, descripción, e incluso name/product_type, que antes se resincronizaban
+// desde Nissan en cada refresh de stock/precio).
+func (t *nissanSyncTx) createNissanProduct(ctx context.Context, e *domain.Existencia, cache *nissanSyncCache) (*mysqlRepo.ProductDTO, error) {
+	return t.productRepo.Create(ctx, mysqlRepo.CreateProductInput{
+		SKU:         e.Code,
+		PartNumber:  e.Code,
+		Name:        e.Description,
+		ProductType: nissanProductType(e.Type),
+		IsSellable:  true,
+		IsStockable: true,
+		SourceID:    cache.sourceID,
+		CreatedBy:   systemUserID,
 	})
 }
 
-func (t *nissanSyncTx) findOrCreateBranch(name string) (*mysqlRepo.BranchDTO, error) {
-	branch, err := t.branchesRepo.FindByName(name)
+func (t *nissanSyncTx) findOrCreateBranch(ctx context.Context, name string) (*mysqlRepo.BranchDTO, error) {
+	branch, err := t.branchesRepo.FindByName(ctx, name)
 	if err == nil {
 		return branch, nil
 	}
@@ -414,14 +399,14 @@ func (t *nissanSyncTx) findOrCreateBranch(name string) (*mysqlRepo.BranchDTO, er
 		return nil, err
 	}
 
-	return t.branchesRepo.Create(mysqlRepo.CreateBranchInput{
+	return t.branchesRepo.Create(ctx, mysqlRepo.CreateBranchInput{
 		Name:      name,
 		CreatedBy: systemUserID,
 	})
 }
 
-func (t *nissanSyncTx) findOrCreateWarehouse(name string, branchID int64) (*mysqlRepo.WarehouseDTO, error) {
-	warehouse, err := t.warehousesRepo.FindByNameAndBranch(name, branchID)
+func (t *nissanSyncTx) findOrCreateWarehouse(ctx context.Context, name string, branchID int64) (*mysqlRepo.WarehouseDTO, error) {
+	warehouse, err := t.warehousesRepo.FindByNameAndBranch(ctx, name, branchID)
 	if err == nil {
 		return warehouse, nil
 	}
@@ -429,17 +414,17 @@ func (t *nissanSyncTx) findOrCreateWarehouse(name string, branchID int64) (*mysq
 		return nil, err
 	}
 
-	return t.warehousesRepo.Create(mysqlRepo.CreateWarehouseInput{
+	return t.warehousesRepo.Create(ctx, mysqlRepo.CreateWarehouseInput{
 		Name:      name,
 		BranchID:  branchID,
 		CreatedBy: systemUserID,
 	})
 }
 
-func (t *nissanSyncTx) syncProductStock(productID, branchID, warehouseID int64, newQty int) error {
+func (t *nissanSyncTx) syncProductStock(ctx context.Context, productID, branchID, warehouseID int64, newQty int) error {
 	before := 0
 
-	existing, err := t.productStockRepo.FindByProductBranchWarehouse(productID, branchID, warehouseID)
+	existing, err := t.productStockRepo.FindByProductBranchWarehouse(ctx, productID, branchID, warehouseID)
 	switch {
 	case err == nil:
 		if existing.AvailableQty == newQty {
@@ -447,14 +432,14 @@ func (t *nissanSyncTx) syncProductStock(productID, branchID, warehouseID int64, 
 		}
 
 		before = existing.AvailableQty
-		if _, updateErr := t.productStockRepo.Update(existing.ID, mysqlRepo.UpdateProductStockInput{
+		if _, updateErr := t.productStockRepo.Update(ctx, existing.ID, mysqlRepo.UpdateProductStockInput{
 			AvailableQty: newQty,
 			UpdatedBy:    systemUserID,
 		}); updateErr != nil {
 			return updateErr
 		}
 	case errors.Is(err, mysqlRepo.ErrProductStockNotFound):
-		if _, createErr := t.productStockRepo.Create(mysqlRepo.CreateProductStockInput{
+		if _, createErr := t.productStockRepo.Create(ctx, mysqlRepo.CreateProductStockInput{
 			ProductID:    productID,
 			BranchID:     branchID,
 			WarehouseID:  warehouseID,
@@ -466,7 +451,7 @@ func (t *nissanSyncTx) syncProductStock(productID, branchID, warehouseID int64, 
 		return err
 	}
 
-	_, err = t.stockMovementsRepo.Create(mysqlRepo.CreateStockMovementInput{
+	_, err = t.stockMovementsRepo.Create(ctx, mysqlRepo.CreateStockMovementInput{
 		ProductID:      productID,
 		BranchID:       branchID,
 		WarehouseID:    warehouseID,
@@ -480,11 +465,11 @@ func (t *nissanSyncTx) syncProductStock(productID, branchID, warehouseID int64, 
 	return err
 }
 
-func (t *nissanSyncTx) syncNissanPrice(productID, currencyID, priceListID int64, costProm float64) error {
+func (t *nissanSyncTx) syncNissanPrice(ctx context.Context, productID, currencyID, priceListID int64, costProm float64) error {
 	newPrice := fmt.Sprintf("%.2f", costProm)
 	oldPrice := "0.00"
 
-	existingPrice, err := t.productPricesRepo.FindByProductAndPriceList(productID, priceListID)
+	existingPrice, err := t.productPricesRepo.FindByProductAndPriceList(ctx, productID, priceListID)
 	switch {
 	case err == nil:
 		if existingPrice.Price == newPrice {
@@ -492,7 +477,7 @@ func (t *nissanSyncTx) syncNissanPrice(productID, currencyID, priceListID int64,
 		}
 
 		oldPrice = existingPrice.Price
-		if _, updateErr := t.productPricesRepo.Update(existingPrice.ID, mysqlRepo.UpdateProductPriceInput{
+		if _, updateErr := t.productPricesRepo.Update(ctx, existingPrice.ID, mysqlRepo.UpdateProductPriceInput{
 			Price:       newPrice,
 			Margin:      existingPrice.Margin,
 			TaxIncluded: false,
@@ -501,7 +486,7 @@ func (t *nissanSyncTx) syncNissanPrice(productID, currencyID, priceListID int64,
 			return updateErr
 		}
 	case errors.Is(err, mysqlRepo.ErrProductPriceNotFound):
-		if _, createErr := t.productPricesRepo.Create(mysqlRepo.CreateProductPriceInput{
+		if _, createErr := t.productPricesRepo.Create(ctx, mysqlRepo.CreateProductPriceInput{
 			ProductID:   productID,
 			PriceListID: priceListID,
 			Price:       newPrice,
@@ -520,7 +505,7 @@ func (t *nissanSyncTx) syncNissanPrice(productID, currencyID, priceListID int64,
 		return nil
 	}
 
-	_, err = t.priceHistoryRepo.Create(mysqlRepo.CreatePriceHistoryInput{
+	_, err = t.priceHistoryRepo.Create(ctx, mysqlRepo.CreatePriceHistoryInput{
 		ProductID:   productID,
 		PriceListID: priceListID,
 		CurrencyID:  currencyID,

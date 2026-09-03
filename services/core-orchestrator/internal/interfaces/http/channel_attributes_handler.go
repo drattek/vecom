@@ -35,7 +35,7 @@ func NewChannelAttributeHandler(service *channelAttributesApp.ChannelAttributeSe
 func (h *ChannelAttributeHandler) GetAttributes(w http.ResponseWriter, r *http.Request) {
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetPaginatedAttributes(offset, pageSize)
+	result, err := h.service.GetPaginatedAttributes(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -52,7 +52,7 @@ func (h *ChannelAttributeHandler) GetAttributeByID(w http.ResponseWriter, r *htt
 		return
 	}
 
-	attribute, err := h.service.GetAttributeByID(id)
+	attribute, err := h.service.GetAttributeByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelAttributeNotFound) {
 			writeJSONError(w, http.StatusNotFound, "channel attribute not found")
@@ -73,7 +73,7 @@ func (h *ChannelAttributeHandler) GetAttributesByChannel(w http.ResponseWriter, 
 		return
 	}
 
-	attributes, err := h.service.GetAttributesByChannel(channelID)
+	attributes, err := h.service.GetAttributesByChannel(r.Context(), channelID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -108,7 +108,7 @@ func (h *ChannelAttributeHandler) CreateAttribute(w http.ResponseWriter, r *http
 		CreatedBy:      user.ID,
 	}
 
-	attribute, err := h.service.CreateAttribute(input)
+	attribute, err := h.service.CreateAttribute(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, channelAttributesApp.ErrInvalidChannelAttributePayload) {
 			writeJSONError(w, http.StatusBadRequest, "channelId, a valid targetStrategy/valueMode and externalKey (fixed_key) or targetField (dynamic_field) are required")
@@ -153,7 +153,7 @@ func (h *ChannelAttributeHandler) UpdateAttribute(w http.ResponseWriter, r *http
 		UpdatedBy:      user.ID,
 	}
 
-	attribute, err := h.service.UpdateAttribute(id, input)
+	attribute, err := h.service.UpdateAttribute(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, channelAttributesApp.ErrInvalidChannelAttributePayload) {
 			writeJSONError(w, http.StatusBadRequest, "a valid targetStrategy/valueMode and externalKey (fixed_key) or targetField (dynamic_field) are required")
@@ -178,7 +178,7 @@ func (h *ChannelAttributeHandler) DeleteAttribute(w http.ResponseWriter, r *http
 		return
 	}
 
-	if err := h.service.DeleteAttribute(id); err != nil {
+	if err := h.service.DeleteAttribute(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelAttributeNotFound) {
 			writeJSONError(w, http.StatusNotFound, "channel attribute not found")
 			return
@@ -218,7 +218,7 @@ func (h *ChannelAttributeMapHandler) GetMapsByChannelAttribute(w http.ResponseWr
 		return
 	}
 
-	maps, err := h.service.GetMapsByChannelAttribute(channelAttributeID)
+	maps, err := h.service.GetMapsByChannelAttribute(r.Context(), channelAttributeID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -251,7 +251,7 @@ func (h *ChannelAttributeMapHandler) CreateMap(w http.ResponseWriter, r *http.Re
 		CreatedBy:          user.ID,
 	}
 
-	m, err := h.service.CreateMap(input)
+	m, err := h.service.CreateMap(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, channelAttributesApp.ErrInvalidChannelAttributeMapPayload) {
 			writeJSONError(w, http.StatusBadRequest, "channelAttributeId, a valid sourceType and its matching attributeId/systemField/staticValue are required")
@@ -293,7 +293,7 @@ func (h *ChannelAttributeMapHandler) UpdateMap(w http.ResponseWriter, r *http.Re
 		UpdatedBy:   user.ID,
 	}
 
-	m, err := h.service.UpdateMap(id, input)
+	m, err := h.service.UpdateMap(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, channelAttributesApp.ErrInvalidChannelAttributeMapPayload) {
 			writeJSONError(w, http.StatusBadRequest, "a valid sourceType and its matching attributeId/systemField/staticValue are required")
@@ -318,7 +318,7 @@ func (h *ChannelAttributeMapHandler) DeleteMap(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if err := h.service.DeleteMap(id); err != nil {
+	if err := h.service.DeleteMap(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelAttributeMapNotFound) {
 			writeJSONError(w, http.StatusNotFound, "channel attribute map not found")
 			return

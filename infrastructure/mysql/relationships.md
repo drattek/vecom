@@ -39,6 +39,9 @@
 - `ecom_price_history.product_id` → `ecom_products.id`
 - `ecom_price_history.price_list_id` → `ecom_price_list.id`
 - `ecom_price_history.currency_id` → `ecom_currencies.id`
+- `ecom_pricing_formulas.brand_id` → `ecom_brands.id` (nullable: null = comodín "cualquier marca")
+- `ecom_pricing_formulas.connection_id` → `ecom_channel_connections.id` (nullable: null = comodín "cualquier conexión")
+- `ecom_pricing_formulas.price_list_id` → `ecom_price_list.id` (nullable: null = comodín "cualquier lista de precios"; es la lista que ganó al resolver el precio efectivo del producto, no una lista elegida a mano). Los tres comodines a la vez es el default universal. `PricingFormulaRepository.Resolve` elige, para (brand_id, connection_id, price_list_id) de un producto/conexión/lista dados, la fila más específica: prioridad de eje `connection_id` > `brand_id` > `price_list_id`, con más dimensiones coincidentes ganando ante menos. Aplica al calcular el precio publicado en MercadoLibre y Odoo a partir del precio base efectivo.
 
 ### Compatibilidad de vehículos y equipos
 - `ecom_vehicle_fitments.brand_id` → `ecom_brands.id`

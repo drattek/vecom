@@ -9,10 +9,10 @@ import (
 )
 
 // MercadoLibreListingsAuditHandler scans every listing in a MercadoLibre
-// account for ones matching a flagged price/stock sentinel and, for each
-// match, downloads its images and (when its SKU matches a local
-// ecom_products row) mirrors its attributes/category/name locally — see
-// sync.MercadoLibreListingsAuditService.
+// account for ones matching the flagged price/stock sentinel and, for each
+// match, resolves the local ecom_products row (creating it from the listing
+// when absent) and copies the listing's vehicle compatibilities into MySQL —
+// see sync.MercadoLibreListingsAuditService.
 type MercadoLibreListingsAuditHandler struct {
 	service *syncApp.MercadoLibreListingsAuditService
 }

@@ -15,6 +15,7 @@ package channel_listings
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strconv"
@@ -27,6 +28,14 @@ import (
 // maxCompatibilitiesPerSKU bounds how many vehicle compatibilities are
 // fanned out into listings for a single SKU in one call.
 const maxCompatibilitiesPerSKU = 500
+
+// nissanBrandID is ecom_brands.id for "Nissan" in this deployment's seed data
+// — hardcoded rather than resolved by name/code, mirroring application/sync's
+// identically-named constant. It is the one exception to per-vehicle-fitment
+// listing fan-out: a Nissan-branded product always publishes as a single
+// general listing, even on a connection with allows_multiple_listings=true
+// (see publishReady).
+const nissanBrandID int64 = 1
 
 // maxSuccessionChainNodes bounds how many part numbers resolveSuccessionChain
 // will visit walking ecom_part_number_supersessions (both directions) from a
@@ -175,6 +184,7 @@ type CreateListingsResult struct {
 // registered for it. Register additional marketplaces by calling Register
 // with their ecom_channels.code — the batch/dispatch logic never changes.
 type Service struct {
+	db                                    *sql.DB
 	productRepository                     *mysqlInfra.ProductRepository
 	productImagesRepository               *mysqlInfra.ProductImagesRepository
 	productStockRepository                *mysqlInfra.ProductStockRepository
@@ -191,6 +201,7 @@ type Service struct {
 }
 
 func NewService(
+	db *sql.DB,
 	productRepository *mysqlInfra.ProductRepository,
 	productImagesRepository *mysqlInfra.ProductImagesRepository,
 	productStockRepository *mysqlInfra.ProductStockRepository,
@@ -204,6 +215,7 @@ func NewService(
 	partNumberSupersessionsRepository *mysqlInfra.PartNumberSupersessionsRepository,
 ) *Service {
 	return &Service{
+		db:                                    db,
 		productRepository:                     productRepository,
 		productImagesRepository:               productImagesRepository,
 		productStockRepository:                productStockRepository,
@@ -265,7 +277,7 @@ func (s *Service) CreateListings(ctx context.Context, input CreateListingsInput)
 		return nil, ErrEmptyChannelListingsInput
 	}
 
-	connection, publisher, err := s.resolveConnectionPublisher(input.ConnectionID)
+	connection, publisher, err := s.resolveConnectionPublisher(ctx, input.ConnectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -274,7 +286,7 @@ func (s *Service) CreateListings(ctx context.Context, input CreateListingsInput)
 	processedProductIDs := make(map[int64]bool, len(skus))
 
 	for _, sku := range skus {
-		product, err := s.productRepository.FindBySKU(sku)
+		product, err := s.productRepository.FindBySKU(ctx, sku)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 				results = append(results, ListingOutcome{SKU: sku, Error: "product not found for sku"})
@@ -287,7 +299,7 @@ func (s *Service) CreateListings(ctx context.Context, input CreateListingsInput)
 			continue
 		}
 
-		chain, err := s.resolveSuccessionChain(product)
+		chain, err := s.resolveSuccessionChain(ctx, product)
 		if err != nil {
 			results = append(results, ListingOutcome{SKU: sku, Error: fmt.Sprintf("error resolving succession chain: %v", err)})
 			continue
@@ -319,17 +331,17 @@ func (s *Service) CreateListings(ctx context.Context, input CreateListingsInput)
 // fanning out to the rest of the chain (those are each retried through their
 // own queue entry, if they have one).
 func (s *Service) RetryQueuedEntry(ctx context.Context, productID, connectionID int64) (*CreateListingsResult, error) {
-	product, err := s.productRepository.FindByID(productID)
+	product, err := s.productRepository.FindByID(ctx, productID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading product %d: %w", productID, err)
 	}
 
-	connection, publisher, err := s.resolveConnectionPublisher(connectionID)
+	connection, publisher, err := s.resolveConnectionPublisher(ctx, connectionID)
 	if err != nil {
 		return nil, err
 	}
 
-	availableStock, err := s.sumAvailableStock(product.ID)
+	availableStock, err := s.sumAvailableStock(ctx, product.ID)
 	if err != nil {
 		return nil, fmt.Errorf("error checking product stock: %w", err)
 	}
@@ -337,12 +349,12 @@ func (s *Service) RetryQueuedEntry(ctx context.Context, productID, connectionID 
 		return nil, fmt.Errorf("%w: %s", ErrChannelListingsNotReady, reasonNoStock)
 	}
 
-	chain, err := s.resolveSuccessionChain(product)
+	chain, err := s.resolveSuccessionChain(ctx, product)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving succession chain for product %d: %w", product.ID, err)
 	}
 
-	imageSourceProductID, hasImage, err := s.resolveImageSource(product, chain)
+	imageSourceProductID, hasImage, err := s.resolveImageSource(ctx, product, chain)
 	if err != nil {
 		return nil, fmt.Errorf("error checking product images: %w", err)
 	}
@@ -359,8 +371,8 @@ func (s *Service) RetryQueuedEntry(ctx context.Context, productID, connectionID 
 // resolveConnectionPublisher loads connectionID, its channel, and the
 // Publisher registered for that channel's code — shared by CreateListings
 // and RetryQueuedEntry.
-func (s *Service) resolveConnectionPublisher(connectionID int64) (*mysqlInfra.ChannelConnectionDTO, Publisher, error) {
-	connection, err := s.channelConnectionRepository.FindByID(connectionID)
+func (s *Service) resolveConnectionPublisher(ctx context.Context, connectionID int64) (*mysqlInfra.ChannelConnectionDTO, Publisher, error) {
+	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
 			return nil, nil, ErrInvalidChannelConnection
@@ -368,7 +380,7 @@ func (s *Service) resolveConnectionPublisher(connectionID int64) (*mysqlInfra.Ch
 		return nil, nil, fmt.Errorf("error loading connection %d: %w", connectionID, err)
 	}
 
-	channel, err := s.channelRepository.FindByID(connection.ChannelID)
+	channel, err := s.channelRepository.FindByID(ctx, connection.ChannelID)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
 	}
@@ -421,7 +433,7 @@ func (s *Service) RefreshListings(ctx context.Context, input RefreshListingsInpu
 		return nil, ErrInvalidChannelConnection
 	}
 
-	connection, err := s.channelConnectionRepository.FindByID(input.ConnectionID)
+	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
 			return nil, ErrInvalidChannelConnection
@@ -429,7 +441,7 @@ func (s *Service) RefreshListings(ctx context.Context, input RefreshListingsInpu
 		return nil, fmt.Errorf("error loading connection %d: %w", input.ConnectionID, err)
 	}
 
-	channel, err := s.channelRepository.FindByID(connection.ChannelID)
+	channel, err := s.channelRepository.FindByID(ctx, connection.ChannelID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
 	}
@@ -445,7 +457,7 @@ func (s *Service) RefreshListings(ctx context.Context, input RefreshListingsInpu
 		}
 	}
 
-	listings, err := s.channelProductMapRepository.FindAllByConnectionID(input.ConnectionID)
+	listings, err := s.channelProductMapRepository.FindAllByConnectionID(ctx, input.ConnectionID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel product map for connection %d: %w", input.ConnectionID, err)
 	}
@@ -474,7 +486,7 @@ func (s *Service) refreshOne(ctx context.Context, refresher Refresher, listing *
 	}
 	outcome.ExternalID = externalID
 
-	product, err := s.productRepository.FindByID(listing.ProductID)
+	product, err := s.productRepository.FindByID(ctx, listing.ProductID)
 	if err != nil {
 		outcome.Error = fmt.Sprintf("error loading product: %v", err)
 		return outcome
@@ -504,7 +516,7 @@ func (s *Service) refreshOne(ctx context.Context, refresher Refresher, listing *
 // in ecom_part_number_supersessions doesn't require every link to already
 // have a product. The returned slice always has product itself as its first
 // element.
-func (s *Service) resolveSuccessionChain(product *mysqlInfra.ProductDTO) ([]*mysqlInfra.ProductDTO, error) {
+func (s *Service) resolveSuccessionChain(ctx context.Context, product *mysqlInfra.ProductDTO) ([]*mysqlInfra.ProductDTO, error) {
 	visited := map[string]bool{product.PartNumber: true}
 	queue := []string{product.PartNumber}
 	chain := []*mysqlInfra.ProductDTO{product}
@@ -515,7 +527,7 @@ func (s *Service) resolveSuccessionChain(product *mysqlInfra.ProductDTO) ([]*mys
 
 		var linkedPartNumbers []string
 
-		forward, err := s.partNumberSupersessionsRepository.FindByOldPartNumber(product.SourceID, current)
+		forward, err := s.partNumberSupersessionsRepository.FindByOldPartNumber(ctx, product.SourceID, current)
 		if err != nil && !errors.Is(err, mysqlInfra.ErrPartNumberSupersessionNotFound) {
 			return nil, fmt.Errorf("error looking up successor for part number %s: %w", current, err)
 		}
@@ -523,7 +535,7 @@ func (s *Service) resolveSuccessionChain(product *mysqlInfra.ProductDTO) ([]*mys
 			linkedPartNumbers = append(linkedPartNumbers, forward.NewPartNumber)
 		}
 
-		backward, err := s.partNumberSupersessionsRepository.FindByNewPartNumber(product.SourceID, current)
+		backward, err := s.partNumberSupersessionsRepository.FindByNewPartNumber(ctx, product.SourceID, current)
 		if err != nil {
 			return nil, fmt.Errorf("error looking up predecessors for part number %s: %w", current, err)
 		}
@@ -538,7 +550,7 @@ func (s *Service) resolveSuccessionChain(product *mysqlInfra.ProductDTO) ([]*mys
 			visited[partNumber] = true
 			queue = append(queue, partNumber)
 
-			member, err := s.productRepository.FindBySourceAndPartNumber(product.SourceID, partNumber)
+			member, err := s.productRepository.FindBySourceAndPartNumber(ctx, product.SourceID, partNumber)
 			if err != nil {
 				if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 					continue
@@ -558,8 +570,8 @@ func (s *Service) resolveSuccessionChain(product *mysqlInfra.ProductDTO) ([]*mys
 // succession chain) that has one, in chain order. hasImage is false only
 // when neither member nor any of its chain siblings has a cover image, in
 // which case imageSourceProductID is meaningless and must not be used.
-func (s *Service) resolveImageSource(member *mysqlInfra.ProductDTO, chain []*mysqlInfra.ProductDTO) (imageSourceProductID int64, hasImage bool, err error) {
-	ownCover, err := s.hasCoverImage(member.ID)
+func (s *Service) resolveImageSource(ctx context.Context, member *mysqlInfra.ProductDTO, chain []*mysqlInfra.ProductDTO) (imageSourceProductID int64, hasImage bool, err error) {
+	ownCover, err := s.hasCoverImage(ctx, member.ID)
 	if err != nil {
 		return 0, false, err
 	}
@@ -571,7 +583,7 @@ func (s *Service) resolveImageSource(member *mysqlInfra.ProductDTO, chain []*mys
 		if sibling.ID == member.ID {
 			continue
 		}
-		siblingCover, err := s.hasCoverImage(sibling.ID)
+		siblingCover, err := s.hasCoverImage(ctx, sibling.ID)
 		if err != nil {
 			return 0, false, err
 		}
@@ -592,20 +604,20 @@ func (s *Service) resolveImageSource(member *mysqlInfra.ProductDTO, chain []*mys
 // connection instead, with the reason recorded as last_error, so it can be
 // retried once the precondition is met.
 func (s *Service) processChainMember(ctx context.Context, publisher Publisher, connection *mysqlInfra.ChannelConnectionDTO, member *mysqlInfra.ProductDTO, chain []*mysqlInfra.ProductDTO, officialStoreID *int64) []ListingOutcome {
-	availableStock, err := s.sumAvailableStock(member.ID)
+	availableStock, err := s.sumAvailableStock(ctx, member.ID)
 	if err != nil {
 		return []ListingOutcome{{SKU: member.SKU, Error: fmt.Sprintf("error checking product stock: %v", err)}}
 	}
 	if availableStock <= 0 {
-		return []ListingOutcome{s.queuePending(member, connection.ID, reasonNoStock)}
+		return []ListingOutcome{s.queuePending(ctx, member, connection.ID, reasonNoStock)}
 	}
 
-	imageSourceProductID, hasImage, err := s.resolveImageSource(member, chain)
+	imageSourceProductID, hasImage, err := s.resolveImageSource(ctx, member, chain)
 	if err != nil {
 		return []ListingOutcome{{SKU: member.SKU, Error: fmt.Sprintf("error checking product images: %v", err)}}
 	}
 	if !hasImage {
-		return []ListingOutcome{s.queuePending(member, connection.ID, reasonNoImage)}
+		return []ListingOutcome{s.queuePending(ctx, member, connection.ID, reasonNoImage)}
 	}
 
 	return s.publishReady(ctx, publisher, connection, member, chain, imageSourceProductID, officialStoreID)
@@ -629,11 +641,14 @@ func (s *Service) publishReady(ctx context.Context, publisher Publisher, connect
 		return []ListingOutcome{{SKU: product.SKU, Error: "product has no brand"}}
 	}
 
-	if !connection.AllowsMultipleListings {
+	// Nissan is the one brand that never fans out into per-fitment listings:
+	// even on an allows_multiple_listings connection it publishes as a single
+	// general listing (see nissanBrandID).
+	if !connection.AllowsMultipleListings || *product.BrandID == nissanBrandID {
 		return []ListingOutcome{s.publishOne(ctx, publisher, product, connection.ID, generalListingTitle(product.Name), nil, imageSourceProductID, officialStoreID)}
 	}
 
-	fitmentIDs, err := s.pooledCompatibilityFitmentIDs(chain)
+	fitmentIDs, err := s.pooledCompatibilityFitmentIDs(ctx, chain)
 	if err != nil {
 		return []ListingOutcome{{SKU: product.SKU, Error: fmt.Sprintf("error loading vehicle compatibilities: %v", err)}}
 	}
@@ -646,13 +661,13 @@ func (s *Service) publishReady(ctx context.Context, publisher Publisher, connect
 	for _, fitmentID := range fitmentIDs {
 		fitmentID := fitmentID
 
-		fitment, err := s.vehicleFitmentsRepository.FindByID(fitmentID)
+		fitment, err := s.vehicleFitmentsRepository.FindByID(ctx, fitmentID)
 		if err != nil {
 			outcomes = append(outcomes, ListingOutcome{SKU: product.SKU, VehicleFitmentID: &fitmentID, Error: fmt.Sprintf("error loading vehicle fitment %d: %v", fitmentID, err)})
 			continue
 		}
 
-		fitmentBrand, err := s.brandsRepository.FindByID(fitment.BrandID)
+		fitmentBrand, err := s.brandsRepository.FindByID(ctx, fitment.BrandID)
 		if err != nil {
 			outcomes = append(outcomes, ListingOutcome{SKU: product.SKU, VehicleFitmentID: &fitmentID, Error: fmt.Sprintf("error loading vehicle fitment brand %d: %v", fitment.BrandID, err)})
 			continue
@@ -667,12 +682,12 @@ func (s *Service) publishReady(ctx context.Context, publisher Publisher, connect
 
 // pooledCompatibilityFitmentIDs returns the union of vehicle_fitment_id
 // across every product in chain, deduplicated, in first-seen (chain) order.
-func (s *Service) pooledCompatibilityFitmentIDs(chain []*mysqlInfra.ProductDTO) ([]int64, error) {
+func (s *Service) pooledCompatibilityFitmentIDs(ctx context.Context, chain []*mysqlInfra.ProductDTO) ([]int64, error) {
 	seen := make(map[int64]bool)
 	fitmentIDs := make([]int64, 0)
 
 	for _, member := range chain {
-		compatibilities, err := s.productVehicleCompatibilityRepository.FindByProductID(member.ID, 0, maxCompatibilitiesPerSKU)
+		compatibilities, err := s.productVehicleCompatibilityRepository.FindByProductID(ctx, member.ID, 0, maxCompatibilitiesPerSKU)
 		if err != nil {
 			return nil, err
 		}
@@ -694,7 +709,7 @@ func (s *Service) pooledCompatibilityFitmentIDs(chain []*mysqlInfra.ProductDTO) 
 func (s *Service) publishOne(ctx context.Context, publisher Publisher, product *mysqlInfra.ProductDTO, connectionID int64, title string, vehicleFitmentID *int64, imageSourceProductID int64, officialStoreID *int64) ListingOutcome {
 	outcome := ListingOutcome{SKU: product.SKU, VehicleFitmentID: vehicleFitmentID, Title: title}
 
-	existing, err := s.channelProductMapRepository.FindByProductConnectionAndFitment(product.ID, connectionID, vehicleFitmentID)
+	existing, err := s.channelProductMapRepository.FindByProductConnectionAndFitment(ctx, product.ID, connectionID, vehicleFitmentID)
 	if err != nil && !errors.Is(err, mysqlInfra.ErrChannelProductMapNotFound) {
 		outcome.Error = fmt.Sprintf("error checking existing listing: %v", err)
 		return outcome
@@ -722,10 +737,10 @@ func (s *Service) publishOne(ctx context.Context, publisher Publisher, product *
 
 // queuePending enqueues product for connectionID into ecom_channel_sync_queue
 // with reason recorded as last_error, since it isn't ready to publish yet.
-func (s *Service) queuePending(product *mysqlInfra.ProductDTO, connectionID int64, reason string) ListingOutcome {
+func (s *Service) queuePending(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, reason string) ListingOutcome {
 	outcome := ListingOutcome{SKU: product.SKU, Error: reason}
 
-	entry, err := s.channelSyncQueueRepository.Create(mysqlInfra.CreateChannelSyncQueueEntryInput{
+	entry, err := s.channelSyncQueueRepository.Create(ctx, mysqlInfra.CreateChannelSyncQueueEntryInput{
 		ProductID:    product.ID,
 		ConnectionID: connectionID,
 		SyncType:     QueueSyncType,
@@ -742,8 +757,8 @@ func (s *Service) queuePending(product *mysqlInfra.ProductDTO, connectionID int6
 	return outcome
 }
 
-func (s *Service) sumAvailableStock(productID int64) (int, error) {
-	stocks, err := s.productStockRepository.FindByProductID(productID)
+func (s *Service) sumAvailableStock(ctx context.Context, productID int64) (int, error) {
+	stocks, err := s.productStockRepository.FindByProductID(ctx, productID)
 	if err != nil {
 		return 0, err
 	}
@@ -756,8 +771,8 @@ func (s *Service) sumAvailableStock(productID int64) (int, error) {
 	return total, nil
 }
 
-func (s *Service) hasCoverImage(productID int64) (bool, error) {
-	images, err := s.productImagesRepository.FindAllByProductID(productID)
+func (s *Service) hasCoverImage(ctx context.Context, productID int64) (bool, error) {
+	images, err := s.productImagesRepository.FindAllByProductID(ctx, productID)
 	if err != nil {
 		return false, err
 	}

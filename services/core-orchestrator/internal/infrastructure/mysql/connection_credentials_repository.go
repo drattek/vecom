@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -51,12 +52,12 @@ type UpdateConnectionCredentialInput struct {
 }
 
 type ConnectionCredentialsRepository struct {
-	db            *sql.DB
+	db            Querier
 	encryptionKey []byte
 	encryptionErr error
 }
 
-func NewConnectionCredentialsRepository(db *sql.DB) *ConnectionCredentialsRepository {
+func NewConnectionCredentialsRepository(db Querier) *ConnectionCredentialsRepository {
 	key, err := loadConnectionCredentialsEncryptionKey()
 
 	return &ConnectionCredentialsRepository{
@@ -66,7 +67,7 @@ func NewConnectionCredentialsRepository(db *sql.DB) *ConnectionCredentialsReposi
 	}
 }
 
-func (r *ConnectionCredentialsRepository) FindPaginated(offset, pageSize int) (*PaginatedConnectionCredentials, error) {
+func (r *ConnectionCredentialsRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedConnectionCredentials, error) {
 	query := `
 		SELECT id, connection_id, key_name, value, is_encrypted, created_by, updated_by, created_at, updated_at
 		FROM ecom_connection_credentials
@@ -74,7 +75,7 @@ func (r *ConnectionCredentialsRepository) FindPaginated(offset, pageSize int) (*
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -98,14 +99,14 @@ func (r *ConnectionCredentialsRepository) FindPaginated(offset, pageSize int) (*
 
 	countQuery := "SELECT COUNT(*) FROM ecom_connection_credentials WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedConnectionCredentials{Data: credentials, Total: total}, nil
 }
 
-func (r *ConnectionCredentialsRepository) FindByID(id int64) (*ConnectionCredentialDTO, error) {
+func (r *ConnectionCredentialsRepository) FindByID(ctx context.Context, id int64) (*ConnectionCredentialDTO, error) {
 	query := `
 		SELECT id, connection_id, key_name, value, is_encrypted, created_by, updated_by, created_at, updated_at
 		FROM ecom_connection_credentials
@@ -113,7 +114,7 @@ func (r *ConnectionCredentialsRepository) FindByID(id int64) (*ConnectionCredent
 	`
 
 	var c ConnectionCredentialDTO
-	if err := r.db.QueryRow(query, id).Scan(&c.ID, &c.ConnectionID, &c.KeyName, &c.Value, &c.IsEncrypted, &c.CreatedBy, &c.UpdatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&c.ID, &c.ConnectionID, &c.KeyName, &c.Value, &c.IsEncrypted, &c.CreatedBy, &c.UpdatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrConnectionCredentialNotFound
 		}
@@ -129,14 +130,14 @@ func (r *ConnectionCredentialsRepository) FindByID(id int64) (*ConnectionCredent
 	return &c, nil
 }
 
-func (r *ConnectionCredentialsRepository) FindByConnectionID(connectionID int64) ([]ConnectionCredentialDTO, error) {
+func (r *ConnectionCredentialsRepository) FindByConnectionID(ctx context.Context, connectionID int64) ([]ConnectionCredentialDTO, error) {
 	query := `
 		SELECT id, connection_id, key_name, value, is_encrypted, created_by, updated_by, created_at, updated_at
 		FROM ecom_connection_credentials
 		WHERE connection_id = ? AND deleted_at IS NULL
 	`
 
-	rows, err := r.db.Query(query, connectionID)
+	rows, err := r.db.QueryContext(ctx, query, connectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -161,7 +162,7 @@ func (r *ConnectionCredentialsRepository) FindByConnectionID(connectionID int64)
 	return credentials, nil
 }
 
-func (r *ConnectionCredentialsRepository) Create(input CreateConnectionCredentialInput) (*ConnectionCredentialDTO, error) {
+func (r *ConnectionCredentialsRepository) Create(ctx context.Context, input CreateConnectionCredentialInput) (*ConnectionCredentialDTO, error) {
 	valueToStore, err := r.encryptIfNeeded(input.Value, input.IsEncrypted)
 	if err != nil {
 		return nil, err
@@ -172,7 +173,7 @@ func (r *ConnectionCredentialsRepository) Create(input CreateConnectionCredentia
 		VALUES (?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ConnectionID, input.KeyName, valueToStore, input.IsEncrypted, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.ConnectionID, input.KeyName, valueToStore, input.IsEncrypted, input.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -182,10 +183,10 @@ func (r *ConnectionCredentialsRepository) Create(input CreateConnectionCredentia
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ConnectionCredentialsRepository) Update(id int64, input UpdateConnectionCredentialInput) (*ConnectionCredentialDTO, error) {
+func (r *ConnectionCredentialsRepository) Update(ctx context.Context, id int64, input UpdateConnectionCredentialInput) (*ConnectionCredentialDTO, error) {
 	valueToStore, err := r.encryptIfNeeded(input.Value, input.IsEncrypted)
 	if err != nil {
 		return nil, err
@@ -197,7 +198,7 @@ func (r *ConnectionCredentialsRepository) Update(id int64, input UpdateConnectio
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, valueToStore, input.IsEncrypted, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, valueToStore, input.IsEncrypted, input.UpdatedBy, id)
 	if err != nil {
 		return nil, err
 	}
@@ -211,13 +212,13 @@ func (r *ConnectionCredentialsRepository) Update(id int64, input UpdateConnectio
 		return nil, ErrConnectionCredentialNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ConnectionCredentialsRepository) SoftDelete(id int64) error {
+func (r *ConnectionCredentialsRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := "UPDATE ecom_connection_credentials SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

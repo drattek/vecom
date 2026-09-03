@@ -2,7 +2,9 @@
 
 ## Go
 
-- Usar `context.Context` en todos los métodos que accedan a I/O, servicios externos, bases de datos o flujos de request.
+- Usar `context.Context` como primer parámetro en todos los métodos que accedan a I/O, servicios externos, bases de datos o flujos de request; propagarlo hasta el driver (`ExecContext`/`QueryContext`/`QueryRowContext`), no cortarlo con `context.Background()`/`context.TODO()`.
+- Persistencia (`core-orchestrator`): los repos toman `mysql.Querier` (no `*sql.DB`). Operación multi-sentencia → `mysql.WithinTx(ctx, db, func(tx *sql.Tx) error { ... })` con repos escopeados al `tx`; operación de una sola sentencia → repo sobre el pool, sin transacción. El borde de la transacción va en la capa de servicio (por eso el servicio recibe `*sql.DB`). Ver `infrastructure/decisions/0001-persistencia-transacciones-y-context.md`.
+- Toda goroutine de fondo (`go ...`) corre bajo `internal/shared/safe` (`Supervise` para loops, `Do` para una unidad de trabajo): un panic no debe tumbar el proceso.
 - Evitar variables globales y estado compartido mutable a nivel paquete.
 - Toda función o método público debe tener comentario si su propósito no es obvio.
 - Devolver errores envueltos con `fmt.Errorf("...: %w", err)` para preservar el contexto de falla.

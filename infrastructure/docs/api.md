@@ -34,6 +34,12 @@ Estandarizar contratos HTTP y reglas de diseño para endpoints entre UI y backen
 3. ¿La validación de entrada está completa?
 4. ¿El endpoint evita dependencias prohibidas (ERP/Synapse directos)?
 
+## Autenticación
+
+- `POST /api/login` — público. Body `{ username, password }`. Devuelve `{ accessToken, tokenType: "Bearer", expiresAt, user }` y persiste el token en `ecom_api_token`.
+- `POST /api/logout` — protegido (Authorization Bearer). Revoca el token del llamador (`ecom_api_token.revoked_at`). Responde `204 No Content`. Idempotente: revocar un token ya revocado/expirado/desconocido no falla. El cliente debe limpiar su sesión local pase lo que pase.
+- El resto de rutas `/api/*` (salvo callbacks de marketplaces) requieren `Authorization: Bearer <accessToken>`; `JWTMiddleware.RequireAuth` valida firma, emisor, expiración y que la fila en `ecom_api_token` siga activa.
+
 ## Mercado Libre - Category Predictor
 
 - Endpoint: GET /api/marketplaces/mercadolibre/category-predictor

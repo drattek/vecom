@@ -43,7 +43,7 @@ func (h *ProductImagesHandler) GetProductImages(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	result, err := h.service.GetPaginatedImages(offset, pageSize)
+	result, err := h.service.GetPaginatedImages(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -60,7 +60,7 @@ func (h *ProductImagesHandler) GetImageByID(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	image, err := h.service.GetImageByID(id)
+	image, err := h.service.GetImageByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductImageNotFound) {
 			writeJSONError(w, http.StatusNotFound, "image not found")
@@ -97,7 +97,7 @@ func (h *ProductImagesHandler) GetImagesByProduct(w http.ResponseWriter, r *http
 		}
 	}
 
-	result, err := h.service.GetImagesByProduct(productID, offset, pageSize)
+	result, err := h.service.GetImagesByProduct(r.Context(), productID, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -127,7 +127,7 @@ func (h *ProductImagesHandler) CreateImage(w http.ResponseWriter, r *http.Reques
 		CreatedBy: user.ID,
 	}
 
-	image, err := h.service.CreateImage(input)
+	image, err := h.service.CreateImage(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, mediaApp.ErrInvalidProductMedia) {
 			writeJSONError(w, http.StatusBadRequest, "productId and fileId are required")
@@ -168,7 +168,7 @@ func (h *ProductImagesHandler) UpdateImage(w http.ResponseWriter, r *http.Reques
 		UpdatedBy: user.ID,
 	}
 
-	image, err := h.service.UpdateImage(id, input)
+	image, err := h.service.UpdateImage(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductImageNotFound) {
 			writeJSONError(w, http.StatusNotFound, "image not found")
@@ -189,7 +189,7 @@ func (h *ProductImagesHandler) DeleteImage(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err := h.service.DeleteImage(id)
+	err := h.service.DeleteImage(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductImageNotFound) {
 			writeJSONError(w, http.StatusNotFound, "image not found")
@@ -238,7 +238,7 @@ func (h *ProductVideosHandler) GetProductVideos(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	result, err := h.service.GetPaginatedVideos(offset, pageSize)
+	result, err := h.service.GetPaginatedVideos(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -255,7 +255,7 @@ func (h *ProductVideosHandler) GetVideoByID(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	video, err := h.service.GetVideoByID(id)
+	video, err := h.service.GetVideoByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductVideoNotFound) {
 			writeJSONError(w, http.StatusNotFound, "video not found")
@@ -292,7 +292,7 @@ func (h *ProductVideosHandler) GetVideosByProduct(w http.ResponseWriter, r *http
 		}
 	}
 
-	result, err := h.service.GetVideosByProduct(productID, offset, pageSize)
+	result, err := h.service.GetVideosByProduct(r.Context(), productID, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -321,7 +321,7 @@ func (h *ProductVideosHandler) CreateVideo(w http.ResponseWriter, r *http.Reques
 		CreatedBy: user.ID,
 	}
 
-	video, err := h.service.CreateVideo(input)
+	video, err := h.service.CreateVideo(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, mediaApp.ErrInvalidProductMedia) {
 			writeJSONError(w, http.StatusBadRequest, "productId and fileId are required")
@@ -353,7 +353,7 @@ func (h *ProductVideosHandler) UpdateVideo(w http.ResponseWriter, r *http.Reques
 		UpdatedBy: user.ID,
 	}
 
-	video, err := h.service.UpdateVideo(id, input)
+	video, err := h.service.UpdateVideo(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductVideoNotFound) {
 			writeJSONError(w, http.StatusNotFound, "video not found")
@@ -374,7 +374,7 @@ func (h *ProductVideosHandler) DeleteVideo(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err := h.service.DeleteVideo(id)
+	err := h.service.DeleteVideo(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductVideoNotFound) {
 			writeJSONError(w, http.StatusNotFound, "video not found")
@@ -425,7 +425,7 @@ func (h *ProductPartNumbersHandler) GetPartNumbers(w http.ResponseWriter, r *htt
 		}
 	}
 
-	result, err := h.service.GetPaginatedPartNumbers(offset, pageSize)
+	result, err := h.service.GetPaginatedPartNumbers(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -458,7 +458,7 @@ func (h *ProductPartNumbersHandler) GetPartNumbersByProduct(w http.ResponseWrite
 		}
 	}
 
-	result, err := h.service.GetPartNumbersByProduct(productID, offset, pageSize)
+	result, err := h.service.GetPartNumbersByProduct(r.Context(), productID, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -489,7 +489,7 @@ func (h *ProductPartNumbersHandler) CreatePartNumber(w http.ResponseWriter, r *h
 		CreatedBy:  user.ID,
 	}
 
-	partNumber, err := h.service.CreatePartNumber(input)
+	partNumber, err := h.service.CreatePartNumber(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, mediaApp.ErrInvalidProductMedia) {
 			writeJSONError(w, http.StatusBadRequest, "productId and partNumber are required")
@@ -539,7 +539,7 @@ func (h *ProductPartNumbersHandler) UpdatePartNumber(w http.ResponseWriter, r *h
 		UpdatedBy: user.ID,
 	}
 
-	pn, err := h.service.UpdatePartNumber(productID, partNumber, input)
+	pn, err := h.service.UpdatePartNumber(r.Context(), productID, partNumber, input)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductPartNumberNotFound) {
 			writeJSONError(w, http.StatusNotFound, "part number not found")
@@ -567,7 +567,7 @@ func (h *ProductPartNumbersHandler) DeletePartNumber(w http.ResponseWriter, r *h
 		return
 	}
 
-	err = h.service.DeletePartNumber(productID, partNumber)
+	err = h.service.DeletePartNumber(r.Context(), productID, partNumber)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductPartNumberNotFound) {
 			writeJSONError(w, http.StatusNotFound, "part number not found")
@@ -606,7 +606,7 @@ func (h *ProductDimensionsHandler) GetDimensionsByProduct(w http.ResponseWriter,
 		return
 	}
 
-	dimensions, err := h.service.GetDimensionsByProduct(productID)
+	dimensions, err := h.service.GetDimensionsByProduct(r.Context(), productID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductDimensionsNotFound) {
 			writeJSONError(w, http.StatusNotFound, "dimensions not found")
@@ -651,7 +651,7 @@ func (h *ProductDimensionsHandler) CreateDimensions(w http.ResponseWriter, r *ht
 		CreatedBy: user.ID,
 	}
 
-	dimensions, err := h.service.CreateDimensions(input)
+	dimensions, err := h.service.CreateDimensions(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, mediaApp.ErrInvalidProductMedia) {
 			writeJSONError(w, http.StatusBadRequest, "invalid product id")
@@ -696,7 +696,7 @@ func (h *ProductDimensionsHandler) UpdateDimensions(w http.ResponseWriter, r *ht
 		UpdatedBy: user.ID,
 	}
 
-	dimensions, err := h.service.UpdateDimensions(productID, input)
+	dimensions, err := h.service.UpdateDimensions(r.Context(), productID, input)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductDimensionsNotFound) {
 			writeJSONError(w, http.StatusNotFound, "dimensions not found")
@@ -748,7 +748,7 @@ func (h *ProductDimensionsHandler) BulkUpsertDimensions(w http.ResponseWriter, r
 		}
 	}
 
-	results, err := h.service.BulkUpsertDimensions(items, user.ID)
+	results, err := h.service.BulkUpsertDimensions(r.Context(), items, user.ID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -767,7 +767,7 @@ func (h *ProductDimensionsHandler) DeleteDimensions(w http.ResponseWriter, r *ht
 		return
 	}
 
-	err = h.service.DeleteDimensions(productID)
+	err = h.service.DeleteDimensions(r.Context(), productID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductDimensionsNotFound) {
 			writeJSONError(w, http.StatusNotFound, "dimensions not found")
@@ -803,7 +803,7 @@ func (h *ProductSEOHandler) GetSEOByProduct(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	seo, err := h.service.GetSEOByProduct(productID)
+	seo, err := h.service.GetSEOByProduct(r.Context(), productID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductSEONotFound) {
 			writeJSONError(w, http.StatusNotFound, "seo not found")
@@ -845,7 +845,7 @@ func (h *ProductSEOHandler) CreateSEO(w http.ResponseWriter, r *http.Request) {
 		CreatedBy:       user.ID,
 	}
 
-	seo, err := h.service.CreateSEO(input)
+	seo, err := h.service.CreateSEO(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, mediaApp.ErrInvalidProductMedia) {
 			writeJSONError(w, http.StatusBadRequest, "invalid product id")
@@ -887,7 +887,7 @@ func (h *ProductSEOHandler) UpdateSEO(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy:       user.ID,
 	}
 
-	seo, err := h.service.UpdateSEO(productID, input)
+	seo, err := h.service.UpdateSEO(r.Context(), productID, input)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductSEONotFound) {
 			writeJSONError(w, http.StatusNotFound, "seo not found")
@@ -909,7 +909,7 @@ func (h *ProductSEOHandler) DeleteSEO(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteSEO(productID)
+	err = h.service.DeleteSEO(r.Context(), productID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductSEONotFound) {
 			writeJSONError(w, http.StatusNotFound, "seo not found")

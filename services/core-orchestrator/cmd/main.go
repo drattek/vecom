@@ -3,8 +3,13 @@ package main
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/joho/godotenv"
 
@@ -35,6 +40,7 @@ import (
 	storageDisksService "core-orchestrator/internal/application/storage_disks"
 	syncApp "core-orchestrator/internal/application/sync"
 	"core-orchestrator/internal/config"
+	banxicoInfra "core-orchestrator/internal/infrastructure/banxico"
 	mercadoLibreInfra "core-orchestrator/internal/infrastructure/marketplace/mercadolibre"
 	odooInfra "core-orchestrator/internal/infrastructure/marketplace/odoo"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
@@ -42,8 +48,15 @@ import (
 	serverTLS "core-orchestrator/internal/infrastructure/servertls"
 	httpHandler "core-orchestrator/internal/interfaces/http"
 	"core-orchestrator/internal/interfaces/schedulers"
+	"core-orchestrator/internal/shared/safe"
 	"core-orchestrator/internal/workers"
 )
+
+// consumersShutdownGrace acota cuánto espera el apagado ordenado a que los
+// consumers RabbitMQ terminen el mensaje en curso. Los handlers no reciben
+// context, así que no se pueden cancelar; agotado el plazo el proceso sale
+// igual y RabbitMQ reencola lo que quedó sin ack.
+const consumersShutdownGrace = 10 * time.Second
 
 func main() {
 	// Load .env file
@@ -54,65 +67,84 @@ func main() {
 
 	cfg := config.Load()
 
+	// rootCtx se cancela al recibir SIGINT/SIGTERM (deploy/restart). Dispara el
+	// cierre ordenado del servidor HTTP más abajo.
+	rootCtx, stopSignals := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stopSignals()
+
+	// bgCtx gobierna los procesos de fondo (worker de sync a marketplaces,
+	// schedulers). Se cancela recién DESPUÉS de que server.Shutdown drenó las
+	// requests en vuelo, para no cortar una operación de marketplace que una
+	// request HTTP todavía en curso haya lanzado.
+	bgCtx, stopBackground := context.WithCancel(context.Background())
+	defer stopBackground()
+
 	// Initialize database connection
-	db := mysqlInfra.NewConnection()
+	db := mysqlInfra.NewConnection(cfg)
 	defer db.Close()
 
 	// Initialize MySQL repositories
 	mysqlRepos := initializeMySQLRepositories(db)
 
 	// Initialize services
-	productService := prodService.NewProductService(mysqlRepos.ProductRepository, mysqlRepos.PendingProductVehicleFitmentsRepository, mysqlRepos.ProductVehicleCompatibilityRepository, mysqlRepos.PartNumberSupersessionsRepository)
-	storageDiskService := storageDisksService.NewStorageDiskService(mysqlRepos.StorageDiskRepository)
-	fileService := filesService.NewFileService(mysqlRepos.FilesRepository)
-	channelService := channelsService.NewChannelService(mysqlRepos.ChannelRepository)
-	channelConnectionService := channelConnectionsService.NewChannelConnectionService(mysqlRepos.ChannelConnectionRepository)
+	productService := prodService.NewProductService(db, mysqlRepos.ProductRepository, mysqlRepos.PendingProductVehicleFitmentsRepository, mysqlRepos.ProductVehicleCompatibilityRepository, mysqlRepos.PartNumberSupersessionsRepository)
+	storageDiskService := storageDisksService.NewStorageDiskService(db, mysqlRepos.StorageDiskRepository)
+	fileService := filesService.NewFileService(db, mysqlRepos.FilesRepository)
+	channelService := channelsService.NewChannelService(db, mysqlRepos.ChannelRepository)
+	channelConnectionService := channelConnectionsService.NewChannelConnectionService(db, mysqlRepos.ChannelConnectionRepository)
 	authService := credService.NewAuthService(
+		db,
 		mysqlRepos.AuthRepository,
 		cfg.JWTSecret,
 		cfg.JWTIssuer,
 		cfg.JWTTTLMinutes,
 	)
-	brandService := brandsApp.NewBrandService(mysqlRepos.BrandsRepository)
-	categoryService := categoriesApp.NewCategoryService(mysqlRepos.CategoriesRepository)
-	currencyService := currenciesApp.NewCurrencyService(mysqlRepos.CurrenciesRepository)
-	sourceService := sourcesApp.NewSourceService(mysqlRepos.SourcesRepository)
-	branchService := inventoryApp.NewBranchService(mysqlRepos.BranchesRepository)
-	warehouseService := inventoryApp.NewWarehouseService(mysqlRepos.WarehousesRepository)
-	productStockService := inventoryApp.NewProductStockService(mysqlRepos.ProductStockRepository)
-	priceListService := pricingApp.NewPriceListService(mysqlRepos.PriceListRepository)
-	productPricesService := pricingApp.NewProductPricesService(mysqlRepos.ProductPricesRepository)
-	exchangeRatesService := pricingApp.NewExchangeRatesService(mysqlRepos.ExchangeRatesRepository)
-	stockMovementsService := stockMovementsApp.NewStockMovementsService(mysqlRepos.StockMovementsRepository)
-	productImagesService := productMediaApp.NewProductImagesService(mysqlRepos.ProductImagesRepository)
+	brandService := brandsApp.NewBrandService(db, mysqlRepos.BrandsRepository, mysqlRepos.ProductRepository)
+	categoryService := categoriesApp.NewCategoryService(db, mysqlRepos.CategoriesRepository)
+	currencyService := currenciesApp.NewCurrencyService(db, mysqlRepos.CurrenciesRepository)
+	sourceService := sourcesApp.NewSourceService(db, mysqlRepos.SourcesRepository)
+	branchService := inventoryApp.NewBranchService(db, mysqlRepos.BranchesRepository)
+	warehouseService := inventoryApp.NewWarehouseService(db, mysqlRepos.WarehousesRepository)
+	productStockService := inventoryApp.NewProductStockService(db, mysqlRepos.ProductStockRepository)
+	priceListService := pricingApp.NewPriceListService(db, mysqlRepos.PriceListRepository)
+	pricingFormulaService := pricingApp.NewPricingFormulaService(db, mysqlRepos.PricingFormulaRepository)
+	pricingFormulaCalculator := pricingApp.NewPricingFormulaCalculator(mysqlRepos.PricingFormulaRepository)
+	effectivePriceResolver := pricingApp.NewEffectivePriceResolver(mysqlRepos.ProductPricesRepository, mysqlRepos.ExchangeRatesRepository)
+	productPricesService := pricingApp.NewProductPricesService(db, mysqlRepos.ProductPricesRepository, mysqlRepos.ProductRepository, mysqlRepos.PriceListRepository)
+	exchangeRatesService := pricingApp.NewExchangeRatesService(db, mysqlRepos.ExchangeRatesRepository)
+	sieClient := banxicoInfra.NewClient(nil, cfg.SIEAPIToken)
+	sieExchangeRateUpdater := pricingApp.NewSIEExchangeRateUpdater(sieClient, mysqlRepos.CurrenciesRepository, mysqlRepos.ExchangeRatesRepository)
+	stockMovementsService := stockMovementsApp.NewStockMovementsService(db, mysqlRepos.StockMovementsRepository)
+	productImagesService := productMediaApp.NewProductImagesService(db, mysqlRepos.ProductImagesRepository)
 	productImageImportService := productImageImportApp.NewService(
+		db,
 		mysqlRepos.ProductRepository,
 		mysqlRepos.FilesRepository,
 		mysqlRepos.ProductImagesRepository,
 		mysqlRepos.StorageDiskRepository,
 	)
-	productVideosService := productMediaApp.NewProductVideosService(mysqlRepos.ProductVideosRepository)
-	productPartNumbersService := productMediaApp.NewProductPartNumbersService(mysqlRepos.ProductPartNumbersRepository)
-	productDimensionsService := productMediaApp.NewProductDimensionsService(mysqlRepos.ProductDimensionsRepository, mysqlRepos.ProductRepository)
-	productSEOService := productMediaApp.NewProductSEOService(mysqlRepos.ProductSEORepository)
-	connectionCredentialsService := channelConfigApp.NewConnectionCredentialsService(mysqlRepos.ConnectionCredentialsRepository)
-	connectionSettingsService := channelConfigApp.NewConnectionSettingsService(mysqlRepos.ConnectionSettingsRepository)
-	connectionStatusService := channelConfigApp.NewConnectionStatusService(mysqlRepos.ConnectionStatusRepository)
-	channelParametersService := channelConfigApp.NewChannelParametersService(mysqlRepos.ChannelParametersRepository)
+	productVideosService := productMediaApp.NewProductVideosService(db, mysqlRepos.ProductVideosRepository)
+	productPartNumbersService := productMediaApp.NewProductPartNumbersService(db, mysqlRepos.ProductPartNumbersRepository)
+	productDimensionsService := productMediaApp.NewProductDimensionsService(db, mysqlRepos.ProductDimensionsRepository, mysqlRepos.ProductRepository)
+	productSEOService := productMediaApp.NewProductSEOService(db, mysqlRepos.ProductSEORepository)
+	connectionCredentialsService := channelConfigApp.NewConnectionCredentialsService(db, mysqlRepos.ConnectionCredentialsRepository)
+	connectionSettingsService := channelConfigApp.NewConnectionSettingsService(db, mysqlRepos.ConnectionSettingsRepository)
+	connectionStatusService := channelConfigApp.NewConnectionStatusService(db, mysqlRepos.ConnectionStatusRepository)
+	channelParametersService := channelConfigApp.NewChannelParametersService(db, mysqlRepos.ChannelParametersRepository)
 	// Attributes: catalog of product attributes (ecom_attributes), their
 	// enum value lists (ecom_attribute_options) and per-product values
 	// (ecom_product_attributes). Not wired into any marketplace sync flow
 	// yet — the tables are still being populated with data.
-	attributeService := attributesApp.NewAttributeService(mysqlRepos.AttributesRepository)
-	attributeOptionService := attributesApp.NewAttributeOptionService(mysqlRepos.AttributeOptionsRepository)
-	productAttributeService := attributesApp.NewProductAttributeService(mysqlRepos.ProductAttributesRepository, mysqlRepos.AttributesRepository)
+	attributeService := attributesApp.NewAttributeService(db, mysqlRepos.AttributesRepository)
+	attributeOptionService := attributesApp.NewAttributeOptionService(db, mysqlRepos.AttributeOptionsRepository)
+	productAttributeService := attributesApp.NewProductAttributeService(db, mysqlRepos.ProductAttributesRepository, mysqlRepos.AttributesRepository)
 	// Channel attributes: catalog of attribute "slots" each channel exposes
 	// (ecom_channel_attributes) and which internal source fills each one
 	// (ecom_channel_attribute_map). Same as above — CRUD only for now, not
 	// consumed by sync_mercadolibre_products.go/handler_products.go.
-	channelAttributeService := channelAttributesApp.NewChannelAttributeService(mysqlRepos.ChannelAttributesRepository)
-	channelAttributeMapService := channelAttributesApp.NewChannelAttributeMapService(mysqlRepos.ChannelAttributeMapRepository)
-	meliNotificationService := meliNotificationsApp.NewMeliNotificationService(mysqlRepos.MeliNotificationRepository)
+	channelAttributeService := channelAttributesApp.NewChannelAttributeService(db, mysqlRepos.ChannelAttributesRepository)
+	channelAttributeMapService := channelAttributesApp.NewChannelAttributeMapService(db, mysqlRepos.ChannelAttributeMapRepository)
+	meliNotificationService := meliNotificationsApp.NewMeliNotificationService(db, mysqlRepos.MeliNotificationRepository)
 	// Shared across every MercadoLibre client so the 10-calls-per-minute
 	// budget is enforced globally (auth, categories, etc. all draw from the
 	// same pool), not reset per connection or per call site.
@@ -130,6 +162,7 @@ func main() {
 	// provision a whole category's required attributes from just
 	// {sku, categoryId} — see channel_attribute_values.Service.
 	channelAttributeValuesService := channelAttributeValuesApp.NewService(
+		db,
 		mysqlRepos.ProductRepository,
 		mysqlRepos.ChannelRepository,
 		mysqlRepos.AttributesRepository,
@@ -152,14 +185,16 @@ func main() {
 		mercadoLibreRateLimiter,
 	)
 	// Scans every listing in a MercadoLibre account for the flagged
-	// price=999999/stock=0 sentinel and downloads/mirrors it locally — see
-	// sync.MercadoLibreListingsAuditService.
+	// price=999999/stock=0 sentinel and, per match, resolves/creates the local
+	// product and copies the listing's vehicle compatibilities into MySQL —
+	// see sync.MercadoLibreListingsAuditService (reuses
+	// mercadoLibreCompatibilityService for the copy).
 	mercadoLibreListingsAuditService := syncApp.NewMercadoLibreListingsAuditService(
 		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelRepository,
 		mysqlRepos.ProductRepository,
 		mercadoLibreTokenService,
-		channelAttributeValuesService,
+		mercadoLibreCompatibilityService,
 		mercadoLibreRateLimiter,
 	)
 	mercadoLibreProductSyncService := syncApp.NewMercadoLibreProductSyncService(
@@ -180,6 +215,9 @@ func main() {
 		channelAttributeValuesService,
 		mysqlRepos.ProductAttributesRepository,
 		mysqlRepos.AttributeOptionsRepository,
+		pricingFormulaCalculator,
+		effectivePriceResolver,
+		mercadoLibreCompatibilityService,
 	)
 	// Shared across every Odoo client so the 10-calls-per-minute budget is
 	// enforced globally (products, categories, etc. all draw from the same
@@ -198,6 +236,24 @@ func main() {
 		mysqlRepos.ChannelCategoryMapRepository,
 		odooRateLimiter,
 	)
+	// TEMPORARY one-off migration service — migra vecom_sync_product /
+	// vecom_products (sistema anterior) a ecom_products / ecom_channel_product_map.
+	// Eliminar junto con su handler y su ruta al terminar la migración.
+	vecomSyncProductMigrationService := migrationApp.NewVecomSyncProductMigrationService(
+		db,
+		mysqlRepos.ProductRepository,
+		mysqlRepos.BrandsRepository,
+		mysqlRepos.ProductDimensionsRepository,
+		mysqlRepos.ChannelProductMapRepository,
+		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.CategoriesRepository,
+		mysqlRepos.ConnectionCredentialsRepository,
+		mysqlRepos.ConnectionSettingsRepository,
+		mercadoLibreTokenService,
+		channelAttributeValuesService,
+		mercadoLibreRateLimiter,
+		odooRateLimiter,
+	)
 	odooProductSyncService := syncApp.NewOdooProductSyncService(
 		mysqlRepos.ConnectionCredentialsRepository,
 		mysqlRepos.ConnectionSettingsRepository,
@@ -212,13 +268,16 @@ func main() {
 		mysqlRepos.ChannelCategoryMapRepository,
 		mysqlRepos.ChannelProductMapRepository,
 		odooRateLimiter,
+		pricingFormulaCalculator,
+		effectivePriceResolver,
 	)
-	equipmentTypeService := compatibilityApp.NewEquipmentTypeService(mysqlRepos.EquipmentTypesRepository)
-	vehicleFitmentService := compatibilityApp.NewVehicleFitmentService(mysqlRepos.VehicleFitmentsRepository, mysqlRepos.BrandsRepository, mysqlRepos.ProductRepository, mysqlRepos.ProductVehicleCompatibilityRepository, mysqlRepos.PendingProductVehicleFitmentsRepository)
-	equipmentFitmentService := compatibilityApp.NewEquipmentFitmentService(mysqlRepos.EquipmentFitmentsRepository)
-	productVehicleCompatibilityService := compatibilityApp.NewProductVehicleCompatibilityService(mysqlRepos.ProductVehicleCompatibilityRepository)
-	productEquipmentCompatibilityService := compatibilityApp.NewProductEquipmentCompatibilityService(mysqlRepos.ProductEquipmentCompatibilityRepository)
+	equipmentTypeService := compatibilityApp.NewEquipmentTypeService(db, mysqlRepos.EquipmentTypesRepository)
+	vehicleFitmentService := compatibilityApp.NewVehicleFitmentService(db, mysqlRepos.VehicleFitmentsRepository, mysqlRepos.BrandsRepository, mysqlRepos.ProductRepository, mysqlRepos.ProductVehicleCompatibilityRepository, mysqlRepos.PendingProductVehicleFitmentsRepository)
+	equipmentFitmentService := compatibilityApp.NewEquipmentFitmentService(db, mysqlRepos.EquipmentFitmentsRepository)
+	productVehicleCompatibilityService := compatibilityApp.NewProductVehicleCompatibilityService(db, mysqlRepos.ProductVehicleCompatibilityRepository)
+	productEquipmentCompatibilityService := compatibilityApp.NewProductEquipmentCompatibilityService(db, mysqlRepos.ProductEquipmentCompatibilityRepository)
 	channelSyncQueueService := channelSyncQueueApp.NewService(
+		db,
 		mysqlRepos.ProductRepository,
 		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelSyncQueueRepository,
@@ -229,6 +288,7 @@ func main() {
 	// channel code. Registering additional marketplaces later only means
 	// adding another Register call here.
 	channelListingsService := channelListingsApp.NewService(
+		db,
 		mysqlRepos.ProductRepository,
 		mysqlRepos.ProductImagesRepository,
 		mysqlRepos.ProductStockRepository,
@@ -261,6 +321,7 @@ func main() {
 	warehouseHandler := httpHandler.NewWarehouseHandler(warehouseService)
 	productStockHandler := httpHandler.NewProductStockHandler(productStockService)
 	priceListHandler := httpHandler.NewPriceListHandler(priceListService)
+	pricingFormulaHandler := httpHandler.NewPricingFormulaHandler(pricingFormulaService)
 	productPricesHandler := httpHandler.NewProductPricesHandler(productPricesService)
 	exchangeRatesHandler := httpHandler.NewExchangeRatesHandler(exchangeRatesService)
 	stockMovementsHandler := httpHandler.NewStockMovementsHandler(stockMovementsService)
@@ -286,9 +347,12 @@ func main() {
 	// TEMPORARY debug endpoint — remove once the attribute-provisioning
 	// investigation it's for is done.
 	mercadoLibreCategoryAttributesDebugHandler := httpHandler.NewMercadoLibreCategoryAttributesDebugHandler(mercadoLibreCategoryPredictorService)
+	// TEMPORARY debug endpoint — remove once the category lookup it's for is
+	// done.
+	mercadoLibreCategoriesDebugHandler := httpHandler.NewMercadoLibreCategoriesDebugHandler(mercadoLibreCategoryPredictorService)
 	meliNotificationHandler := httpHandler.NewMeliNotificationHandler(meliNotificationService)
 	odooHandler := httpHandler.NewOdooHandler(odooConnectionService)
-	migrationHandler := httpHandler.NewMigrationHandler(odooCategoryMigrationService)
+	migrationHandler := httpHandler.NewMigrationHandler(odooCategoryMigrationService, vecomSyncProductMigrationService)
 	equipmentTypeHandler := httpHandler.NewEquipmentTypeHandler(equipmentTypeService)
 	vehicleFitmentHandler := httpHandler.NewVehicleFitmentHandler(vehicleFitmentService)
 	equipmentFitmentHandler := httpHandler.NewEquipmentFitmentHandler(equipmentFitmentService)
@@ -303,19 +367,33 @@ func main() {
 	// MercadoLibrePauseUnmappedListingsHandler. Meant to be run once, then
 	// removed.
 	mercadoLibrePauseUnmappedListingsHandler := httpHandler.NewMercadoLibrePauseUnmappedListingsHandler(mercadoLibreTokenService, mysqlRepos.ChannelProductMapRepository, mercadoLibreRateLimiter)
+	// TEMPORARY one-off migration handler — see
+	// MercadoLibreCloseUnmappedListingsHandler. Meant to be run once, then
+	// removed.
+	mercadoLibreCloseUnmappedListingsHandler := httpHandler.NewMercadoLibreCloseUnmappedListingsHandler(mercadoLibreTokenService, mysqlRepos.ChannelConnectionRepository, mysqlRepos.ChannelRepository, mysqlRepos.ChannelProductMapRepository, mercadoLibreRateLimiter)
+	// TEMPORARY one-off endpoint — see MercadoLibreCloseItemHandler. Remove
+	// once no longer needed.
+	mercadoLibreCloseItemHandler := httpHandler.NewMercadoLibreCloseItemHandler(mercadoLibreTokenService, mercadoLibreRateLimiter)
+	// TEMPORARY one-off migration handler — see
+	// MercadoLibreMigrateSyncItemMeliHandler. Meant to be run once, then
+	// removed.
+	mercadoLibreMigrateSyncItemMeliHandler := httpHandler.NewMercadoLibreMigrateSyncItemMeliHandler(db, mercadoLibreTokenService, mysqlRepos.ProductRepository, mysqlRepos.ChannelProductMapRepository, mercadoLibreRateLimiter)
 
 	// Initialize Redis and sync service
-	redisClient := redisInfra.NewClient()
+	redisClient := redisInfra.NewClient(cfg)
 	redisProductRepo := redisInfra.NewProductRepository(redisClient)
 	redisInventoryRepo := redisInfra.NewInventoryRepository(redisClient)
 	redisNissanRepo := redisInfra.NewNissanRepository(redisClient)
-	syncService := syncApp.NewSyncService(redisProductRepo, redisInventoryRepo, redisNissanRepo, db)
+	syncService := syncApp.NewSyncService(redisProductRepo, redisInventoryRepo, redisNissanRepo, db, channelListingsService)
 
 	// Start consumers in background so API availability is not blocked.
+	// consumersDone se cierra cuando todos los supervisores de cola salieron
+	// tras cancelarse bgCtx; el apagado ordenado lo espera (con plazo) para que
+	// el mensaje en curso alcance a terminar.
+	consumersDone := make(chan struct{})
 	go func() {
-		if consumerErr := startConsumers(syncService); consumerErr != nil {
-			log.Printf("Failed to start consumers: %v", consumerErr)
-		}
+		defer close(consumersDone)
+		startConsumers(bgCtx, cfg, syncService)
 	}()
 
 	// Marketplace sync worker: polls ecom_channel_sync_queue for every
@@ -339,7 +417,7 @@ func main() {
 		},
 	)
 	marketplaceWorker.Register("ODOO", odooProductSyncService)
-	go marketplaceWorker.Start(context.Background())
+	go safe.Supervise(bgCtx, "marketplace worker", marketplaceWorker.Start)
 
 	// Token refresh scheduler: polls ecom_connection_status for connections
 	// whose token is close to expiring and delegates the refresh to whichever
@@ -355,7 +433,7 @@ func main() {
 		},
 	)
 	tokenRefreshScheduler.Register("MERCADOLIBRE", mercadoLibreTokenService)
-	go tokenRefreshScheduler.Start(context.Background())
+	go safe.Supervise(bgCtx, "token refresh scheduler", tokenRefreshScheduler.Start)
 
 	// Compatibilities fix scheduler: once a day calls
 	// mercadoLibreCompatibilityService.FixUnderReviewListings for every
@@ -370,24 +448,40 @@ func main() {
 			RunAtMinute: cfg.CompatibilitiesFixRunAtMinute,
 		},
 	)
-	go compatibilitiesFixScheduler.Start(context.Background())
+	go safe.Supervise(bgCtx, "compatibilities fix scheduler", compatibilitiesFixScheduler.Start)
+
+	// Exchange rate scheduler: once a day fetches Banxico's published FIX
+	// rate (SIE series SF43718) and upserts ecom_exchange_rates' USD→MXN
+	// row, so EffectivePriceResolver always converts USD price lists to MXN
+	// with a current rate instead of a stale hand-entered one.
+	exchangeRateScheduler := schedulers.NewExchangeRateScheduler(
+		sieExchangeRateUpdater,
+		schedulers.ExchangeRateSchedulerConfig{
+			RunAtHour:   cfg.ExchangeRateRunAtHour,
+			RunAtMinute: cfg.ExchangeRateRunAtMinute,
+		},
+	)
+	go safe.Supervise(bgCtx, "exchange rate scheduler", exchangeRateScheduler.Start)
 
 	// Create router and start server.
 	router := api.NewRouter(
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
 		authHandler, authMiddleware, brandHandler, categoryHandler, currencyHandler, branchHandler,
-		warehouseHandler, productStockHandler, priceListHandler, productPricesHandler, exchangeRatesHandler,
+		warehouseHandler, productStockHandler, priceListHandler, pricingFormulaHandler, productPricesHandler, exchangeRatesHandler,
 		stockMovementsHandler, productImagesHandler, productImageImportHandler, productVideosHandler, productPartNumbersHandler,
 		productDimensionsHandler, productSEOHandler, connectionCredentialsHandler, connectionSettingsHandler,
 		connectionStatusHandler, channelParametersHandler, mercadoLibreHandler, meliNotificationHandler, odooHandler, sourceHandler,
 		migrationHandler, equipmentTypeHandler, vehicleFitmentHandler, equipmentFitmentHandler,
 		productVehicleCompatibilityHandler, productEquipmentCompatibilityHandler, channelSyncQueueHandler,
 		channelListingsHandler, mercadoLibreItemLookupHandler, mercadoLibrePauseUnmappedListingsHandler,
+		mercadoLibreCloseUnmappedListingsHandler, mercadoLibreCloseItemHandler,
 		attributeHandler, attributeOptionHandler, productAttributeHandler, channelAttributeHandler, channelAttributeMapHandler,
 		channelAttributeValueHandler,
 		mercadoLibreCompatibilitiesHandler,
 		mercadoLibreListingsAuditHandler,
 		mercadoLibreCategoryAttributesDebugHandler,
+		mercadoLibreCategoriesDebugHandler,
+		mercadoLibreMigrateSyncItemMeliHandler,
 	)
 
 	server := &http.Server{
@@ -400,6 +494,10 @@ func main() {
 		log.Fatalf("Failed to configure TLS: %v", err)
 	}
 
+	// El servidor corre en una goroutine para que main() pueda esperar en
+	// paralelo la señal de apagado (rootCtx) y disparar el cierre ordenado.
+	serverErrors := make(chan error, 1)
+
 	if tlsConfig != nil {
 		server.TLSConfig = tlsConfig
 		listener, listenErr := tls.Listen("tcp", server.Addr, tlsConfig)
@@ -408,9 +506,48 @@ func main() {
 		}
 
 		log.Printf("HTTPS server starting on port %s...", cfg.Port)
-		log.Fatal(server.Serve(listener))
+		go func() { serverErrors <- server.Serve(listener) }()
+	} else {
+		log.Printf("HTTP server starting on port %s...", cfg.Port)
+		go func() { serverErrors <- server.ListenAndServe() }()
 	}
 
-	log.Printf("HTTP server starting on port %s...", cfg.Port)
-	log.Fatal(server.ListenAndServe())
+	select {
+	case srvErr := <-serverErrors:
+		if srvErr != nil && !errors.Is(srvErr, http.ErrServerClosed) {
+			log.Fatalf("server error: %v", srvErr)
+		}
+	case <-rootCtx.Done():
+		log.Println("Señal de apagado recibida, cerrando servidor de forma ordenada...")
+
+		// Dejar de interceptar señales: un segundo SIGINT/SIGTERM mata el
+		// proceso de inmediato si el drenado se cuelga.
+		stopSignals()
+
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), cfg.ShutdownTimeout)
+		defer cancel()
+
+		// 1. Rechazar conexiones nuevas y esperar a que terminen las requests
+		//    en vuelo (crear listing, actualizar precio, etc.).
+		if shutdownErr := server.Shutdown(shutdownCtx); shutdownErr != nil {
+			log.Printf("drenado excedió %s, forzando cierre: %v", cfg.ShutdownTimeout, shutdownErr)
+			_ = server.Close()
+		}
+
+		// 2. Recién ahora frenar los procesos de fondo (worker de sync a
+		//    marketplaces, schedulers, consumers RabbitMQ).
+		stopBackground()
+
+		// 3. Esperar a que los consumers RabbitMQ cancelen su suscripción y
+		//    terminen el mensaje en curso. Los handlers no reciben context, así
+		//    que acotamos la espera para no colgar el apagado.
+		select {
+		case <-consumersDone:
+			log.Println("Consumers RabbitMQ detenidos")
+		case <-time.After(consumersShutdownGrace):
+			log.Printf("Consumers RabbitMQ no terminaron en %s, saliendo igual", consumersShutdownGrace)
+		}
+
+		log.Println("Servidor detenido")
+	}
 }

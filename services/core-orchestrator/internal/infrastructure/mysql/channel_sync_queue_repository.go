@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -47,7 +48,7 @@ func NewChannelSyncQueueRepository(db Querier) *ChannelSyncQueueRepository {
 	return &ChannelSyncQueueRepository{db: db}
 }
 
-func (r *ChannelSyncQueueRepository) Create(input CreateChannelSyncQueueEntryInput) (*ChannelSyncQueueDTO, error) {
+func (r *ChannelSyncQueueRepository) Create(ctx context.Context, input CreateChannelSyncQueueEntryInput) (*ChannelSyncQueueDTO, error) {
 	syncType := input.SyncType
 	if syncType == "" {
 		syncType = defaultChannelSyncQueueSyncType
@@ -58,7 +59,7 @@ func (r *ChannelSyncQueueRepository) Create(input CreateChannelSyncQueueEntryInp
 		VALUES (?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ProductID, input.ConnectionID, syncType, nullableString(input.LastError), input.UpdatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.ConnectionID, syncType, nullableString(input.LastError), input.UpdatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -68,12 +69,12 @@ func (r *ChannelSyncQueueRepository) Create(input CreateChannelSyncQueueEntryInp
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
 // FindPending returns up to limit pending entries, oldest id first, for a
 // worker to claim and process.
-func (r *ChannelSyncQueueRepository) FindPending(limit int) ([]ChannelSyncQueueDTO, error) {
+func (r *ChannelSyncQueueRepository) FindPending(ctx context.Context, limit int) ([]ChannelSyncQueueDTO, error) {
 	query := `
 		SELECT id, product_id, connection_id, sync_type, status, attempts, last_error,
 		       requested_at, processed_at, updated_by, created_at, updated_at
@@ -83,7 +84,7 @@ func (r *ChannelSyncQueueRepository) FindPending(limit int) ([]ChannelSyncQueueD
 		LIMIT ?
 	`
 
-	rows, err := r.db.Query(query, limit)
+	rows, err := r.db.QueryContext(ctx, query, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +109,8 @@ func (r *ChannelSyncQueueRepository) FindPending(limit int) ([]ChannelSyncQueueD
 // concurrent workers (or worker instances) never process the same entry
 // twice. It reports false, with no error, when the entry was no longer
 // pending (already claimed elsewhere).
-func (r *ChannelSyncQueueRepository) Claim(id int64) (bool, error) {
-	result, err := r.db.Exec(`
+func (r *ChannelSyncQueueRepository) Claim(ctx context.Context, id int64) (bool, error) {
+	result, err := r.db.ExecContext(ctx, `
 		UPDATE ecom_channel_sync_queue
 		SET status = 'processing', updated_at = NOW()
 		WHERE id = ? AND status = 'pending' AND deleted_at IS NULL
@@ -127,8 +128,8 @@ func (r *ChannelSyncQueueRepository) Claim(id int64) (bool, error) {
 }
 
 // MarkDone marks a claimed entry as successfully synced.
-func (r *ChannelSyncQueueRepository) MarkDone(id, updatedBy int64) error {
-	_, err := r.db.Exec(`
+func (r *ChannelSyncQueueRepository) MarkDone(ctx context.Context, id, updatedBy int64) error {
+	_, err := r.db.ExecContext(ctx, `
 		UPDATE ecom_channel_sync_queue
 		SET status = 'done', processed_at = NOW(), last_error = NULL, updated_by = ?
 		WHERE id = ?
@@ -138,8 +139,8 @@ func (r *ChannelSyncQueueRepository) MarkDone(id, updatedBy int64) error {
 
 // MarkFailed marks a claimed entry as failed and records the error, so it
 // is visible without requiring the entry to be retried automatically.
-func (r *ChannelSyncQueueRepository) MarkFailed(id int64, message string, updatedBy int64) error {
-	_, err := r.db.Exec(`
+func (r *ChannelSyncQueueRepository) MarkFailed(ctx context.Context, id int64, message string, updatedBy int64) error {
+	_, err := r.db.ExecContext(ctx, `
 		UPDATE ecom_channel_sync_queue
 		SET status = 'failed', attempts = attempts + 1, last_error = ?, processed_at = NOW(), updated_by = ?
 		WHERE id = ?
@@ -151,8 +152,8 @@ func (r *ChannelSyncQueueRepository) MarkFailed(id int64, message string, update
 // it as a failed attempt, for preconditions that aren't met yet (e.g. a
 // product still missing its cover image or category mapping) so the entry
 // is retried on a later poll instead of getting stuck as failed.
-func (r *ChannelSyncQueueRepository) ReleasePending(id int64, note string, updatedBy int64) error {
-	_, err := r.db.Exec(`
+func (r *ChannelSyncQueueRepository) ReleasePending(ctx context.Context, id int64, note string, updatedBy int64) error {
+	_, err := r.db.ExecContext(ctx, `
 		UPDATE ecom_channel_sync_queue
 		SET status = 'pending', last_error = ?, updated_by = ?
 		WHERE id = ?
@@ -160,7 +161,7 @@ func (r *ChannelSyncQueueRepository) ReleasePending(id int64, note string, updat
 	return err
 }
 
-func (r *ChannelSyncQueueRepository) FindByID(id int64) (*ChannelSyncQueueDTO, error) {
+func (r *ChannelSyncQueueRepository) FindByID(ctx context.Context, id int64) (*ChannelSyncQueueDTO, error) {
 	query := `
 		SELECT id, product_id, connection_id, sync_type, status, attempts, last_error,
 		       requested_at, processed_at, updated_by, created_at, updated_at
@@ -169,7 +170,7 @@ func (r *ChannelSyncQueueRepository) FindByID(id int64) (*ChannelSyncQueueDTO, e
 	`
 
 	var q ChannelSyncQueueDTO
-	if err := r.db.QueryRow(query, id).Scan(
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(
 		&q.ID, &q.ProductID, &q.ConnectionID, &q.SyncType, &q.Status, &q.Attempts, &q.LastError,
 		&q.RequestedAt, &q.ProcessedAt, &q.UpdatedBy, &q.CreatedAt, &q.UpdatedAt,
 	); err != nil {

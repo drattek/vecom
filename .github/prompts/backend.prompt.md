@@ -1,5 +1,9 @@
 # Backend Prompt
 
+## Idioma
+
+Responde siempre en español.
+
 ## Scope
 
 Aplicable a cambios en `services/core-orchestrator`.
@@ -39,6 +43,14 @@ Leer antes de proponer cambios:
 - Adaptadores en `internal/infrastructure`.
 - Entrada/salida en `internal/interfaces`.
 
+## Persistencia (ver ADR `infrastructure/decisions/0001-persistencia-transacciones-y-context.md`)
+
+- Repos: constructor toma `mysql.Querier`, cada método toma `ctx context.Context` y usa `...Context`.
+- Servicios: constructor toma `*sql.DB` + repos. Métodos toman `ctx` (desde `r.Context()` en el handler).
+- Multi-sentencia → `mysql.WithinTx`. Una sola sentencia → repo sobre el pool, sin transacción.
+- `mysql.Querier` = `ExecContext`/`QueryContext`/`QueryRowContext`. Nunca usar `context.TODO()` ni `context.Background()` en repos/servicios.
+- Goroutines de fondo bajo `internal/shared/safe`.
+
 ## Checklist de salida
 
 1. ¿La lógica quedó en dominio/aplicación?
@@ -46,3 +58,6 @@ Leer antes de proponer cambios:
 3. ¿Se evitó acoplamiento a ERP/Synapse?
 4. ¿Se mantienen contratos API consistentes?
 5. ¿Se consideró idempotencia si hay consumidores de eventos?
+6. ¿`ctx` propagado handler → servicio → repo → driver?
+7. ¿Operación multi-sentencia envuelta en `mysql.WithinTx`? ¿Una sola sentencia SIN transacción?
+8. ¿Alguna `go` nueva sin `safe.Supervise`/`safe.Do`?

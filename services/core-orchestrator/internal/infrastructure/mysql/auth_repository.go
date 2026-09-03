@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -12,7 +13,7 @@ import (
 var ErrAuthUserNotFound = errors.New("auth user not found")
 
 type AuthRepository struct {
-	db *sql.DB
+	db Querier
 }
 
 type AuthUserCredentials struct {
@@ -23,11 +24,11 @@ type AuthUserCredentials struct {
 	PasswordHash string
 }
 
-func NewAuthRepository(db *sql.DB) *AuthRepository {
+func NewAuthRepository(db Querier) *AuthRepository {
 	return &AuthRepository{db: db}
 }
 
-func (r *AuthRepository) FindUserCredentialsByUsername(username string) (*AuthUserCredentials, error) {
+func (r *AuthRepository) FindUserCredentialsByUsername(ctx context.Context, username string) (*AuthUserCredentials, error) {
 	query := `
 		SELECT id, username, role, is_active, password_hash
 		FROM ecom_api_user
@@ -36,7 +37,7 @@ func (r *AuthRepository) FindUserCredentialsByUsername(username string) (*AuthUs
 	`
 
 	var credentials AuthUserCredentials
-	err := r.db.QueryRow(query, username).Scan(
+	err := r.db.QueryRowContext(ctx, query, username).Scan(
 		&credentials.ID,
 		&credentials.Username,
 		&credentials.Role,
@@ -53,13 +54,13 @@ func (r *AuthRepository) FindUserCredentialsByUsername(username string) (*AuthUs
 	return &credentials, nil
 }
 
-func (r *AuthRepository) StoreToken(jti string, userID int64, token string, issuedAt, expiresAt time.Time, userAgent, clientIP string) error {
+func (r *AuthRepository) StoreToken(ctx context.Context, jti string, userID int64, token string, issuedAt, expiresAt time.Time, userAgent, clientIP string) error {
 	query := `
 		INSERT INTO ecom_api_token (jti, user_id, token, issued_at, expires_at, user_agent, client_ip)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.Exec(query, jti, userID, token, issuedAt.UTC(), expiresAt.UTC(), userAgent, clientIP)
+	_, err := r.db.ExecContext(ctx, query, jti, userID, token, issuedAt.UTC(), expiresAt.UTC(), userAgent, clientIP)
 	if err != nil {
 		return fmt.Errorf("error storing access token: %w", err)
 	}
@@ -67,7 +68,27 @@ func (r *AuthRepository) StoreToken(jti string, userID int64, token string, issu
 	return nil
 }
 
-func (r *AuthRepository) FindActiveUserByToken(jti, token string) (*domain.AuthUser, error) {
+// RevokeToken marks the access token identified by jti as revoked so it can no
+// longer pass FindActiveUserByToken. Revoking an already-revoked, expired or
+// unknown token is a no-op (no error) so logout stays idempotent.
+func (r *AuthRepository) RevokeToken(ctx context.Context, jti, token string) error {
+	query := `
+		UPDATE ecom_api_token
+		SET revoked_at = UTC_TIMESTAMP()
+		WHERE jti = ?
+		  AND token = ?
+		  AND revoked_at IS NULL
+	`
+
+	_, err := r.db.ExecContext(ctx, query, jti, token)
+	if err != nil {
+		return fmt.Errorf("error revoking access token: %w", err)
+	}
+
+	return nil
+}
+
+func (r *AuthRepository) FindActiveUserByToken(ctx context.Context, jti, token string) (*domain.AuthUser, error) {
 	query := `
 		SELECT u.id, u.username, u.role, u.is_active
 		FROM ecom_api_token t
@@ -81,7 +102,7 @@ func (r *AuthRepository) FindActiveUserByToken(jti, token string) (*domain.AuthU
 	`
 
 	var user domain.AuthUser
-	err := r.db.QueryRow(query, jti, token).Scan(&user.ID, &user.Username, &user.Role, &user.IsActive)
+	err := r.db.QueryRowContext(ctx, query, jti, token).Scan(&user.ID, &user.Username, &user.Role, &user.IsActive)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrAuthUserNotFound

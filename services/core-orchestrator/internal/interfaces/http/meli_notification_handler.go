@@ -64,7 +64,7 @@ func (h *MeliNotificationHandler) Receive(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if _, err := h.service.Receive(meliNotificationsApp.ReceiveNotificationInput{
+	if _, err := h.service.Receive(r.Context(), meliNotificationsApp.ReceiveNotificationInput{
 		NotificationID: req.ID,
 		Resource:       req.Resource,
 		Topic:          req.Topic,

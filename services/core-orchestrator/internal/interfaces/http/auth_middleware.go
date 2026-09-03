@@ -42,7 +42,7 @@ func (m *JWTMiddleware) RequireAuth(next http.Handler) http.Handler {
 			return
 		}
 
-		user, err := m.service.ValidateToken(tokenString)
+		user, err := m.service.ValidateToken(r.Context(), tokenString)
 		if err != nil {
 			if errors.Is(err, credentials.ErrUnauthorized) {
 				writeJSONError(w, http.StatusUnauthorized, "invalid or expired token")

@@ -1,6 +1,8 @@
 package meli_notifications
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strings"
 	"time"
@@ -23,11 +25,12 @@ type ReceiveNotificationInput struct {
 }
 
 type MeliNotificationService struct {
+	db         *sql.DB
 	repository *mysqlInfra.MeliNotificationRepository
 }
 
-func NewMeliNotificationService(repository *mysqlInfra.MeliNotificationRepository) *MeliNotificationService {
-	return &MeliNotificationService{repository: repository}
+func NewMeliNotificationService(db *sql.DB, repository *mysqlInfra.MeliNotificationRepository) *MeliNotificationService {
+	return &MeliNotificationService{db: db, repository: repository}
 }
 
 // Receive persists a MercadoLibre notification exactly once per
@@ -36,7 +39,7 @@ func NewMeliNotificationService(repository *mysqlInfra.MeliNotificationRepositor
 // it doesn't get a fast 2xx back, so a duplicate delivery is expected and
 // silently acknowledged by returning the already-stored row instead of
 // erroring or inserting a second copy.
-func (s *MeliNotificationService) Receive(input ReceiveNotificationInput) (*mysqlInfra.MeliNotificationDTO, error) {
+func (s *MeliNotificationService) Receive(ctx context.Context, input ReceiveNotificationInput) (*mysqlInfra.MeliNotificationDTO, error) {
 	input.NotificationID = strings.TrimSpace(input.NotificationID)
 	input.Resource = strings.TrimSpace(input.Resource)
 	input.Topic = strings.TrimSpace(input.Topic)
@@ -45,7 +48,7 @@ func (s *MeliNotificationService) Receive(input ReceiveNotificationInput) (*mysq
 		return nil, ErrInvalidMeliNotificationPayload
 	}
 
-	existing, err := s.repository.FindByNotificationID(input.NotificationID)
+	existing, err := s.repository.FindByNotificationID(ctx, input.NotificationID)
 	if err == nil {
 		return existing, nil
 	}
@@ -53,7 +56,7 @@ func (s *MeliNotificationService) Receive(input ReceiveNotificationInput) (*mysq
 		return nil, err
 	}
 
-	return s.repository.Create(mysqlInfra.CreateMeliNotificationInput{
+	return s.repository.Create(ctx, mysqlInfra.CreateMeliNotificationInput{
 		NotificationID:   input.NotificationID,
 		Resource:         input.Resource,
 		Topic:            input.Topic,

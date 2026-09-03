@@ -46,7 +46,7 @@ func (h *ChannelSyncQueueHandler) Enqueue(w http.ResponseWriter, r *http.Request
 		})
 	}
 
-	result, err := h.service.Enqueue(syncQueueApp.EnqueueInput{
+	result, err := h.service.Enqueue(r.Context(), syncQueueApp.EnqueueInput{
 		Items:     items,
 		UpdatedBy: user.ID,
 	})

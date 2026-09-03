@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -70,16 +71,16 @@ type UpdateChannelAttributeInput struct {
 }
 
 type ChannelAttributesRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewChannelAttributesRepository(db *sql.DB) *ChannelAttributesRepository {
+func NewChannelAttributesRepository(db Querier) *ChannelAttributesRepository {
 	return &ChannelAttributesRepository{db: db}
 }
 
-func (r *ChannelAttributesRepository) FindPaginated(offset, pageSize int) (*PaginatedChannelAttributes, error) {
+func (r *ChannelAttributesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedChannelAttributes, error) {
 	var total int64
-	if err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_channel_attributes WHERE deleted_at IS NULL").Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_channel_attributes WHERE deleted_at IS NULL").Scan(&total); err != nil {
 		return nil, fmt.Errorf("error counting channel attributes: %w", err)
 	}
 
@@ -92,7 +93,7 @@ func (r *ChannelAttributesRepository) FindPaginated(offset, pageSize int) (*Pagi
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying channel attributes: %w", err)
 	}
@@ -118,7 +119,7 @@ func (r *ChannelAttributesRepository) FindPaginated(offset, pageSize int) (*Pagi
 	}, nil
 }
 
-func (r *ChannelAttributesRepository) FindByID(id int64) (*ChannelAttributeDTO, error) {
+func (r *ChannelAttributesRepository) FindByID(ctx context.Context, id int64) (*ChannelAttributeDTO, error) {
 	query := `
 		SELECT id, channel_id, target_strategy, external_key, target_field, external_label, value_mode,
 		       category_id, is_required, created_by, updated_by, created_at, updated_at, deleted_at
@@ -127,10 +128,10 @@ func (r *ChannelAttributesRepository) FindByID(id int64) (*ChannelAttributeDTO, 
 		LIMIT 1
 	`
 
-	return scanChannelAttributeRow(r.db.QueryRow(query, id))
+	return scanChannelAttributeRow(r.db.QueryRowContext(ctx, query, id))
 }
 
-func (r *ChannelAttributesRepository) FindByChannelID(channelID int64) ([]ChannelAttributeDTO, error) {
+func (r *ChannelAttributesRepository) FindByChannelID(ctx context.Context, channelID int64) ([]ChannelAttributeDTO, error) {
 	query := `
 		SELECT id, channel_id, target_strategy, external_key, target_field, external_label, value_mode,
 		       category_id, is_required, created_by, updated_by, created_at, updated_at, deleted_at
@@ -139,7 +140,7 @@ func (r *ChannelAttributesRepository) FindByChannelID(channelID int64) ([]Channe
 		ORDER BY category_id IS NULL DESC, id ASC
 	`
 
-	rows, err := r.db.Query(query, channelID)
+	rows, err := r.db.QueryContext(ctx, query, channelID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying channel attributes: %w", err)
 	}
@@ -168,7 +169,7 @@ func (r *ChannelAttributesRepository) FindByChannelID(channelID int64) ([]Channe
 // category yet), in which case only the generic rows are returned. Not
 // called anywhere yet — added so the future attribute resolver (replacing
 // the hardcoded MercadoLibre/Odoo attribute lists) has the read path ready.
-func (r *ChannelAttributesRepository) FindApplicable(channelID int64, categoryID *int64) ([]ChannelAttributeDTO, error) {
+func (r *ChannelAttributesRepository) FindApplicable(ctx context.Context, channelID int64, categoryID *int64) ([]ChannelAttributeDTO, error) {
 	query := `
 		SELECT id, channel_id, target_strategy, external_key, target_field, external_label, value_mode,
 		       category_id, is_required, created_by, updated_by, created_at, updated_at, deleted_at
@@ -177,7 +178,7 @@ func (r *ChannelAttributesRepository) FindApplicable(channelID int64, categoryID
 		ORDER BY category_id IS NULL ASC, id ASC
 	`
 
-	rows, err := r.db.Query(query, channelID, categoryID)
+	rows, err := r.db.QueryContext(ctx, query, channelID, categoryID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying applicable channel attributes: %w", err)
 	}
@@ -198,14 +199,14 @@ func (r *ChannelAttributesRepository) FindApplicable(channelID int64, categoryID
 	return attributes, nil
 }
 
-func (r *ChannelAttributesRepository) Create(input CreateChannelAttributeInput) (*ChannelAttributeDTO, error) {
+func (r *ChannelAttributesRepository) Create(ctx context.Context, input CreateChannelAttributeInput) (*ChannelAttributeDTO, error) {
 	query := `
 		INSERT INTO ecom_channel_attributes
 			(channel_id, target_strategy, external_key, target_field, external_label, value_mode, category_id, is_required, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.ChannelID, input.TargetStrategy, input.ExternalKey, input.TargetField, input.ExternalLabel, input.ValueMode, input.CategoryID, input.IsRequired, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.ChannelID, input.TargetStrategy, input.ExternalKey, input.TargetField, input.ExternalLabel, input.ValueMode, input.CategoryID, input.IsRequired, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating channel attribute: %w", err)
 	}
@@ -215,10 +216,10 @@ func (r *ChannelAttributesRepository) Create(input CreateChannelAttributeInput) 
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ChannelAttributesRepository) Update(id int64, input UpdateChannelAttributeInput) (*ChannelAttributeDTO, error) {
+func (r *ChannelAttributesRepository) Update(ctx context.Context, id int64, input UpdateChannelAttributeInput) (*ChannelAttributeDTO, error) {
 	query := `
 		UPDATE ecom_channel_attributes
 		SET target_strategy = ?, external_key = ?, target_field = ?, external_label = ?, value_mode = ?,
@@ -226,7 +227,7 @@ func (r *ChannelAttributesRepository) Update(id int64, input UpdateChannelAttrib
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.TargetStrategy, input.ExternalKey, input.TargetField, input.ExternalLabel, input.ValueMode, input.CategoryID, input.IsRequired, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.TargetStrategy, input.ExternalKey, input.TargetField, input.ExternalLabel, input.ValueMode, input.CategoryID, input.IsRequired, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating channel attribute: %w", err)
 	}
@@ -239,13 +240,13 @@ func (r *ChannelAttributesRepository) Update(id int64, input UpdateChannelAttrib
 		return nil, ErrChannelAttributeNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ChannelAttributesRepository) SoftDelete(id int64) error {
+func (r *ChannelAttributesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `UPDATE ecom_channel_attributes SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting channel attribute: %w", err)
 	}

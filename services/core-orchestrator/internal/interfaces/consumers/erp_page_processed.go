@@ -1,6 +1,7 @@
 package consumers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 
@@ -8,8 +9,8 @@ import (
 	"core-orchestrator/internal/domain"
 )
 
-func ERPPageProcessedConsumer(service *sync.SyncService) func([]byte) error {
-	return func(body []byte) error {
+func ERPPageProcessedConsumer(service *sync.SyncService) func(context.Context, []byte) error {
+	return func(ctx context.Context, body []byte) error {
 		var event domain.PageProcessedEvent
 
 		err := json.Unmarshal(body, &event)
@@ -20,6 +21,6 @@ func ERPPageProcessedConsumer(service *sync.SyncService) func([]byte) error {
 
 		log.Printf("[item.page.processed] received: %+v", event)
 
-		return service.ProcessERPPageProcessed(event)
+		return service.ProcessERPPageProcessed(ctx, event)
 	}
 }

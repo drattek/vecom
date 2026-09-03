@@ -16,7 +16,7 @@ public class ProductService {
     private final RedisProductService redisProductService;
     private final EventPublisher eventPublisher;
 
-    //@Scheduled(cron = "${sync.items.cron-expression}")
+    //@Scheduled(cron = "${sync.items.cron-expression}", zone = "${sync.cron.zone}")
     public void getItems(){
         int pageSize = 1000;
         int offset = 0;
@@ -55,7 +55,7 @@ public class ProductService {
         );
     }
 
-    //@Scheduled(cron = "${sync.stock.cron-expression}")
+    @Scheduled(cron = "${sync.stock.cron-expression}", zone = "${sync.cron.zone}")
     public void getStockInfo(){
         int pageSize = 1000;
         int offset = 0;
@@ -94,7 +94,7 @@ public class ProductService {
         );
     }
 
-    //@Scheduled(cron = "${sync.existencias.cron-expression}")
+    @Scheduled(cron = "${sync.existencias.cron-expression}", zone = "${sync.cron.zone}")
     public void getExistenciasInfo(){
         int pageSize = 1000;
         int offset = 0;

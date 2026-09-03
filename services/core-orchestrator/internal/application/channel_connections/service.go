@@ -1,6 +1,8 @@
 package channel_connections
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -12,6 +14,7 @@ var ErrInvalidChannelConnectionPayload = errors.New("invalid channel connection 
 var ErrInvalidChannelConnectionReference = errors.New("invalid channel connection reference")
 
 type ChannelConnectionService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ChannelConnectionRepository
 }
 
@@ -24,11 +27,11 @@ type UpsertChannelConnectionInput struct {
 	AllowsMultipleListings bool
 }
 
-func NewChannelConnectionService(repository *mysqlInfra.ChannelConnectionRepository) *ChannelConnectionService {
-	return &ChannelConnectionService{repository: repository}
+func NewChannelConnectionService(db *sql.DB, repository *mysqlInfra.ChannelConnectionRepository) *ChannelConnectionService {
+	return &ChannelConnectionService{db: db, repository: repository}
 }
 
-func (s *ChannelConnectionService) GetPaginatedChannelConnections(offset, pageSize int) (*mysqlInfra.PaginatedChannelConnections, error) {
+func (s *ChannelConnectionService) GetPaginatedChannelConnections(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedChannelConnections, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -41,15 +44,15 @@ func (s *ChannelConnectionService) GetPaginatedChannelConnections(offset, pageSi
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *ChannelConnectionService) GetChannelConnectionByID(id int64) (*mysqlInfra.ChannelConnectionDTO, error) {
+func (s *ChannelConnectionService) GetChannelConnectionByID(ctx context.Context, id int64) (*mysqlInfra.ChannelConnectionDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidChannelConnectionPayload
 	}
 
-	channelConnection, err := s.repository.FindByID(id)
+	channelConnection, err := s.repository.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
 			return nil, ErrChannelConnectionNotFound
@@ -60,13 +63,13 @@ func (s *ChannelConnectionService) GetChannelConnectionByID(id int64) (*mysqlInf
 	return channelConnection, nil
 }
 
-func (s *ChannelConnectionService) CreateChannelConnection(input UpsertChannelConnectionInput, actorID int64) (*mysqlInfra.ChannelConnectionDTO, error) {
+func (s *ChannelConnectionService) CreateChannelConnection(ctx context.Context, input UpsertChannelConnectionInput, actorID int64) (*mysqlInfra.ChannelConnectionDTO, error) {
 	normalized, err := normalizeAndValidate(input)
 	if err != nil {
 		return nil, err
 	}
 
-	channelConnection, err := s.repository.Create(mysqlInfra.CreateChannelConnectionInput{
+	channelConnection, err := s.repository.Create(ctx, mysqlInfra.CreateChannelConnectionInput{
 		ChannelID:              normalized.ChannelID,
 		Name:                   normalized.Name,
 		Status:                 normalized.Status,
@@ -85,7 +88,7 @@ func (s *ChannelConnectionService) CreateChannelConnection(input UpsertChannelCo
 	return channelConnection, nil
 }
 
-func (s *ChannelConnectionService) UpdateChannelConnection(id int64, input UpsertChannelConnectionInput, actorID int64) (*mysqlInfra.ChannelConnectionDTO, error) {
+func (s *ChannelConnectionService) UpdateChannelConnection(ctx context.Context, id int64, input UpsertChannelConnectionInput, actorID int64) (*mysqlInfra.ChannelConnectionDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidChannelConnectionPayload
 	}
@@ -95,7 +98,7 @@ func (s *ChannelConnectionService) UpdateChannelConnection(id int64, input Upser
 		return nil, err
 	}
 
-	channelConnection, err := s.repository.Update(id, mysqlInfra.UpdateChannelConnectionInput{
+	channelConnection, err := s.repository.Update(ctx, id, mysqlInfra.UpdateChannelConnectionInput{
 		ChannelID:              normalized.ChannelID,
 		Name:                   normalized.Name,
 		Status:                 normalized.Status,
@@ -117,12 +120,12 @@ func (s *ChannelConnectionService) UpdateChannelConnection(id int64, input Upser
 	return channelConnection, nil
 }
 
-func (s *ChannelConnectionService) SoftDeleteChannelConnection(id int64, actorID int64) error {
+func (s *ChannelConnectionService) SoftDeleteChannelConnection(ctx context.Context, id int64, actorID int64) error {
 	if id <= 0 {
 		return ErrInvalidChannelConnectionPayload
 	}
 
-	err := s.repository.SoftDelete(id, actorID)
+	err := s.repository.SoftDelete(ctx, id, actorID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
 			return ErrChannelConnectionNotFound

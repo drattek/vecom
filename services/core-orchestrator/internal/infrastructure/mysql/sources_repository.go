@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -47,9 +48,9 @@ func NewSourcesRepository(db Querier) *SourcesRepository {
 	return &SourcesRepository{db: db}
 }
 
-func (r *SourcesRepository) FindPaginated(offset, pageSize int) (*PaginatedSources, error) {
+func (r *SourcesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedSources, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_sources WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_sources WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting sources: %w", err)
 	}
@@ -62,7 +63,7 @@ func (r *SourcesRepository) FindPaginated(offset, pageSize int) (*PaginatedSourc
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying sources: %w", err)
 	}
@@ -90,7 +91,7 @@ func (r *SourcesRepository) FindPaginated(offset, pageSize int) (*PaginatedSourc
 	}, nil
 }
 
-func (r *SourcesRepository) FindByID(id int64) (*SourceDTO, error) {
+func (r *SourcesRepository) FindByID(ctx context.Context, id int64) (*SourceDTO, error) {
 	query := `
 		SELECT id, code, name, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_sources
@@ -98,11 +99,11 @@ func (r *SourcesRepository) FindByID(id int64) (*SourceDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanSourceRow(row)
 }
 
-func (r *SourcesRepository) FindByCode(code string) (*SourceDTO, error) {
+func (r *SourcesRepository) FindByCode(ctx context.Context, code string) (*SourceDTO, error) {
 	query := `
 		SELECT id, code, name, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_sources
@@ -110,17 +111,17 @@ func (r *SourcesRepository) FindByCode(code string) (*SourceDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, code)
+	row := r.db.QueryRowContext(ctx, query, code)
 	return scanSourceRow(row)
 }
 
-func (r *SourcesRepository) Create(input CreateSourceInput) (*SourceDTO, error) {
+func (r *SourcesRepository) Create(ctx context.Context, input CreateSourceInput) (*SourceDTO, error) {
 	query := `
 		INSERT INTO ecom_sources (code, name, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.Code, input.Name, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.Code, input.Name, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating source: %w", err)
 	}
@@ -130,17 +131,17 @@ func (r *SourcesRepository) Create(input CreateSourceInput) (*SourceDTO, error) 
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *SourcesRepository) Update(id int64, input UpdateSourceInput) (*SourceDTO, error) {
+func (r *SourcesRepository) Update(ctx context.Context, id int64, input UpdateSourceInput) (*SourceDTO, error) {
 	query := `
 		UPDATE ecom_sources
 		SET code = ?, name = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Code, input.Name, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Code, input.Name, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating source: %w", err)
 	}
@@ -154,17 +155,17 @@ func (r *SourcesRepository) Update(id int64, input UpdateSourceInput) (*SourceDT
 		return nil, ErrSourceNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *SourcesRepository) SoftDelete(id int64) error {
+func (r *SourcesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_sources
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting source: %w", err)
 	}

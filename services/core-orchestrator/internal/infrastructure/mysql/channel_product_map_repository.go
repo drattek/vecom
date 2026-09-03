@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -62,10 +63,10 @@ type UpsertChannelProductMapInput struct {
 }
 
 type ChannelProductMapRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewChannelProductMapRepository(db *sql.DB) *ChannelProductMapRepository {
+func NewChannelProductMapRepository(db Querier) *ChannelProductMapRepository {
 	return &ChannelProductMapRepository{db: db}
 }
 
@@ -77,7 +78,7 @@ const channelProductMapColumns = `
 // FindByProductAndConnection finds a product's general (non-fitment)
 // listing on a connection — the row every Odoo-style single-listing sync
 // reads and writes.
-func (r *ChannelProductMapRepository) FindByProductAndConnection(productID, connectionID int64) (*ChannelProductMapDTO, error) {
+func (r *ChannelProductMapRepository) FindByProductAndConnection(ctx context.Context, productID, connectionID int64) (*ChannelProductMapDTO, error) {
 	query := `
 		SELECT ` + channelProductMapColumns + `
 		FROM ecom_channel_product_map
@@ -85,13 +86,13 @@ func (r *ChannelProductMapRepository) FindByProductAndConnection(productID, conn
 		LIMIT 1
 	`
 
-	return scanChannelProductMapRow(r.db.QueryRow(query, productID, connectionID))
+	return scanChannelProductMapRow(r.db.QueryRowContext(ctx, query, productID, connectionID))
 }
 
 // FindByProductConnectionAndFitment finds the listing for one specific
 // (product, connection, vehicle fitment) combination. vehicleFitmentID nil
 // looks up the general listing, same as FindByProductAndConnection.
-func (r *ChannelProductMapRepository) FindByProductConnectionAndFitment(productID, connectionID int64, vehicleFitmentID *int64) (*ChannelProductMapDTO, error) {
+func (r *ChannelProductMapRepository) FindByProductConnectionAndFitment(ctx context.Context, productID, connectionID int64, vehicleFitmentID *int64) (*ChannelProductMapDTO, error) {
 	query := `
 		SELECT ` + channelProductMapColumns + `
 		FROM ecom_channel_product_map
@@ -99,13 +100,13 @@ func (r *ChannelProductMapRepository) FindByProductConnectionAndFitment(productI
 		LIMIT 1
 	`
 
-	return scanChannelProductMapRow(r.db.QueryRow(query, productID, connectionID, vehicleFitmentID))
+	return scanChannelProductMapRow(r.db.QueryRowContext(ctx, query, productID, connectionID, vehicleFitmentID))
 }
 
 // FindAllByProductAndConnection returns every listing a product has on a
 // connection — one row for the general listing, or one per vehicle fitment
 // on connections where allows_multiple_listings is true.
-func (r *ChannelProductMapRepository) FindAllByProductAndConnection(productID, connectionID int64) ([]ChannelProductMapDTO, error) {
+func (r *ChannelProductMapRepository) FindAllByProductAndConnection(ctx context.Context, productID, connectionID int64) ([]ChannelProductMapDTO, error) {
 	query := `
 		SELECT ` + channelProductMapColumns + `
 		FROM ecom_channel_product_map
@@ -113,7 +114,7 @@ func (r *ChannelProductMapRepository) FindAllByProductAndConnection(productID, c
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query, productID, connectionID)
+	rows, err := r.db.QueryContext(ctx, query, productID, connectionID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying channel product map for product %d, connection %d: %w", productID, connectionID, err)
 	}
@@ -125,7 +126,7 @@ func (r *ChannelProductMapRepository) FindAllByProductAndConnection(productID, c
 // FindAllByConnectionID returns every listing recorded on a connection,
 // across every product — used to refresh marketplace status/price/stock in
 // bulk without touching other connections' listings.
-func (r *ChannelProductMapRepository) FindAllByConnectionID(connectionID int64) ([]ChannelProductMapDTO, error) {
+func (r *ChannelProductMapRepository) FindAllByConnectionID(ctx context.Context, connectionID int64) ([]ChannelProductMapDTO, error) {
 	query := `
 		SELECT ` + channelProductMapColumns + `
 		FROM ecom_channel_product_map
@@ -133,7 +134,7 @@ func (r *ChannelProductMapRepository) FindAllByConnectionID(connectionID int64) 
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query, connectionID)
+	rows, err := r.db.QueryContext(ctx, query, connectionID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying channel product map for connection %d: %w", connectionID, err)
 	}
@@ -142,21 +143,37 @@ func (r *ChannelProductMapRepository) FindAllByConnectionID(connectionID int64) 
 	return scanChannelProductMapRows(rows)
 }
 
-func (r *ChannelProductMapRepository) findByID(id int64) (*ChannelProductMapDTO, error) {
+// FindByConnectionAndExternalID resolves the local product a marketplace
+// listing id maps to on a connection — used when a caller only has the
+// external item id (e.g. copying compatibilities between two MercadoLibre
+// items by their item ids) and needs the corresponding ecom_products row.
+func (r *ChannelProductMapRepository) FindByConnectionAndExternalID(ctx context.Context, connectionID int64, externalID string) (*ChannelProductMapDTO, error) {
+	query := `
+		SELECT ` + channelProductMapColumns + `
+		FROM ecom_channel_product_map
+		WHERE connection_id = ? AND external_id = ? AND deleted_at IS NULL
+		ORDER BY id ASC
+		LIMIT 1
+	`
+
+	return scanChannelProductMapRow(r.db.QueryRowContext(ctx, query, connectionID, externalID))
+}
+
+func (r *ChannelProductMapRepository) findByID(ctx context.Context, id int64) (*ChannelProductMapDTO, error) {
 	query := `
 		SELECT ` + channelProductMapColumns + `
 		FROM ecom_channel_product_map
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	return scanChannelProductMapRow(r.db.QueryRow(query, id))
+	return scanChannelProductMapRow(r.db.QueryRowContext(ctx, query, id))
 }
 
 // Upsert creates the mapping row for a (product, connection, vehicle
 // fitment) combination on first successful sync, or refreshes its external
 // id/status/last_synced_at on subsequent ones.
-func (r *ChannelProductMapRepository) Upsert(input UpsertChannelProductMapInput) (*ChannelProductMapDTO, error) {
-	existing, err := r.FindByProductConnectionAndFitment(input.ProductID, input.ConnectionID, input.VehicleFitmentID)
+func (r *ChannelProductMapRepository) Upsert(ctx context.Context, input UpsertChannelProductMapInput) (*ChannelProductMapDTO, error) {
+	existing, err := r.FindByProductConnectionAndFitment(ctx, input.ProductID, input.ConnectionID, input.VehicleFitmentID)
 	if err != nil && !errors.Is(err, ErrChannelProductMapNotFound) {
 		return nil, fmt.Errorf("error loading channel product map: %w", err)
 	}
@@ -168,7 +185,7 @@ func (r *ChannelProductMapRepository) Upsert(input UpsertChannelProductMapInput)
 			VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
 		`
 
-		result, err := r.db.Exec(
+		result, err := r.db.ExecContext(ctx,
 			query,
 			input.ProductID,
 			input.ConnectionID,
@@ -188,7 +205,7 @@ func (r *ChannelProductMapRepository) Upsert(input UpsertChannelProductMapInput)
 			return nil, fmt.Errorf("error getting last insert id: %w", err)
 		}
 
-		return r.findByID(id)
+		return r.findByID(ctx, id)
 	}
 
 	query := `
@@ -197,19 +214,19 @@ func (r *ChannelProductMapRepository) Upsert(input UpsertChannelProductMapInput)
 		WHERE id = ?
 	`
 
-	if _, err := r.db.Exec(query, nullableString(input.ListingTitle), input.ExternalID, nullableString(input.ExternalCategoryID), input.Status, input.ActorID, existing.ID); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, nullableString(input.ListingTitle), input.ExternalID, nullableString(input.ExternalCategoryID), input.Status, input.ActorID, existing.ID); err != nil {
 		return nil, fmt.Errorf("error updating channel product map: %w", err)
 	}
 
-	return r.findByID(existing.ID)
+	return r.findByID(ctx, existing.ID)
 }
 
 // UpdateStatus persists a refreshed status for an already-known row (e.g.
 // after polling the marketplace) without touching its title or external id.
-func (r *ChannelProductMapRepository) UpdateStatus(id int64, status string) error {
+func (r *ChannelProductMapRepository) UpdateStatus(ctx context.Context, id int64, status string) error {
 	query := `UPDATE ecom_channel_product_map SET status = ?, last_synced_at = NOW() WHERE id = ?`
 
-	if _, err := r.db.Exec(query, status, id); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, status, id); err != nil {
 		return fmt.Errorf("error updating channel product map status: %w", err)
 	}
 

@@ -22,6 +22,7 @@ type MySQLRepositories struct {
 	WarehousesRepository                    *mysqlInfra.WarehousesRepository
 	ProductStockRepository                  *mysqlInfra.ProductStockRepository
 	PriceListRepository                     *mysqlInfra.PriceListRepository
+	PricingFormulaRepository                *mysqlInfra.PricingFormulaRepository
 	ProductPricesRepository                 *mysqlInfra.ProductPricesRepository
 	PriceHistoryRepository                  *mysqlInfra.PriceHistoryRepository
 	ExchangeRatesRepository                 *mysqlInfra.ExchangeRatesRepository
@@ -70,6 +71,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 	warehousesRepository := mysqlInfra.NewWarehousesRepository(db)
 	productStockRepository := mysqlInfra.NewProductStockRepository(db)
 	priceListRepository := mysqlInfra.NewPriceListRepository(db)
+	pricingFormulaRepository := mysqlInfra.NewPricingFormulaRepository(db)
 	productPricesRepository := mysqlInfra.NewProductPricesRepository(db)
 	priceHistoryRepository := mysqlInfra.NewPriceHistoryRepository(db)
 	exchangeRatesRepository := mysqlInfra.NewExchangeRatesRepository(db)
@@ -115,6 +117,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 		WarehousesRepository:                    warehousesRepository,
 		ProductStockRepository:                  productStockRepository,
 		PriceListRepository:                     priceListRepository,
+		PricingFormulaRepository:                pricingFormulaRepository,
 		ProductPricesRepository:                 productPricesRepository,
 		PriceHistoryRepository:                  priceHistoryRepository,
 		ExchangeRatesRepository:                 exchangeRatesRepository,

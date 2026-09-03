@@ -1,6 +1,8 @@
 package attributes
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
@@ -30,14 +32,15 @@ func isValidDataType(dataType string) bool {
 // product attributes (e.g. COLOR, VOLTAGE, MATERIAL) that
 // ecom_product_attributes and ecom_channel_attribute_map both reference.
 type AttributeService struct {
+	db         *sql.DB
 	repository *mysqlInfra.AttributesRepository
 }
 
-func NewAttributeService(repository *mysqlInfra.AttributesRepository) *AttributeService {
-	return &AttributeService{repository: repository}
+func NewAttributeService(db *sql.DB, repository *mysqlInfra.AttributesRepository) *AttributeService {
+	return &AttributeService{db: db, repository: repository}
 }
 
-func (s *AttributeService) GetPaginatedAttributes(offset, pageSize int) (*mysqlInfra.PaginatedAttributes, error) {
+func (s *AttributeService) GetPaginatedAttributes(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedAttributes, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -48,24 +51,24 @@ func (s *AttributeService) GetPaginatedAttributes(offset, pageSize int) (*mysqlI
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *AttributeService) GetAttributeByID(id int64) (*mysqlInfra.AttributeDTO, error) {
+func (s *AttributeService) GetAttributeByID(ctx context.Context, id int64) (*mysqlInfra.AttributeDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidAttributePayload
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *AttributeService) GetAttributeByCode(code string) (*mysqlInfra.AttributeDTO, error) {
+func (s *AttributeService) GetAttributeByCode(ctx context.Context, code string) (*mysqlInfra.AttributeDTO, error) {
 	if code == "" {
 		return nil, ErrInvalidAttributePayload
 	}
-	return s.repository.FindByCode(code)
+	return s.repository.FindByCode(ctx, code)
 }
 
-func (s *AttributeService) CreateAttribute(input mysqlInfra.CreateAttributeInput) (*mysqlInfra.AttributeDTO, error) {
+func (s *AttributeService) CreateAttribute(ctx context.Context, input mysqlInfra.CreateAttributeInput) (*mysqlInfra.AttributeDTO, error) {
 	if input.Code == "" || input.Name == "" || input.CreatedBy <= 0 {
 		return nil, ErrInvalidAttributePayload
 	}
@@ -73,10 +76,10 @@ func (s *AttributeService) CreateAttribute(input mysqlInfra.CreateAttributeInput
 		return nil, ErrInvalidAttributePayload
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *AttributeService) UpdateAttribute(id int64, input mysqlInfra.UpdateAttributeInput) (*mysqlInfra.AttributeDTO, error) {
+func (s *AttributeService) UpdateAttribute(ctx context.Context, id int64, input mysqlInfra.UpdateAttributeInput) (*mysqlInfra.AttributeDTO, error) {
 	if id <= 0 || input.Name == "" || input.UpdatedBy <= 0 {
 		return nil, ErrInvalidAttributePayload
 	}
@@ -84,14 +87,14 @@ func (s *AttributeService) UpdateAttribute(id int64, input mysqlInfra.UpdateAttr
 		return nil, ErrInvalidAttributePayload
 	}
 
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *AttributeService) DeleteAttribute(id int64) error {
+func (s *AttributeService) DeleteAttribute(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidAttributePayload
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 // AttributeOptionService manages ecom_attribute_options, the predefined
@@ -99,46 +102,47 @@ func (s *AttributeService) DeleteAttribute(id int64) error {
 // "Rojo"/"Azul"/"Negro"), so the same value is never stored with
 // inconsistent casing/spelling across products.
 type AttributeOptionService struct {
+	db         *sql.DB
 	repository *mysqlInfra.AttributeOptionsRepository
 }
 
-func NewAttributeOptionService(repository *mysqlInfra.AttributeOptionsRepository) *AttributeOptionService {
-	return &AttributeOptionService{repository: repository}
+func NewAttributeOptionService(db *sql.DB, repository *mysqlInfra.AttributeOptionsRepository) *AttributeOptionService {
+	return &AttributeOptionService{db: db, repository: repository}
 }
 
-func (s *AttributeOptionService) GetOptionsByAttribute(attributeID int64) ([]mysqlInfra.AttributeOptionDTO, error) {
+func (s *AttributeOptionService) GetOptionsByAttribute(ctx context.Context, attributeID int64) ([]mysqlInfra.AttributeOptionDTO, error) {
 	if attributeID <= 0 {
 		return nil, ErrInvalidAttributeOptionPayload
 	}
-	return s.repository.FindByAttributeID(attributeID)
+	return s.repository.FindByAttributeID(ctx, attributeID)
 }
 
-func (s *AttributeOptionService) GetOptionByID(id int64) (*mysqlInfra.AttributeOptionDTO, error) {
+func (s *AttributeOptionService) GetOptionByID(ctx context.Context, id int64) (*mysqlInfra.AttributeOptionDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidAttributeOptionPayload
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *AttributeOptionService) CreateOption(input mysqlInfra.CreateAttributeOptionInput) (*mysqlInfra.AttributeOptionDTO, error) {
+func (s *AttributeOptionService) CreateOption(ctx context.Context, input mysqlInfra.CreateAttributeOptionInput) (*mysqlInfra.AttributeOptionDTO, error) {
 	if input.AttributeID <= 0 || input.Value == "" || input.CreatedBy <= 0 {
 		return nil, ErrInvalidAttributeOptionPayload
 	}
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *AttributeOptionService) UpdateOption(id int64, input mysqlInfra.UpdateAttributeOptionInput) (*mysqlInfra.AttributeOptionDTO, error) {
+func (s *AttributeOptionService) UpdateOption(ctx context.Context, id int64, input mysqlInfra.UpdateAttributeOptionInput) (*mysqlInfra.AttributeOptionDTO, error) {
 	if id <= 0 || input.Value == "" || input.UpdatedBy <= 0 {
 		return nil, ErrInvalidAttributeOptionPayload
 	}
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *AttributeOptionService) DeleteOption(id int64) error {
+func (s *AttributeOptionService) DeleteOption(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidAttributeOptionPayload
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 // ProductAttributeService manages ecom_product_attributes: the actual value
@@ -147,19 +151,20 @@ func (s *AttributeOptionService) DeleteOption(id int64) error {
 // ecom_product_attributes stores the value in one of several typed columns
 // depending on data_type.
 type ProductAttributeService struct {
+	db                   *sql.DB
 	repository           *mysqlInfra.ProductAttributesRepository
 	attributesRepository *mysqlInfra.AttributesRepository
 }
 
-func NewProductAttributeService(repository *mysqlInfra.ProductAttributesRepository, attributesRepository *mysqlInfra.AttributesRepository) *ProductAttributeService {
-	return &ProductAttributeService{repository: repository, attributesRepository: attributesRepository}
+func NewProductAttributeService(db *sql.DB, repository *mysqlInfra.ProductAttributesRepository, attributesRepository *mysqlInfra.AttributesRepository) *ProductAttributeService {
+	return &ProductAttributeService{db: db, repository: repository, attributesRepository: attributesRepository}
 }
 
-func (s *ProductAttributeService) GetAttributesByProduct(productID int64) ([]mysqlInfra.ProductAttributeDTO, error) {
+func (s *ProductAttributeService) GetAttributesByProduct(ctx context.Context, productID int64) ([]mysqlInfra.ProductAttributeDTO, error) {
 	if productID <= 0 {
 		return nil, ErrInvalidProductAttributePayload
 	}
-	return s.repository.FindByProductID(productID)
+	return s.repository.FindByProductID(ctx, productID)
 }
 
 // SetValue creates or replaces the value of one attribute on one product.
@@ -167,12 +172,12 @@ func (s *ProductAttributeService) GetAttributesByProduct(productID int64) ([]mys
 // value doesn't correspond to it (e.g. ValueNumber set for a 'text'
 // attribute), so ecom_product_attributes never ends up with a value in the
 // wrong typed column.
-func (s *ProductAttributeService) SetValue(input mysqlInfra.UpsertProductAttributeInput) (*mysqlInfra.ProductAttributeDTO, error) {
+func (s *ProductAttributeService) SetValue(ctx context.Context, input mysqlInfra.UpsertProductAttributeInput) (*mysqlInfra.ProductAttributeDTO, error) {
 	if input.ProductID <= 0 || input.AttributeID <= 0 || input.ActorID <= 0 {
 		return nil, ErrInvalidProductAttributePayload
 	}
 
-	attribute, err := s.attributesRepository.FindByID(input.AttributeID)
+	attribute, err := s.attributesRepository.FindByID(ctx, input.AttributeID)
 	if err != nil {
 		return nil, err
 	}
@@ -181,14 +186,14 @@ func (s *ProductAttributeService) SetValue(input mysqlInfra.UpsertProductAttribu
 		return nil, ErrProductAttributeValueMismatch
 	}
 
-	return s.repository.Upsert(input)
+	return s.repository.Upsert(ctx, input)
 }
 
-func (s *ProductAttributeService) DeleteValue(id int64) error {
+func (s *ProductAttributeService) DeleteValue(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidProductAttributePayload
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 func valueMatchesDataType(dataType string, input mysqlInfra.UpsertProductAttributeInput) bool {

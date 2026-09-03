@@ -1,6 +1,8 @@
 package channel_attributes
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
@@ -70,14 +72,15 @@ func isAllowedSystemField(field string) bool {
 // — optionally scoped to a single local category for channels whose
 // required attributes vary by category.
 type ChannelAttributeService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ChannelAttributesRepository
 }
 
-func NewChannelAttributeService(repository *mysqlInfra.ChannelAttributesRepository) *ChannelAttributeService {
-	return &ChannelAttributeService{repository: repository}
+func NewChannelAttributeService(db *sql.DB, repository *mysqlInfra.ChannelAttributesRepository) *ChannelAttributeService {
+	return &ChannelAttributeService{db: db, repository: repository}
 }
 
-func (s *ChannelAttributeService) GetPaginatedAttributes(offset, pageSize int) (*mysqlInfra.PaginatedChannelAttributes, error) {
+func (s *ChannelAttributeService) GetPaginatedAttributes(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedChannelAttributes, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -88,43 +91,43 @@ func (s *ChannelAttributeService) GetPaginatedAttributes(offset, pageSize int) (
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *ChannelAttributeService) GetAttributeByID(id int64) (*mysqlInfra.ChannelAttributeDTO, error) {
+func (s *ChannelAttributeService) GetAttributeByID(ctx context.Context, id int64) (*mysqlInfra.ChannelAttributeDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidChannelAttributePayload
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *ChannelAttributeService) GetAttributesByChannel(channelID int64) ([]mysqlInfra.ChannelAttributeDTO, error) {
+func (s *ChannelAttributeService) GetAttributesByChannel(ctx context.Context, channelID int64) ([]mysqlInfra.ChannelAttributeDTO, error) {
 	if channelID <= 0 {
 		return nil, ErrInvalidChannelAttributePayload
 	}
-	return s.repository.FindByChannelID(channelID)
+	return s.repository.FindByChannelID(ctx, channelID)
 }
 
 // GetApplicableAttributes returns every slot a listing under categoryID
 // should fill on channelID (category-specific rows plus channel-wide ones).
 // Exposed for admin/preview use; the marketplace sync flows don't call it
 // yet — see FindApplicable's own comment.
-func (s *ChannelAttributeService) GetApplicableAttributes(channelID int64, categoryID *int64) ([]mysqlInfra.ChannelAttributeDTO, error) {
+func (s *ChannelAttributeService) GetApplicableAttributes(ctx context.Context, channelID int64, categoryID *int64) ([]mysqlInfra.ChannelAttributeDTO, error) {
 	if channelID <= 0 {
 		return nil, ErrInvalidChannelAttributePayload
 	}
-	return s.repository.FindApplicable(channelID, categoryID)
+	return s.repository.FindApplicable(ctx, channelID, categoryID)
 }
 
-func (s *ChannelAttributeService) CreateAttribute(input mysqlInfra.CreateChannelAttributeInput) (*mysqlInfra.ChannelAttributeDTO, error) {
+func (s *ChannelAttributeService) CreateAttribute(ctx context.Context, input mysqlInfra.CreateChannelAttributeInput) (*mysqlInfra.ChannelAttributeDTO, error) {
 	if err := validateChannelAttribute(input.ChannelID, input.TargetStrategy, input.ExternalKey, input.TargetField, input.ValueMode, input.CreatedBy); err != nil {
 		return nil, err
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ChannelAttributeService) UpdateAttribute(id int64, input mysqlInfra.UpdateChannelAttributeInput) (*mysqlInfra.ChannelAttributeDTO, error) {
+func (s *ChannelAttributeService) UpdateAttribute(ctx context.Context, id int64, input mysqlInfra.UpdateChannelAttributeInput) (*mysqlInfra.ChannelAttributeDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidChannelAttributePayload
 	}
@@ -132,14 +135,14 @@ func (s *ChannelAttributeService) UpdateAttribute(id int64, input mysqlInfra.Upd
 		return nil, err
 	}
 
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *ChannelAttributeService) DeleteAttribute(id int64) error {
+func (s *ChannelAttributeService) DeleteAttribute(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidChannelAttributePayload
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 // validateChannelAttribute checks the invariants a channel attribute slot
@@ -175,39 +178,40 @@ func validateChannelAttribute(channelID int64, targetStrategy string, externalKe
 // or a fixed literal) fills a given ecom_channel_attributes slot, optionally
 // overridden per connection.
 type ChannelAttributeMapService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ChannelAttributeMapRepository
 }
 
-func NewChannelAttributeMapService(repository *mysqlInfra.ChannelAttributeMapRepository) *ChannelAttributeMapService {
-	return &ChannelAttributeMapService{repository: repository}
+func NewChannelAttributeMapService(db *sql.DB, repository *mysqlInfra.ChannelAttributeMapRepository) *ChannelAttributeMapService {
+	return &ChannelAttributeMapService{db: db, repository: repository}
 }
 
-func (s *ChannelAttributeMapService) GetMapsByChannelAttribute(channelAttributeID int64) ([]mysqlInfra.ChannelAttributeMapDTO, error) {
+func (s *ChannelAttributeMapService) GetMapsByChannelAttribute(ctx context.Context, channelAttributeID int64) ([]mysqlInfra.ChannelAttributeMapDTO, error) {
 	if channelAttributeID <= 0 {
 		return nil, ErrInvalidChannelAttributeMapPayload
 	}
-	return s.repository.FindByChannelAttributeID(channelAttributeID)
+	return s.repository.FindByChannelAttributeID(ctx, channelAttributeID)
 }
 
-func (s *ChannelAttributeMapService) GetMapByID(id int64) (*mysqlInfra.ChannelAttributeMapDTO, error) {
+func (s *ChannelAttributeMapService) GetMapByID(ctx context.Context, id int64) (*mysqlInfra.ChannelAttributeMapDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidChannelAttributeMapPayload
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
 // ResolveForConnection returns the map row that applies to channelAttributeID
 // on connectionID (exact connection override, falling back to the
 // channel-wide row). Exposed for admin/preview use; not called by the
 // marketplace sync flows yet.
-func (s *ChannelAttributeMapService) ResolveForConnection(channelAttributeID, connectionID int64) (*mysqlInfra.ChannelAttributeMapDTO, error) {
+func (s *ChannelAttributeMapService) ResolveForConnection(ctx context.Context, channelAttributeID, connectionID int64) (*mysqlInfra.ChannelAttributeMapDTO, error) {
 	if channelAttributeID <= 0 || connectionID <= 0 {
 		return nil, ErrInvalidChannelAttributeMapPayload
 	}
-	return s.repository.FindByChannelAttributeAndConnection(channelAttributeID, connectionID)
+	return s.repository.FindByChannelAttributeAndConnection(ctx, channelAttributeID, connectionID)
 }
 
-func (s *ChannelAttributeMapService) CreateMap(input mysqlInfra.CreateChannelAttributeMapInput) (*mysqlInfra.ChannelAttributeMapDTO, error) {
+func (s *ChannelAttributeMapService) CreateMap(ctx context.Context, input mysqlInfra.CreateChannelAttributeMapInput) (*mysqlInfra.ChannelAttributeMapDTO, error) {
 	if input.ChannelAttributeID <= 0 || input.CreatedBy <= 0 {
 		return nil, ErrInvalidChannelAttributeMapPayload
 	}
@@ -215,10 +219,10 @@ func (s *ChannelAttributeMapService) CreateMap(input mysqlInfra.CreateChannelAtt
 		return nil, err
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ChannelAttributeMapService) UpdateMap(id int64, input mysqlInfra.UpdateChannelAttributeMapInput) (*mysqlInfra.ChannelAttributeMapDTO, error) {
+func (s *ChannelAttributeMapService) UpdateMap(ctx context.Context, id int64, input mysqlInfra.UpdateChannelAttributeMapInput) (*mysqlInfra.ChannelAttributeMapDTO, error) {
 	if id <= 0 || input.UpdatedBy <= 0 {
 		return nil, ErrInvalidChannelAttributeMapPayload
 	}
@@ -226,14 +230,14 @@ func (s *ChannelAttributeMapService) UpdateMap(id int64, input mysqlInfra.Update
 		return nil, err
 	}
 
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *ChannelAttributeMapService) DeleteMap(id int64) error {
+func (s *ChannelAttributeMapService) DeleteMap(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidChannelAttributeMapPayload
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 // validateChannelAttributeMapSource enforces that exactly the field matching

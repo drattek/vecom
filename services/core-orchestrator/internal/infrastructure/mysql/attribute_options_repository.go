@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -43,14 +44,14 @@ type UpdateAttributeOptionInput struct {
 }
 
 type AttributeOptionsRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewAttributeOptionsRepository(db *sql.DB) *AttributeOptionsRepository {
+func NewAttributeOptionsRepository(db Querier) *AttributeOptionsRepository {
 	return &AttributeOptionsRepository{db: db}
 }
 
-func (r *AttributeOptionsRepository) FindByAttributeID(attributeID int64) ([]AttributeOptionDTO, error) {
+func (r *AttributeOptionsRepository) FindByAttributeID(ctx context.Context, attributeID int64) ([]AttributeOptionDTO, error) {
 	query := `
 		SELECT id, attribute_id, value, external_value_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_attribute_options
@@ -58,7 +59,7 @@ func (r *AttributeOptionsRepository) FindByAttributeID(attributeID int64) ([]Att
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query, attributeID)
+	rows, err := r.db.QueryContext(ctx, query, attributeID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying attribute options: %w", err)
 	}
@@ -79,7 +80,7 @@ func (r *AttributeOptionsRepository) FindByAttributeID(attributeID int64) ([]Att
 	return options, nil
 }
 
-func (r *AttributeOptionsRepository) FindByID(id int64) (*AttributeOptionDTO, error) {
+func (r *AttributeOptionsRepository) FindByID(ctx context.Context, id int64) (*AttributeOptionDTO, error) {
 	query := `
 		SELECT id, attribute_id, value, external_value_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_attribute_options
@@ -87,14 +88,14 @@ func (r *AttributeOptionsRepository) FindByID(id int64) (*AttributeOptionDTO, er
 		LIMIT 1
 	`
 
-	return scanAttributeOptionRow(r.db.QueryRow(query, id))
+	return scanAttributeOptionRow(r.db.QueryRowContext(ctx, query, id))
 }
 
 // FindByAttributeAndValue looks up an existing option by its exact text under
 // attributeID — used to avoid creating duplicate options (e.g. "Rojo" typed
 // twice with different casing/spacing would otherwise fragment the same enum
 // value into two rows).
-func (r *AttributeOptionsRepository) FindByAttributeAndValue(attributeID int64, value string) (*AttributeOptionDTO, error) {
+func (r *AttributeOptionsRepository) FindByAttributeAndValue(ctx context.Context, attributeID int64, value string) (*AttributeOptionDTO, error) {
 	query := `
 		SELECT id, attribute_id, value, external_value_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_attribute_options
@@ -102,14 +103,14 @@ func (r *AttributeOptionsRepository) FindByAttributeAndValue(attributeID int64, 
 		LIMIT 1
 	`
 
-	return scanAttributeOptionRow(r.db.QueryRow(query, attributeID, value))
+	return scanAttributeOptionRow(r.db.QueryRowContext(ctx, query, attributeID, value))
 }
 
 // FindByAttributeAndExternalValueID looks up an existing option by the
 // channel's own id under attributeID — used by provisioning to key off
 // MercadoLibre's stable value_id instead of its display name (which could in
 // principle be renamed on MercadoLibre's side without the id changing).
-func (r *AttributeOptionsRepository) FindByAttributeAndExternalValueID(attributeID int64, externalValueID string) (*AttributeOptionDTO, error) {
+func (r *AttributeOptionsRepository) FindByAttributeAndExternalValueID(ctx context.Context, attributeID int64, externalValueID string) (*AttributeOptionDTO, error) {
 	query := `
 		SELECT id, attribute_id, value, external_value_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_attribute_options
@@ -117,16 +118,16 @@ func (r *AttributeOptionsRepository) FindByAttributeAndExternalValueID(attribute
 		LIMIT 1
 	`
 
-	return scanAttributeOptionRow(r.db.QueryRow(query, attributeID, externalValueID))
+	return scanAttributeOptionRow(r.db.QueryRowContext(ctx, query, attributeID, externalValueID))
 }
 
-func (r *AttributeOptionsRepository) Create(input CreateAttributeOptionInput) (*AttributeOptionDTO, error) {
+func (r *AttributeOptionsRepository) Create(ctx context.Context, input CreateAttributeOptionInput) (*AttributeOptionDTO, error) {
 	query := `
 		INSERT INTO ecom_attribute_options (attribute_id, value, external_value_id, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.AttributeID, input.Value, input.ExternalValueID, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.AttributeID, input.Value, input.ExternalValueID, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating attribute option: %w", err)
 	}
@@ -136,17 +137,17 @@ func (r *AttributeOptionsRepository) Create(input CreateAttributeOptionInput) (*
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *AttributeOptionsRepository) Update(id int64, input UpdateAttributeOptionInput) (*AttributeOptionDTO, error) {
+func (r *AttributeOptionsRepository) Update(ctx context.Context, id int64, input UpdateAttributeOptionInput) (*AttributeOptionDTO, error) {
 	query := `
 		UPDATE ecom_attribute_options
 		SET value = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Value, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Value, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating attribute option: %w", err)
 	}
@@ -159,13 +160,13 @@ func (r *AttributeOptionsRepository) Update(id int64, input UpdateAttributeOptio
 		return nil, ErrAttributeOptionNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *AttributeOptionsRepository) SoftDelete(id int64) error {
+func (r *AttributeOptionsRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `UPDATE ecom_attribute_options SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting attribute option: %w", err)
 	}

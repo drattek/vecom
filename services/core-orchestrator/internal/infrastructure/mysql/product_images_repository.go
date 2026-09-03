@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -39,14 +40,14 @@ type UpdateProductImageInput struct {
 }
 
 type ProductImagesRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewProductImagesRepository(db *sql.DB) *ProductImagesRepository {
+func NewProductImagesRepository(db Querier) *ProductImagesRepository {
 	return &ProductImagesRepository{db: db}
 }
 
-func (r *ProductImagesRepository) FindPaginated(offset, pageSize int) (*PaginatedProductImages, error) {
+func (r *ProductImagesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedProductImages, error) {
 	query := `
 		SELECT id, product_id, file_id, is_first, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_images
@@ -54,7 +55,7 @@ func (r *ProductImagesRepository) FindPaginated(offset, pageSize int) (*Paginate
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -71,14 +72,14 @@ func (r *ProductImagesRepository) FindPaginated(offset, pageSize int) (*Paginate
 
 	countQuery := "SELECT COUNT(*) FROM ecom_product_images WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedProductImages{Data: images, Total: total}, nil
 }
 
-func (r *ProductImagesRepository) FindByID(id int64) (*ProductImageDTO, error) {
+func (r *ProductImagesRepository) FindByID(ctx context.Context, id int64) (*ProductImageDTO, error) {
 	query := `
 		SELECT id, product_id, file_id, is_first, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_images
@@ -86,7 +87,7 @@ func (r *ProductImagesRepository) FindByID(id int64) (*ProductImageDTO, error) {
 	`
 
 	var p ProductImageDTO
-	if err := r.db.QueryRow(query, id).Scan(&p.ID, &p.ProductID, &p.FileID, &p.IsFirst, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&p.ID, &p.ProductID, &p.FileID, &p.IsFirst, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProductImageNotFound
 		}
@@ -96,7 +97,7 @@ func (r *ProductImagesRepository) FindByID(id int64) (*ProductImageDTO, error) {
 	return &p, nil
 }
 
-func (r *ProductImagesRepository) FindByProductID(productID int64, offset, pageSize int) (*PaginatedProductImages, error) {
+func (r *ProductImagesRepository) FindByProductID(ctx context.Context, productID int64, offset, pageSize int) (*PaginatedProductImages, error) {
 	query := `
 		SELECT id, product_id, file_id, is_first, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_images
@@ -104,7 +105,7 @@ func (r *ProductImagesRepository) FindByProductID(productID int64, offset, pageS
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, productID, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, productID, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -121,7 +122,7 @@ func (r *ProductImagesRepository) FindByProductID(productID int64, offset, pageS
 
 	countQuery := "SELECT COUNT(*) FROM ecom_product_images WHERE product_id = ? AND deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery, productID).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, productID).Scan(&total); err != nil {
 		return nil, err
 	}
 
@@ -131,7 +132,7 @@ func (r *ProductImagesRepository) FindByProductID(productID int64, offset, pageS
 // FindAllByProductID returns every image for a product, cover image
 // (is_first) first, with no pagination — for flows that need the complete
 // set (e.g. building a marketplace sync payload) rather than a page of it.
-func (r *ProductImagesRepository) FindAllByProductID(productID int64) ([]ProductImageDTO, error) {
+func (r *ProductImagesRepository) FindAllByProductID(ctx context.Context, productID int64) ([]ProductImageDTO, error) {
 	query := `
 		SELECT id, product_id, file_id, is_first, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_images
@@ -139,7 +140,7 @@ func (r *ProductImagesRepository) FindAllByProductID(productID int64) ([]Product
 		ORDER BY is_first DESC, id ASC
 	`
 
-	rows, err := r.db.Query(query, productID)
+	rows, err := r.db.QueryContext(ctx, query, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -160,7 +161,7 @@ func (r *ProductImagesRepository) FindAllByProductID(productID int64) ([]Product
 // FindByProductAndFile looks up an existing ecom_product_images row linking
 // a product to a file, so callers can tell whether a given file is already
 // attached to the product before inserting a duplicate link.
-func (r *ProductImagesRepository) FindByProductAndFile(productID, fileID int64) (*ProductImageDTO, error) {
+func (r *ProductImagesRepository) FindByProductAndFile(ctx context.Context, productID, fileID int64) (*ProductImageDTO, error) {
 	query := `
 		SELECT id, product_id, file_id, is_first, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_images
@@ -169,7 +170,7 @@ func (r *ProductImagesRepository) FindByProductAndFile(productID, fileID int64) 
 	`
 
 	var p ProductImageDTO
-	if err := r.db.QueryRow(query, productID, fileID).Scan(&p.ID, &p.ProductID, &p.FileID, &p.IsFirst, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, productID, fileID).Scan(&p.ID, &p.ProductID, &p.FileID, &p.IsFirst, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProductImageNotFound
 		}
@@ -179,13 +180,13 @@ func (r *ProductImagesRepository) FindByProductAndFile(productID, fileID int64) 
 	return &p, nil
 }
 
-func (r *ProductImagesRepository) Create(input CreateProductImageInput) (*ProductImageDTO, error) {
+func (r *ProductImagesRepository) Create(ctx context.Context, input CreateProductImageInput) (*ProductImageDTO, error) {
 	query := `
 		INSERT INTO ecom_product_images (product_id, file_id, is_first, created_by)
 		VALUES (?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ProductID, input.FileID, input.IsFirst, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.FileID, input.IsFirst, input.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -195,17 +196,17 @@ func (r *ProductImagesRepository) Create(input CreateProductImageInput) (*Produc
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ProductImagesRepository) Update(id int64, input UpdateProductImageInput) (*ProductImageDTO, error) {
+func (r *ProductImagesRepository) Update(ctx context.Context, id int64, input UpdateProductImageInput) (*ProductImageDTO, error) {
 	query := `
 		UPDATE ecom_product_images
 		SET is_first = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.IsFirst, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.IsFirst, input.UpdatedBy, id)
 	if err != nil {
 		return nil, err
 	}
@@ -219,13 +220,13 @@ func (r *ProductImagesRepository) Update(id int64, input UpdateProductImageInput
 		return nil, ErrProductImageNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ProductImagesRepository) SoftDelete(id int64) error {
+func (r *ProductImagesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := "UPDATE ecom_product_images SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

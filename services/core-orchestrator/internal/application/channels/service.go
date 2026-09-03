@@ -1,6 +1,8 @@
 package channels
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -13,6 +15,7 @@ var ErrInvalidChannelPayload = errors.New("invalid channel payload")
 var ErrInvalidChannelReference = errors.New("invalid channel reference")
 
 type ChannelService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ChannelRepository
 }
 
@@ -24,11 +27,11 @@ type UpsertChannelInput struct {
 	Description *string
 }
 
-func NewChannelService(repository *mysqlInfra.ChannelRepository) *ChannelService {
-	return &ChannelService{repository: repository}
+func NewChannelService(db *sql.DB, repository *mysqlInfra.ChannelRepository) *ChannelService {
+	return &ChannelService{db: db, repository: repository}
 }
 
-func (s *ChannelService) GetPaginatedChannels(offset, pageSize int) (*mysqlInfra.PaginatedChannels, error) {
+func (s *ChannelService) GetPaginatedChannels(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedChannels, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -41,15 +44,15 @@ func (s *ChannelService) GetPaginatedChannels(offset, pageSize int) (*mysqlInfra
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *ChannelService) GetChannelByID(id int64) (*mysqlInfra.ChannelDTO, error) {
+func (s *ChannelService) GetChannelByID(ctx context.Context, id int64) (*mysqlInfra.ChannelDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidChannelPayload
 	}
 
-	channel, err := s.repository.FindByID(id)
+	channel, err := s.repository.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelNotFound) {
 			return nil, ErrChannelNotFound
@@ -60,13 +63,13 @@ func (s *ChannelService) GetChannelByID(id int64) (*mysqlInfra.ChannelDTO, error
 	return channel, nil
 }
 
-func (s *ChannelService) CreateChannel(input UpsertChannelInput, actorID int64) (*mysqlInfra.ChannelDTO, error) {
+func (s *ChannelService) CreateChannel(ctx context.Context, input UpsertChannelInput, actorID int64) (*mysqlInfra.ChannelDTO, error) {
 	normalized, err := normalizeAndValidate(input)
 	if err != nil {
 		return nil, err
 	}
 
-	channel, err := s.repository.Create(mysqlInfra.CreateChannelInput{
+	channel, err := s.repository.Create(ctx, mysqlInfra.CreateChannelInput{
 		Name:        normalized.Name,
 		Code:        normalized.Code,
 		Status:      normalized.Status,
@@ -87,7 +90,7 @@ func (s *ChannelService) CreateChannel(input UpsertChannelInput, actorID int64) 
 	return channel, nil
 }
 
-func (s *ChannelService) UpdateChannel(id int64, input UpsertChannelInput, actorID int64) (*mysqlInfra.ChannelDTO, error) {
+func (s *ChannelService) UpdateChannel(ctx context.Context, id int64, input UpsertChannelInput, actorID int64) (*mysqlInfra.ChannelDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidChannelPayload
 	}
@@ -97,7 +100,7 @@ func (s *ChannelService) UpdateChannel(id int64, input UpsertChannelInput, actor
 		return nil, err
 	}
 
-	channel, err := s.repository.Update(id, mysqlInfra.UpdateChannelInput{
+	channel, err := s.repository.Update(ctx, id, mysqlInfra.UpdateChannelInput{
 		Name:        normalized.Name,
 		Code:        normalized.Code,
 		Status:      normalized.Status,
@@ -121,12 +124,12 @@ func (s *ChannelService) UpdateChannel(id int64, input UpsertChannelInput, actor
 	return channel, nil
 }
 
-func (s *ChannelService) SoftDeleteChannel(id int64, actorID int64) error {
+func (s *ChannelService) SoftDeleteChannel(ctx context.Context, id int64, actorID int64) error {
 	if id <= 0 {
 		return ErrInvalidChannelPayload
 	}
 
-	err := s.repository.SoftDelete(id, actorID)
+	err := s.repository.SoftDelete(ctx, id, actorID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelNotFound) {
 			return ErrChannelNotFound

@@ -53,7 +53,7 @@ func (h *MercadoLibreHandler) GetAuthorizationURL(w http.ResponseWriter, r *http
 		return
 	}
 
-	authURL, err := h.tokenService.GetAuthorizationURL(connectionID)
+	authURL, err := h.tokenService.GetAuthorizationURL(r.Context(), connectionID)
 	if err != nil {
 		if errors.Is(err, syncApp.ErrInvalidMercadoLibreConnection) {
 			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")

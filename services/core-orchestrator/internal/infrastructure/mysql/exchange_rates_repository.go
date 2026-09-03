@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -38,14 +39,14 @@ type UpdateExchangeRateInput struct {
 }
 
 type ExchangeRatesRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewExchangeRatesRepository(db *sql.DB) *ExchangeRatesRepository {
+func NewExchangeRatesRepository(db Querier) *ExchangeRatesRepository {
 	return &ExchangeRatesRepository{db: db}
 }
 
-func (r *ExchangeRatesRepository) FindPaginated(offset, pageSize int) (*PaginatedExchangeRates, error) {
+func (r *ExchangeRatesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedExchangeRates, error) {
 	query := `
 		SELECT id, from_currency_id, to_currency_id, rate, updated_by, created_at, updated_at
 		FROM ecom_exchange_rates
@@ -53,7 +54,7 @@ func (r *ExchangeRatesRepository) FindPaginated(offset, pageSize int) (*Paginate
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -70,14 +71,14 @@ func (r *ExchangeRatesRepository) FindPaginated(offset, pageSize int) (*Paginate
 
 	countQuery := "SELECT COUNT(*) FROM ecom_exchange_rates WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedExchangeRates{Data: rates, Total: total}, nil
 }
 
-func (r *ExchangeRatesRepository) FindByID(id int64) (*ExchangeRateDTO, error) {
+func (r *ExchangeRatesRepository) FindByID(ctx context.Context, id int64) (*ExchangeRateDTO, error) {
 	query := `
 		SELECT id, from_currency_id, to_currency_id, rate, updated_by, created_at, updated_at
 		FROM ecom_exchange_rates
@@ -85,7 +86,7 @@ func (r *ExchangeRatesRepository) FindByID(id int64) (*ExchangeRateDTO, error) {
 	`
 
 	var e ExchangeRateDTO
-	if err := r.db.QueryRow(query, id).Scan(&e.ID, &e.FromCurrencyID, &e.ToCurrencyID, &e.Rate, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&e.ID, &e.FromCurrencyID, &e.ToCurrencyID, &e.Rate, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrExchangeRateNotFound
 		}
@@ -95,13 +96,36 @@ func (r *ExchangeRatesRepository) FindByID(id int64) (*ExchangeRateDTO, error) {
 	return &e, nil
 }
 
-func (r *ExchangeRatesRepository) Create(input CreateExchangeRateInput) (*ExchangeRateDTO, error) {
+// FindByCurrencies returns the active rate to convert an amount in
+// fromCurrencyID into toCurrencyID (multiply by Rate) — used by
+// application/pricing.EffectivePriceResolver when a product's effective
+// price list isn't already in the target currency.
+func (r *ExchangeRatesRepository) FindByCurrencies(ctx context.Context, fromCurrencyID, toCurrencyID int64) (*ExchangeRateDTO, error) {
+	query := `
+		SELECT id, from_currency_id, to_currency_id, rate, updated_by, created_at, updated_at
+		FROM ecom_exchange_rates
+		WHERE from_currency_id = ? AND to_currency_id = ? AND deleted_at IS NULL
+		LIMIT 1
+	`
+
+	var e ExchangeRateDTO
+	if err := r.db.QueryRowContext(ctx, query, fromCurrencyID, toCurrencyID).Scan(&e.ID, &e.FromCurrencyID, &e.ToCurrencyID, &e.Rate, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrExchangeRateNotFound
+		}
+		return nil, err
+	}
+
+	return &e, nil
+}
+
+func (r *ExchangeRatesRepository) Create(ctx context.Context, input CreateExchangeRateInput) (*ExchangeRateDTO, error) {
 	query := `
 		INSERT INTO ecom_exchange_rates (from_currency_id, to_currency_id, rate, updated_by)
 		VALUES (?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.FromCurrencyID, input.ToCurrencyID, input.Rate, input.UpdatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.FromCurrencyID, input.ToCurrencyID, input.Rate, input.UpdatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -111,17 +135,17 @@ func (r *ExchangeRatesRepository) Create(input CreateExchangeRateInput) (*Exchan
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ExchangeRatesRepository) Update(id int64, input UpdateExchangeRateInput) (*ExchangeRateDTO, error) {
+func (r *ExchangeRatesRepository) Update(ctx context.Context, id int64, input UpdateExchangeRateInput) (*ExchangeRateDTO, error) {
 	query := `
 		UPDATE ecom_exchange_rates
 		SET rate = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Rate, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Rate, input.UpdatedBy, id)
 	if err != nil {
 		return nil, err
 	}
@@ -135,13 +159,13 @@ func (r *ExchangeRatesRepository) Update(id int64, input UpdateExchangeRateInput
 		return nil, ErrExchangeRateNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ExchangeRatesRepository) SoftDelete(id int64) error {
+func (r *ExchangeRatesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := "UPDATE ecom_exchange_rates SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

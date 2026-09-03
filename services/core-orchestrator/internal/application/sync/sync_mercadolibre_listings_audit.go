@@ -5,52 +5,60 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
-	"time"
 
-	channelAttributeValuesApp "core-orchestrator/internal/application/channel_attribute_values"
 	mercadoLibreInfra "core-orchestrator/internal/infrastructure/marketplace/mercadolibre"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
 
-// mercadoLibreFlaggedListingPrice/mercadoLibreFlaggedListingStock are the
-// sentinel price/stock this audit treats as "flagged for review": only
-// listings matching both, exactly, are processed at all — everything else is
-// skipped without being counted or touched.
 const (
+	// mercadoLibreFlaggedListingPrice/mercadoLibreFlaggedListingStock are the
+	// sentinel price/stock this audit treats as "flagged": only listings
+	// matching both, exactly, are processed at all — everything else is
+	// skipped without being counted or touched.
 	mercadoLibreFlaggedListingPrice = 999999
 	mercadoLibreFlaggedListingStock = 0
+
+	// Defaults stamped on an ecom_products row auto-created for a flagged
+	// listing whose SKU has no local product yet. Only these four columns are
+	// set from the listing (sku, part_number, name, brand_id) plus source_id;
+	// product_type/is_sellable/is_stockable/status are left to the table
+	// defaults ('part', 1, 1, NULL). brand_id 1 and source_id 13 are fixed by
+	// product decision, not configurable.
+	auditProductBrandID  int64 = 1
+	auditProductSourceID int64 = 13
+	auditProductType           = "part"
 )
 
 // MercadoLibreListingsAuditService scans every listing in a MercadoLibre
-// account (via connectionID's own credentials) for ones matching the
-// flagged price/stock sentinel (mercadoLibreFlaggedListingPrice/
-// mercadoLibreFlaggedListingStock) and, for each match where its SKU
-// (resolved straight from MercadoLibre's own item data — see
-// resolveSKUFromItem, since these listings are not assumed to have a local
-// ecom_channel_product_map row) matches an existing ecom_products row:
-//  1. provisions the local category/attribute chain for the listing's
-//     MercadoLibre category (reusing channel_attribute_values.Service.
-//     ProvisionCategoryAttributes exactly as the regular publish flow does)
-//     and writes every attribute value the listing itself carries into
-//     ecom_product_attributes;
-//  2. replaces ecom_products.name with the listing's own title, stripped of
-//     its trailing " {sku}" suffix (MercadoLibre titles here are always
-//     "{name} {sku}" — see stripSKUFromTitle).
+// account (via connectionID's own credentials) for ones matching the flagged
+// price/stock sentinel (mercadoLibreFlaggedListingPrice/
+// mercadoLibreFlaggedListingStock) and, for each match:
 //
-// A listing whose SKU matches no local product is left entirely untouched —
-// see ListingAuditOutcome.ProductFound. Image downloading used to be a third
-// step here; it's handled well enough by other means now and was removed to
-// keep an account-wide run fast (no image I/O, no per-listing disk writes).
+//  1. resolves the seller's SKU straight from the listing (resolveSKUFromItem)
+//     and finds the matching ecom_products row — creating it when absent, with
+//     sku = part_number = the listing SKU, name = the listing title,
+//     brand_id = auditProductBrandID, source_id = auditProductSourceID;
+//  2. updates ecom_products.description from MercadoLibre when a description
+//     can be fetched (see fetchListingDescription) — and leaves it untouched
+//     when it can't, so a description that couldn't be read is never
+//     overwritten with nothing;
+//  3. downloads the listing's vehicle compatibilities and links each one to
+//     that product locally — exactly what
+//     POST /api/marketplaces/mercadolibre/compatibilities/copy does, reusing
+//     MercadoLibreCompatibilityService.CopyCompatibilitiesForProduct (so the
+//     same position/side split from the downloaded restrictions applies).
+//
+// Nothing is ever written back to MercadoLibre — this only reads listings and
+// writes locally.
 type MercadoLibreListingsAuditService struct {
-	channelConnectionRepository   *mysqlInfra.ChannelConnectionRepository
-	channelRepository             *mysqlInfra.ChannelRepository
-	productRepository             *mysqlInfra.ProductRepository
-	tokenService                  *MercadoLibreTokenService
-	channelAttributeValuesService *channelAttributeValuesApp.Service
-	itemsHandler                  *mercadoLibreInfra.ItemsHandler
-	usersHandler                  *mercadoLibreInfra.UsersHandler
+	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository
+	channelRepository           *mysqlInfra.ChannelRepository
+	productRepository           *mysqlInfra.ProductRepository
+	tokenService                *MercadoLibreTokenService
+	compatibilityService        *MercadoLibreCompatibilityService
+	itemsHandler                *mercadoLibreInfra.ItemsHandler
+	usersHandler                *mercadoLibreInfra.UsersHandler
 }
 
 func NewMercadoLibreListingsAuditService(
@@ -58,19 +66,19 @@ func NewMercadoLibreListingsAuditService(
 	channelRepository *mysqlInfra.ChannelRepository,
 	productRepository *mysqlInfra.ProductRepository,
 	tokenService *MercadoLibreTokenService,
-	channelAttributeValuesService *channelAttributeValuesApp.Service,
+	compatibilityService *MercadoLibreCompatibilityService,
 	rateLimiter *mercadoLibreInfra.RateLimiter,
 ) *MercadoLibreListingsAuditService {
 	client := mercadoLibreInfra.NewClient(nil, "", rateLimiter)
 
 	return &MercadoLibreListingsAuditService{
-		channelConnectionRepository:   channelConnectionRepository,
-		channelRepository:             channelRepository,
-		productRepository:             productRepository,
-		tokenService:                  tokenService,
-		channelAttributeValuesService: channelAttributeValuesService,
-		itemsHandler:                  mercadoLibreInfra.NewItemsHandler(client),
-		usersHandler:                  mercadoLibreInfra.NewUsersHandler(client),
+		channelConnectionRepository: channelConnectionRepository,
+		channelRepository:           channelRepository,
+		productRepository:           productRepository,
+		tokenService:                tokenService,
+		compatibilityService:        compatibilityService,
+		itemsHandler:                mercadoLibreInfra.NewItemsHandler(client),
+		usersHandler:                mercadoLibreInfra.NewUsersHandler(client),
 	}
 }
 
@@ -84,38 +92,47 @@ type SyncFlaggedListingsInput struct {
 type ListingAuditOutcome struct {
 	ExternalID string `json:"externalId"`
 	SKU        string `json:"sku"`
-	// ProductFound is false when SKU matched no ecom_products row — in that
-	// case the listing is otherwise left untouched.
-	ProductFound  bool   `json:"productFound"`
-	ProductID     *int64 `json:"productId,omitempty"`
-	AttributesSet int    `json:"attributesSet,omitempty"`
-	// AttributeErrors lists individual attribute values that failed to save
-	// (e.g. an unparseable number, or a value not in a value_id-mode
-	// attribute's provisioned option list) — never fatal to the listing.
-	AttributeErrors []string `json:"attributeErrors,omitempty"`
-	NameUpdated     bool     `json:"nameUpdated,omitempty"`
-	NewName         string   `json:"newName,omitempty"`
-	SkipReason      string   `json:"skipReason,omitempty"`
-	Error           string   `json:"error,omitempty"`
+	ProductID  *int64 `json:"productId,omitempty"`
+	// ProductCreated is true when this run inserted the ecom_products row
+	// (SKU had no local product yet).
+	ProductCreated bool `json:"productCreated,omitempty"`
+	// DescriptionUpdated is true when ecom_products.description was written
+	// this run; DescriptionSource is "item" or "catalog" in that case, empty
+	// when no description could be fetched (and the column was left as-is).
+	DescriptionUpdated bool   `json:"descriptionUpdated,omitempty"`
+	DescriptionSource  string `json:"descriptionSource,omitempty"`
+
+	// CompatibilitiesLinked counts the ecom_product_vehicle_compatibility rows
+	// created for this listing's product; Compatibilities carries the full
+	// per-entry detail (skips, errors, catalog product ids) and
+	// NewVehicleFitments the ecom_vehicle_fitments rows created along the way.
+	CompatibilitiesLinked int                             `json:"compatibilitiesLinked,omitempty"`
+	Compatibilities       []CopyLocalCompatibilityOutcome `json:"compatibilities,omitempty"`
+	NewVehicleFitments    []CreatedVehicleFitment         `json:"newVehicleFitments,omitempty"`
+
+	SkipReason string `json:"skipReason,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type SyncFlaggedListingsResult struct {
-	TotalListings int                   `json:"totalListings"`
-	TotalMatched  int                   `json:"totalMatched"`
-	Results       []ListingAuditOutcome `json:"results"`
+	TotalListings         int                   `json:"totalListings"`
+	TotalMatched          int                   `json:"totalMatched"`
+	ProductsCreated       int                   `json:"productsCreated"`
+	CompatibilitiesLinked int                   `json:"compatibilitiesLinked"`
+	Results               []ListingAuditOutcome `json:"results"`
 }
 
 // SyncFlaggedListings is the account-wide entry point — see the service doc
 // comment for what it does per matching listing. input only needs
-// ConnectionID: every other listing in the account is discovered by paging
-// through MercadoLibre's own /users/{id}/items/search, not by anything
-// already in the local database.
+// ConnectionID: every listing in the account is discovered by paging through
+// MercadoLibre's own /users/{id}/items/search, not by anything already in the
+// local database.
 func (s *MercadoLibreListingsAuditService) SyncFlaggedListings(ctx context.Context, input SyncFlaggedListingsInput) (*SyncFlaggedListingsResult, error) {
 	if input.ConnectionID <= 0 {
 		return nil, ErrInvalidMercadoLibreConnection
 	}
 
-	connection, err := s.channelConnectionRepository.FindByID(input.ConnectionID)
+	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
 			return nil, ErrInvalidMercadoLibreConnection
@@ -123,7 +140,7 @@ func (s *MercadoLibreListingsAuditService) SyncFlaggedListings(ctx context.Conte
 		return nil, fmt.Errorf("error loading connection %d: %w", input.ConnectionID, err)
 	}
 
-	channel, err := s.channelRepository.FindByID(connection.ChannelID)
+	channel, err := s.channelRepository.FindByID(ctx, connection.ChannelID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
 	}
@@ -132,13 +149,11 @@ func (s *MercadoLibreListingsAuditService) SyncFlaggedListings(ctx context.Conte
 	}
 
 	// A full account scan can run long enough (many multiget batches, each
-	// throttled by the shared 90/min rate limiter — see
-	// MercadoLibreRateLimit) that a token fetched once up front could go
-	// stale before the run finishes. So no accessToken is captured here:
-	// every call below re-validates it immediately beforehand via
-	// s.freshAccessToken, which is cheap (a local DB read) whenever the
-	// token isn't actually near expiry, and only reaches out to MercadoLibre
-	// when it truly needs refreshing.
+	// throttled by the shared rate limiter) that a token fetched once up front
+	// could go stale before the run finishes. So no accessToken is captured
+	// here: every call below re-validates it immediately beforehand via
+	// s.freshAccessToken, which is cheap (a local DB read) whenever the token
+	// isn't actually near expiry.
 	accessToken, err := s.freshAccessToken(ctx, input.ConnectionID)
 	if err != nil {
 		return nil, err
@@ -178,16 +193,20 @@ func (s *MercadoLibreListingsAuditService) SyncFlaggedListings(ctx context.Conte
 	}
 
 	for i := range details {
-		result.Results = append(result.Results, s.syncOne(ctx, input.ConnectionID, &details[i]))
+		outcome := s.syncOne(ctx, input.ConnectionID, &details[i])
+		if outcome.ProductCreated {
+			result.ProductsCreated++
+		}
+		result.CompatibilitiesLinked += outcome.CompatibilitiesLinked
+		result.Results = append(result.Results, outcome)
 	}
 
 	return result, nil
 }
 
 // freshAccessToken re-validates connectionID's token immediately before an
-// outbound MercadoLibre call — see the comment in SyncFlaggedListings for
-// why this is called at every call site here instead of once for the whole
-// run.
+// outbound MercadoLibre call — see the comment in SyncFlaggedListings for why
+// this is called at every call site here instead of once for the whole run.
 func (s *MercadoLibreListingsAuditService) freshAccessToken(ctx context.Context, connectionID int64) (string, error) {
 	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
 	if err != nil {
@@ -198,9 +217,9 @@ func (s *MercadoLibreListingsAuditService) freshAccessToken(ctx context.Context,
 
 // listAllSellerItemIDs pages through
 // GET /users/{sellerID}/items/search?search_type=scan (MercadoLibre's
-// cursor-based "scan" mode — no 1000-result cap, unlike classic
-// offset+limit pagination) until a page comes back with no results,
-// re-validating the access token before every page.
+// cursor-based "scan" mode — no 1000-result cap, unlike classic offset+limit
+// pagination) until a page comes back with no results, re-validating the
+// access token before every page.
 func (s *MercadoLibreListingsAuditService) listAllSellerItemIDs(ctx context.Context, connectionID, sellerID int64) ([]string, error) {
 	all := make([]string, 0)
 	scrollID := ""
@@ -257,8 +276,8 @@ func (s *MercadoLibreListingsAuditService) fetchAllItemSummaries(ctx context.Con
 }
 
 // fetchAllItemDetails chunks externalIDs into batches of
-// mercadoLibreInfra.MaxItemsBatchSize and calls GetItemsDetail once per
-// batch, re-validating the access token before each one — mirrors
+// mercadoLibreInfra.MaxItemsBatchSize and calls GetItemsDetail once per batch,
+// re-validating the access token before each one — mirrors
 // fetchAllItemSummaries.
 func (s *MercadoLibreListingsAuditService) fetchAllItemDetails(ctx context.Context, connectionID int64, externalIDs []string) ([]mercadoLibreInfra.ItemDetail, error) {
 	details := make([]mercadoLibreInfra.ItemDetail, 0, len(externalIDs))
@@ -290,173 +309,149 @@ func (s *MercadoLibreListingsAuditService) syncOne(ctx context.Context, connecti
 	sku := resolveSKUFromItem(item)
 	outcome := ListingAuditOutcome{ExternalID: item.ID, SKU: sku}
 
-	product, err := s.productRepository.FindBySKU(sku)
-	if err != nil {
-		if errors.Is(err, mysqlInfra.ErrProductNotFound) {
-			outcome.SkipReason = "no local ecom_products row for this sku"
-			return outcome
-		}
-		outcome.Error = fmt.Sprintf("error loading product by sku: %v", err)
+	// resolveSKUFromItem falls back to the item id when the listing carries no
+	// SELLER_SKU/seller_custom_field — creating an ecom_products row keyed by a
+	// MercadoLibre id (and copying compatibilities onto it) is not what's
+	// wanted, so skip it and report why.
+	if sku == item.ID {
+		outcome.SkipReason = "listing has no SELLER_SKU / seller_custom_field on MercadoLibre"
 		return outcome
 	}
-	outcome.ProductFound = true
+
+	accessToken, err := s.freshAccessToken(ctx, connectionID)
+	if err != nil {
+		outcome.Error = err.Error()
+		return outcome
+	}
+
+	product, created, err := s.resolveOrCreateProduct(ctx, item, sku)
+	if err != nil {
+		outcome.Error = err.Error()
+		return outcome
+	}
 	outcome.ProductID = &product.ID
+	outcome.ProductCreated = created
 
-	// Provisions the local category (only if the product has none yet — see
-	// ProvisionCategoryAttributes) plus every attribute slot/option the
-	// listing's category exposes; SetValue below needs those slots to exist
-	// first.
-	provisioned, err := s.channelAttributeValuesService.ProvisionCategoryAttributes(ctx, channelAttributeValuesApp.ProvisionCategoryAttributesInput{
-		SKU:          sku,
-		CategoryID:   item.CategoryID,
-		ConnectionID: &connectionID,
-		ActorID:      systemMercadoLibreSyncActorID,
-	})
+	// Description: update it whenever one can be fetched, skip silently when it
+	// can't — never overwrite an existing description with nothing.
+	if text, source := s.fetchListingDescription(ctx, accessToken, item); text != nil {
+		outcome.DescriptionSource = source
+		if product.Description == nil || strings.TrimSpace(*product.Description) != *text {
+			if err := s.productRepository.UpdateDescription(ctx, product.ID, *text, systemMercadoLibreSyncActorID); err != nil {
+				outcome.Error = fmt.Sprintf("error updating product description: %v", err)
+				return outcome
+			}
+			outcome.DescriptionUpdated = true
+		}
+	}
+
+	results, newFitments, err := s.compatibilityService.CopyCompatibilitiesForProduct(ctx, accessToken, item.ID, product.ID, systemMercadoLibreSyncActorID)
 	if err != nil {
-		outcome.Error = fmt.Sprintf("error provisioning category/attributes: %v", err)
+		outcome.Error = err.Error()
 		return outcome
 	}
 
-	dataTypeByExternalKey := make(map[string]string, len(provisioned.Results))
-	for _, provisionedAttr := range provisioned.Results {
-		if provisionedAttr.SourceType == "custom_attribute" && provisionedAttr.DataType != "" {
-			dataTypeByExternalKey[provisionedAttr.ExternalKey] = provisionedAttr.DataType
+	linked := 0
+	for _, r := range results {
+		if r.CompatibilityID != 0 {
+			linked++
 		}
 	}
-
-	attributesSet := 0
-	var attributeErrors []string
-	for _, attr := range item.Attributes {
-		dataType, ok := dataTypeByExternalKey[attr.ID]
-		if !ok {
-			// Not a custom_attribute slot this run provisioned (system_field,
-			// deliberately skipped, or read_only) — nothing to set.
-			continue
-		}
-
-		setInput, ok := buildSetValueInput(sku, attr, dataType)
-		if !ok {
-			continue
-		}
-
-		if _, err := s.channelAttributeValuesService.SetValue(ctx, setInput); err != nil {
-			attributeErrors = append(attributeErrors, fmt.Sprintf("%s: %v", attr.ID, err))
-			continue
-		}
-		attributesSet++
-	}
-	outcome.AttributesSet = attributesSet
-	outcome.AttributeErrors = attributeErrors
-
-	name := stripSKUFromTitle(item.Title, sku)
-	if name != "" && name != product.Name {
-		if err := s.productRepository.UpdateName(product.ID, name, systemMercadoLibreSyncActorID); err != nil {
-			outcome.Error = fmt.Sprintf("error updating product name: %v", err)
-			return outcome
-		}
-		outcome.NameUpdated = true
-		outcome.NewName = name
-	}
+	outcome.Compatibilities = results
+	outcome.CompatibilitiesLinked = linked
+	outcome.NewVehicleFitments = newFitments
 
 	return outcome
 }
 
-// buildSetValueInput types attr's live MercadoLibre value against dataType
-// (as channel_attribute_values.SetValue requires) and reports ok=false when
-// the value is empty or doesn't parse as dataType — buildSetValueInput never
-// guesses, it just leaves that one attribute unset, same "one bad value
-// doesn't stop the rest" rule as everywhere else in this audit.
-func buildSetValueInput(sku string, attr mercadoLibreInfra.ItemAttribute, dataType string) (channelAttributeValuesApp.SetValueInput, bool) {
-	input := channelAttributeValuesApp.SetValueInput{
+// resolveOrCreateProduct returns the ecom_products row for sku, creating it
+// from the listing (description left NULL — syncOne fills it right after)
+// when it doesn't exist yet. created reports whether this call inserted it.
+func (s *MercadoLibreListingsAuditService) resolveOrCreateProduct(ctx context.Context, item *mercadoLibreInfra.ItemDetail, sku string) (product *mysqlInfra.ProductDTO, created bool, err error) {
+	existing, findErr := s.productRepository.FindBySKU(ctx, sku)
+	if findErr == nil {
+		return existing, false, nil
+	}
+	if !errors.Is(findErr, mysqlInfra.ErrProductNotFound) {
+		return nil, false, fmt.Errorf("error loading product by sku %s: %w", sku, findErr)
+	}
+
+	brandID := auditProductBrandID
+	newProduct, createErr := s.productRepository.Create(ctx, mysqlInfra.CreateProductInput{
 		SKU:         sku,
-		ExternalKey: attr.ID,
-		DataType:    dataType,
-		ActorID:     systemMercadoLibreSyncActorID,
+		PartNumber:  sku,
+		Name:        strings.TrimSpace(item.Title),
+		BrandID:     &brandID,
+		ProductType: auditProductType,
+		IsSellable:  true,
+		IsStockable: true,
+		SourceID:    auditProductSourceID,
+		CreatedBy:   systemMercadoLibreSyncActorID,
+	})
+	if createErr != nil {
+		// Another flagged listing for the same seller SKU may have created the
+		// row already (unique key on source_id + part_number) — re-resolve
+		// rather than failing this listing.
+		if recovered, recErr := s.productRepository.FindBySourceAndPartNumber(ctx, auditProductSourceID, sku); recErr == nil {
+			return recovered, false, nil
+		}
+		if recovered, recErr := s.productRepository.FindBySKU(ctx, sku); recErr == nil {
+			return recovered, false, nil
+		}
+		return nil, false, fmt.Errorf("error creating product for sku %s: %w", sku, createErr)
 	}
 
-	switch dataType {
-	case "enum":
-		value := strings.TrimSpace(attr.ValueName)
-		if value == "" {
-			return input, false
-		}
-		input.EnumValue = &value
-		return input, true
-
-	case "number":
-		value := strings.TrimSpace(attr.ValueName)
-		parsed, err := strconv.ParseFloat(value, 64)
-		if err != nil {
-			return input, false
-		}
-		input.ValueNumber = &parsed
-		return input, true
-
-	case "boolean":
-		parsed, ok := parseMercadoLibreBoolean(attr.ValueName)
-		if !ok {
-			return input, false
-		}
-		input.ValueBool = &parsed
-		return input, true
-
-	case "date":
-		parsed, err := time.Parse("2006-01-02", strings.TrimSpace(attr.ValueName))
-		if err != nil {
-			return input, false
-		}
-		input.ValueDate = &parsed
-		return input, true
-
-	default: // "text"
-		value := strings.TrimSpace(attr.ValueName)
-		if value == "" {
-			return input, false
-		}
-		input.ValueText = &value
-		return input, true
-	}
+	return newProduct, true, nil
 }
 
-// parseMercadoLibreBoolean maps the handful of value_name strings
-// MercadoLibre actually sends for a boolean attribute (Spanish "Sí"/"No",
-// their English equivalents, and the literal "true"/"false") — ok is false
-// for anything else rather than guessing.
-func parseMercadoLibreBoolean(raw string) (value bool, ok bool) {
-	switch strings.ToLower(strings.TrimSpace(raw)) {
-	case "sí", "si", "yes", "true", "verdadero":
-		return true, true
-	case "no", "false", "falso":
-		return false, true
-	default:
-		return false, false
+// fetchListingDescription returns the listing's description as plain text,
+// best-effort: GET /items/{id}/description first, then — since that 404s for
+// catalog/user-product-linked listings (see
+// mercadolibre.ErrItemDescriptionNotFound), which is exactly what the flagged
+// listings tend to be — the catalog product's short_description. Returns
+// (nil, "") when neither is available; never an error (a missing description
+// must not block the compatibility copy).
+func (s *MercadoLibreListingsAuditService) fetchListingDescription(ctx context.Context, accessToken string, item *mercadoLibreInfra.ItemDetail) (*string, string) {
+	if desc, err := s.itemsHandler.GetItemDescription(ctx, accessToken, item.ID); err == nil {
+		if text := pickDescriptionText(desc); text != "" {
+			return &text, "item"
+		}
+	} else if !errors.Is(err, mercadoLibreInfra.ErrItemDescriptionNotFound) {
+		log.Printf("mercadolibre listings audit: item %s description fetch failed: %v", item.ID, err)
 	}
+
+	catalogProductID := strings.TrimSpace(item.CatalogProductID)
+	if catalogProductID == "" {
+		return nil, ""
+	}
+
+	catalog, err := s.itemsHandler.GetCatalogProduct(ctx, accessToken, catalogProductID)
+	if err != nil {
+		log.Printf("mercadolibre listings audit: item %s catalog product %s fetch failed: %v", item.ID, catalogProductID, err)
+		return nil, ""
+	}
+	if text := strings.TrimSpace(catalog.ShortDescription.Content); text != "" {
+		return &text, "catalog"
+	}
+	return nil, ""
 }
 
-// stripSKUFromTitle removes title's trailing " {sku}" — MercadoLibre titles
-// created by this audit's target listings are always "{name} {sku}" — so
-// ecom_products.name ends up holding just the name portion. If title
-// doesn't actually end with sku (unexpected), it's returned unchanged rather
-// than guessed at.
-func stripSKUFromTitle(title, sku string) string {
-	title = strings.TrimSpace(title)
-	sku = strings.TrimSpace(sku)
-	if sku == "" || !strings.HasSuffix(title, sku) {
-		return title
+func pickDescriptionText(desc *mercadoLibreInfra.ItemDescription) string {
+	if desc == nil {
+		return ""
 	}
-
-	trimmed := strings.TrimSuffix(title, sku)
-	trimmed = strings.TrimRight(trimmed, " -_")
-	return strings.TrimSpace(trimmed)
+	if text := strings.TrimSpace(desc.PlainText); text != "" {
+		return text
+	}
+	return strings.TrimSpace(desc.Text)
 }
 
 // resolveSKUFromItem extracts the seller's own SKU straight from
-// MercadoLibre's item payload — the SELLER_SKU attribute (current
-// convention, same key channel_attribute_values.systemFieldByExternalKey
-// maps to "sku") or the older top-level seller_custom_field. Falls back to
-// the MercadoLibre item id itself when neither is set, so a listing with no
-// SKU recorded on MercadoLibre's side still gets a usable, unique lookup key
-// (which simply won't match any ecom_products row).
+// MercadoLibre's item payload — the SELLER_SKU attribute (current convention,
+// same key channel_attribute_values.systemFieldByExternalKey maps to "sku") or
+// the older top-level seller_custom_field. Falls back to the MercadoLibre item
+// id itself when neither is set, so a listing with no SKU recorded on
+// MercadoLibre's side still gets a usable, unique lookup key.
 func resolveSKUFromItem(item *mercadoLibreInfra.ItemDetail) string {
 	for _, attr := range item.Attributes {
 		if attr.ID == "SELLER_SKU" {

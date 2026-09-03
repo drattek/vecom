@@ -12,6 +12,7 @@ import (
 	"time"
 	"unicode"
 
+	pricingApp "core-orchestrator/internal/application/pricing"
 	odooInfra "core-orchestrator/internal/infrastructure/marketplace/odoo"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 	"core-orchestrator/internal/workers"
@@ -36,6 +37,13 @@ const (
 	odooCM3PerM3 = 1_000_000.0
 )
 
+// odooRefreshPriceStockGateEnabled gates Refresh so it only calls out to Odoo
+// when product's price or stock actually changed since listing.LastSyncedAt
+// (priceOrStockChangedSince below) — see mercadoLibreRefreshPriceStockGateEnabled
+// in sync_mercadolibre_products.go for the same gate on MercadoLibre's
+// Refresh, toggled independently.
+const odooRefreshPriceStockGateEnabled = true
+
 // OdooProductSyncService pushes a single product's current price/stock/
 // images/category to Odoo, creating the product.template on first sync and
 // only refreshing qty_available/list_price on later ones. It implements
@@ -55,6 +63,8 @@ type OdooProductSyncService struct {
 	channelProductMapRepository  *mysqlInfra.ChannelProductMapRepository
 	rateLimiter                  *odooInfra.RateLimiter
 	httpClient                   *http.Client
+	formulaCalculator            *pricingApp.PricingFormulaCalculator
+	effectivePriceResolver       *pricingApp.EffectivePriceResolver
 }
 
 func NewOdooProductSyncService(
@@ -71,6 +81,8 @@ func NewOdooProductSyncService(
 	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository,
 	channelProductMapRepository *mysqlInfra.ChannelProductMapRepository,
 	rateLimiter *odooInfra.RateLimiter,
+	formulaCalculator *pricingApp.PricingFormulaCalculator,
+	effectivePriceResolver *pricingApp.EffectivePriceResolver,
 ) *OdooProductSyncService {
 	return &OdooProductSyncService{
 		credentialsRepository:        credentialsRepository,
@@ -87,6 +99,8 @@ func NewOdooProductSyncService(
 		channelProductMapRepository:  channelProductMapRepository,
 		rateLimiter:                  rateLimiter,
 		httpClient:                   &http.Client{Timeout: 20 * time.Second},
+		formulaCalculator:            formulaCalculator,
+		effectivePriceResolver:       effectivePriceResolver,
 	}
 }
 
@@ -95,12 +109,12 @@ func NewOdooProductSyncService(
 // price/stock (already synced), recording the external id in
 // ecom_channel_product_map either way.
 func (s *OdooProductSyncService) Sync(ctx context.Context, productID, connectionID int64) error {
-	product, err := s.productRepository.FindByID(productID)
+	product, err := s.productRepository.FindByID(ctx, productID)
 	if err != nil {
 		return fmt.Errorf("error loading product %d: %w", productID, err)
 	}
 
-	values, err := LoadOdooConnectionValues(s.credentialsRepository, s.settingsRepository, connectionID)
+	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
 	if err != nil {
 		return fmt.Errorf("error loading odoo connection %d: %w", connectionID, err)
 	}
@@ -121,29 +135,29 @@ func (s *OdooProductSyncService) Sync(ctx context.Context, productID, connection
 	imagesHandler := odooInfra.NewImagesHandler(client)
 	categoriesHandler := odooInfra.NewCategoriesHandler(client)
 
-	mxnCurrency, err := s.currenciesRepository.FindByCode(odooSyncCurrency)
+	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
 	if err != nil {
 		return fmt.Errorf("error loading %s currency: %w", odooSyncCurrency, err)
 	}
 
-	price, err := s.productPricesRepository.FindEffectivePrice(productID, mxnCurrency.ID)
+	basePrice, _, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, productID, mxnCurrency.ID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
-			return fmt.Errorf("%w: no active %s price list entry for product %d", workers.ErrSyncNotReady, odooSyncCurrency, productID)
+			return fmt.Errorf("%w: no active price list entry for product %d", workers.ErrSyncNotReady, productID)
 		}
 		return fmt.Errorf("error loading effective price for product %d: %w", productID, err)
 	}
-	listPrice, err := strconv.ParseFloat(price.Price, 64)
+	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
 	if err != nil {
-		return fmt.Errorf("error parsing price %q for product %d: %w", price.Price, productID, err)
+		return fmt.Errorf("error calculating final price for product %d: %w", productID, err)
 	}
 
-	qtyAvailable, err := s.sumAvailableStock(productID)
+	qtyAvailable, err := s.sumAvailableStock(ctx, productID)
 	if err != nil {
 		return fmt.Errorf("error summing stock for product %d: %w", productID, err)
 	}
 
-	existingMap, err := s.channelProductMapRepository.FindByProductAndConnection(productID, connectionID)
+	existingMap, err := s.channelProductMapRepository.FindByProductAndConnection(ctx, productID, connectionID)
 	if err != nil && !errors.Is(err, mysqlInfra.ErrChannelProductMapNotFound) {
 		return fmt.Errorf("error loading channel product map for product %d: %w", productID, err)
 	}
@@ -174,7 +188,7 @@ func (s *OdooProductSyncService) Sync(ctx context.Context, productID, connection
 // nil: Odoo has no equivalent of ecom_channel_attributes-tracked attributes
 // today.
 func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, title string, vehicleFitmentID *int64, imageSourceProductID int64, officialStoreID *int64) (string, []string, []string, error) {
-	values, err := LoadOdooConnectionValues(s.credentialsRepository, s.settingsRepository, connectionID)
+	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("error loading odoo connection %d: %w", connectionID, err)
 	}
@@ -195,24 +209,24 @@ func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfr
 	imagesHandler := odooInfra.NewImagesHandler(client)
 	categoriesHandler := odooInfra.NewCategoriesHandler(client)
 
-	mxnCurrency, err := s.currenciesRepository.FindByCode(odooSyncCurrency)
+	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("error loading %s currency: %w", odooSyncCurrency, err)
 	}
 
-	price, err := s.productPricesRepository.FindEffectivePrice(product.ID, mxnCurrency.ID)
+	basePrice, _, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, product.ID, mxnCurrency.ID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
-			return "", nil, nil, fmt.Errorf("no active %s price list entry for product %d", odooSyncCurrency, product.ID)
+			return "", nil, nil, fmt.Errorf("no active price list entry for product %d", product.ID)
 		}
 		return "", nil, nil, fmt.Errorf("error loading effective price for product %d: %w", product.ID, err)
 	}
-	listPrice, err := strconv.ParseFloat(price.Price, 64)
+	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
 	if err != nil {
-		return "", nil, nil, fmt.Errorf("error parsing price %q for product %d: %w", price.Price, product.ID, err)
+		return "", nil, nil, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
 	}
 
-	qtyAvailable, err := s.sumAvailableStock(product.ID)
+	qtyAvailable, err := s.sumAvailableStock(ctx, product.ID)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("error summing stock for product %d: %w", product.ID, err)
 	}
@@ -227,41 +241,41 @@ func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfr
 // stock changed since listing.LastSyncedAt — comparing
 // ecom_product_prices.updated_at / ecom_product_stock.last_sync_at against
 // it, the same signal ecom_channel_product_map already carries for this
-// purpose — and, when it does, always sends stock, price, the normalized
-// name, and category (see update — resolved/created hierarchically in Odoo
-// the same way resolveOdooCategory already does for a brand-new listing)
-// together in that one product.template/write call (matching how Sync/
-// Publish always send stock+price together, and per instructions to always
-// keep the Odoo name in sync too).
+// purpose (see odooRefreshPriceStockGateEnabled) — and, when it does, sends
+// only qty_available and list_price (see updatePriceAndStock /
+// odooInfra.UpdateProductPriceStockVals): no name, weight/volume, or
+// category. Those full-field pushes stay exclusive to Sync/update (the
+// channel-agnostic queue path) — a plain refresh must never touch anything
+// besides price and stock.
 func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error) {
 	externalIDStr := derefString(listing.ExternalID)
 	if externalIDStr == "" {
 		return false, nil
 	}
 
-	mxnCurrency, err := s.currenciesRepository.FindByCode(odooSyncCurrency)
+	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
 	if err != nil {
 		return false, fmt.Errorf("error loading %s currency: %w", odooSyncCurrency, err)
 	}
 
-	price, err := s.productPricesRepository.FindEffectivePrice(product.ID, mxnCurrency.ID)
+	basePrice, priceUpdatedAt, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, product.ID, mxnCurrency.ID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
-			return false, fmt.Errorf("no active %s price list entry for product %d", odooSyncCurrency, product.ID)
+			return false, fmt.Errorf("no active price list entry for product %d", product.ID)
 		}
 		return false, fmt.Errorf("error loading effective price for product %d: %w", product.ID, err)
 	}
 
-	stocks, err := s.productStockRepository.FindByProductID(product.ID)
+	stocks, err := s.productStockRepository.FindByProductID(ctx, product.ID)
 	if err != nil {
 		return false, fmt.Errorf("error loading stock for product %d: %w", product.ID, err)
 	}
 
-	if !priceOrStockChangedSince(price.UpdatedAt, stocks, listing.LastSyncedAt) {
+	if odooRefreshPriceStockGateEnabled && !priceOrStockChangedSince(priceUpdatedAt, stocks, listing.LastSyncedAt) {
 		return false, nil
 	}
 
-	values, err := LoadOdooConnectionValues(s.credentialsRepository, s.settingsRepository, connectionID)
+	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
 	if err != nil {
 		return false, fmt.Errorf("error loading odoo connection %d: %w", connectionID, err)
 	}
@@ -279,11 +293,10 @@ func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfr
 
 	client := odooInfra.NewClient(nil, odooURL, s.rateLimiter)
 	productsHandler := odooInfra.NewProductsHandler(client)
-	categoriesHandler := odooInfra.NewCategoriesHandler(client)
 
-	listPrice, err := strconv.ParseFloat(price.Price, 64)
+	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
 	if err != nil {
-		return false, fmt.Errorf("error parsing price %q for product %d: %w", price.Price, product.ID, err)
+		return false, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
 	}
 
 	qtyAvailable := 0.0
@@ -291,13 +304,61 @@ func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfr
 		qtyAvailable += float64(stock.AvailableQty)
 	}
 
-	title := resolveOdooRefreshTitle(listing, product)
-
-	if err := s.update(ctx, productsHandler, categoriesHandler, credentials, connectionID, product, listing, title, listPrice, qtyAvailable); err != nil {
+	if err := s.updatePriceAndStock(ctx, productsHandler, credentials, connectionID, listing, listPrice, qtyAvailable); err != nil {
 		return false, err
 	}
 
 	return true, nil
+}
+
+// updatePriceAndStock pushes only qty_available/list_price to an
+// already-published Odoo product.template (via
+// odooInfra.UpdateProductPriceStock) — no name, weight/volume, or category —
+// and records the refresh in ecom_channel_product_map, passing through
+// listing_title/external_category_id unchanged since neither was touched on
+// the Odoo side. Used exclusively by Refresh; see update below for the
+// full-field version Sync uses.
+func (s *OdooProductSyncService) updatePriceAndStock(
+	ctx context.Context,
+	productsHandler *odooInfra.ProductsHandler,
+	credentials odooInfra.Credentials,
+	connectionID int64,
+	existingMap *mysqlInfra.ChannelProductMapDTO,
+	listPrice, qtyAvailable float64,
+) error {
+	productID := existingMap.ProductID
+	externalIDStr := derefString(existingMap.ExternalID)
+
+	externalID, err := strconv.ParseInt(strings.TrimSpace(externalIDStr), 10, 64)
+	if err != nil {
+		return fmt.Errorf("error parsing external id %q for product %d: %w", externalIDStr, productID, err)
+	}
+
+	if err := productsHandler.UpdateProductPriceStock(ctx, odooInfra.UpdateProductPriceStockRequest{
+		Credentials: credentials,
+		ExternalID:  externalID,
+		Vals: odooInfra.UpdateProductPriceStockVals{
+			QtyAvailable: qtyAvailable,
+			ListPrice:    listPrice,
+		},
+	}); err != nil {
+		return fmt.Errorf("error updating odoo product %d (local product %d): %w", externalID, productID, err)
+	}
+
+	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
+		ProductID:          productID,
+		ConnectionID:       connectionID,
+		VehicleFitmentID:   existingMap.VehicleFitmentID,
+		ListingTitle:       derefString(existingMap.ListingTitle),
+		ExternalID:         externalIDStr,
+		ExternalCategoryID: derefString(existingMap.ExternalCategoryID),
+		Status:             odooSyncedStatus,
+		ActorID:            systemOdooSyncActorID,
+	}); err != nil {
+		return fmt.Errorf("error recording channel product map for product %d: %w", productID, err)
+	}
+
+	return nil
 }
 
 // update refreshes an already-synced product's stock, price, name (always
@@ -337,7 +398,7 @@ func (s *OdooProductSyncService) update(
 		return fmt.Errorf("error parsing external id %q for product %d: %w", externalIDStr, productID, err)
 	}
 
-	weight, volume := s.resolveDimensions(productID)
+	weight, volume := s.resolveDimensions(ctx, productID)
 
 	vals := odooInfra.UpdateProductVals{
 		QtyAvailable: qtyAvailable,
@@ -365,7 +426,7 @@ func (s *OdooProductSyncService) update(
 		return fmt.Errorf("error updating odoo product %d (local product %d): %w", externalID, productID, err)
 	}
 
-	if _, err := s.channelProductMapRepository.Upsert(mysqlInfra.UpsertChannelProductMapInput{
+	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 		ProductID:          productID,
 		ConnectionID:       connectionID,
 		VehicleFitmentID:   existingMap.VehicleFitmentID,
@@ -422,7 +483,7 @@ func (s *OdooProductSyncService) create(
 ) (string, error) {
 	title = normalizeOdooTitle(title, product.PartNumber)
 
-	images, err := s.productImagesRepository.FindAllByProductID(imageSourceProductID)
+	images, err := s.productImagesRepository.FindAllByProductID(ctx, imageSourceProductID)
 	if err != nil {
 		return "", fmt.Errorf("error loading images for product %d: %w", imageSourceProductID, err)
 	}
@@ -455,7 +516,15 @@ func (s *OdooProductSyncService) create(
 		return "", fmt.Errorf("error resolving odoo category for product %d: %w", product.ID, err)
 	}
 
-	weight, volume := s.resolveDimensions(product.ID)
+	weight, volume := s.resolveDimensions(ctx, product.ID)
+
+	// DescriptionEcommerce is only populated from ecom_products.description
+	// when one exists — an empty ecom_products.description leaves the field
+	// unset rather than falling back to title.
+	var descriptionEcommerce string
+	if product.Description != nil && strings.TrimSpace(*product.Description) != "" {
+		descriptionEcommerce = *product.Description
+	}
 
 	vals := odooInfra.CreateProductVals{
 		Name:                 title,
@@ -470,7 +539,7 @@ func (s *OdooProductSyncService) create(
 		IsStorable:           true,
 		AllowOutOfStockOrder: false,
 		PublicCategIDs:       odooInfra.X2ManyReplace(externalCategoryID),
-		DescriptionEcommerce: title,
+		DescriptionEcommerce: descriptionEcommerce,
 		TaxesID:              odooInfra.X2ManyReplace(odooTaxID),
 		QtyAvailable:         qtyAvailable,
 		Weight:               weight,
@@ -483,7 +552,7 @@ func (s *OdooProductSyncService) create(
 	}
 	externalIDStr := strconv.FormatInt(externalID, 10)
 
-	if _, err := s.channelProductMapRepository.Upsert(mysqlInfra.UpsertChannelProductMapInput{
+	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 		ProductID:        product.ID,
 		ConnectionID:     connectionID,
 		VehicleFitmentID: vehicleFitmentID,
@@ -554,12 +623,13 @@ func normalizeOdooTitle(title, partNumber string) string {
 // any of its stock rows changed after sinceUTC — comparing against
 // ecom_product_prices.updated_at (MySQL-managed, stamped on every write) and
 // ecom_product_stock.last_sync_at (stamped only when a sync actually wrote a
-// different available_qty — see sync_nissan.go's stockAndPriceUnchanged),
-// the same timestamps already used to skip redundant writes there. Shared by
-// both MercadoLibre's and Odoo's Refresh so a channel refresh only ever
-// calls out to a marketplace for a listing whose price or stock could
-// plausibly have moved. A nil sinceUTC (the listing has no last_synced_at
-// yet) always reports changed, since there is nothing to compare against.
+// different available_qty — see sync_nissan.go's syncProductStock/
+// syncNissanPrice), the same timestamps already used to skip redundant
+// writes there. Shared by both MercadoLibre's and Odoo's Refresh so a
+// channel refresh only ever calls out to a marketplace for a listing whose
+// price or stock could plausibly have moved. A nil sinceUTC (the listing has
+// no last_synced_at yet) always reports changed, since there is nothing to
+// compare against.
 func priceOrStockChangedSince(priceUpdatedAt time.Time, stocks []mysqlInfra.ProductStockDTO, sinceUTC *time.Time) bool {
 	if sinceUTC == nil {
 		return true
@@ -589,7 +659,7 @@ func (s *OdooProductSyncService) resolveOdooCategory(
 	credentials odooInfra.Credentials,
 	categoryID, connectionID int64,
 ) (int64, error) {
-	existing, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(categoryID, connectionID)
+	existing, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, categoryID, connectionID)
 	if err != nil && !errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
 		return 0, fmt.Errorf("error loading channel category map for category %d: %w", categoryID, err)
 	}
@@ -601,7 +671,7 @@ func (s *OdooProductSyncService) resolveOdooCategory(
 		return externalID, nil
 	}
 
-	category, err := s.categoriesRepository.FindByID(categoryID)
+	category, err := s.categoriesRepository.FindByID(ctx, categoryID)
 	if err != nil {
 		return 0, fmt.Errorf("error loading category %d: %w", categoryID, err)
 	}
@@ -627,7 +697,7 @@ func (s *OdooProductSyncService) resolveOdooCategory(
 	}
 
 	name := category.Name
-	if _, err := s.channelCategoryMapRepository.Upsert(mysqlInfra.UpsertChannelCategoryMapInput{
+	if _, err := s.channelCategoryMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelCategoryMapInput{
 		CategoryID:           categoryID,
 		ConnectionID:         connectionID,
 		ExternalCategoryID:   strconv.FormatInt(externalID, 10),
@@ -640,8 +710,8 @@ func (s *OdooProductSyncService) resolveOdooCategory(
 	return externalID, nil
 }
 
-func (s *OdooProductSyncService) sumAvailableStock(productID int64) (float64, error) {
-	stocks, err := s.productStockRepository.FindByProductID(productID)
+func (s *OdooProductSyncService) sumAvailableStock(ctx context.Context, productID int64) (float64, error) {
+	stocks, err := s.productStockRepository.FindByProductID(ctx, productID)
 	if err != nil {
 		return 0, err
 	}
@@ -659,8 +729,8 @@ func (s *OdooProductSyncService) sumAvailableStock(productID int64) (float64, er
 // converted from ecom_product_dimensions' cm³ into Odoo's m³, falling back
 // to 1/1 when the product has no ecom_product_dimensions row at all, or when
 // a stored value fails to parse.
-func (s *OdooProductSyncService) resolveDimensions(productID int64) (weight, volume float64) {
-	dimensions, err := s.productDimensionsRepository.FindByProductID(productID)
+func (s *OdooProductSyncService) resolveDimensions(ctx context.Context, productID int64) (weight, volume float64) {
+	dimensions, err := s.productDimensionsRepository.FindByProductID(ctx, productID)
 	if err != nil {
 		return odooDefaultWeight, odooDefaultVolume
 	}
@@ -679,7 +749,7 @@ func (s *OdooProductSyncService) resolveDimensions(productID int64) (weight, vol
 }
 
 func (s *OdooProductSyncService) downloadImageAsBase64(ctx context.Context, fileID int64) (string, error) {
-	file, err := s.filesRepository.FindByID(fileID)
+	file, err := s.filesRepository.FindByID(ctx, fileID)
 	if err != nil {
 		return "", fmt.Errorf("error loading file %d: %w", fileID, err)
 	}

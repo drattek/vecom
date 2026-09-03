@@ -35,3 +35,12 @@ apiClient.interceptors.response.use(
     return Promise.reject(error)
   },
 )
+
+/**
+ * Revokes the current access token server-side (ecom_api_token.revoked_at).
+ * Safe to call even if the token is already invalid — the caller should clear
+ * the local session regardless of the outcome.
+ */
+export async function logoutRequest(): Promise<void> {
+  await apiClient.post('/api/logout')
+}

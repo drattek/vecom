@@ -2,7 +2,7 @@
 
 ## Contexto general
 - La base de datos está orientada a un modelo comercial y operativo para productos, inventario, precios, medios, canales y conexiones externas.
-- El esquema usa el prefijo `ecom_` para las tablas del dominio principal y `vecom_` para tablas de infraestructura o acceso API.
+- El esquema usa el prefijo `ecom_` para todas las tablas, incluidas las de dominio y las de acceso API/autenticación (`ecom_api_user`, `ecom_api_token`).
 - La mayoría de las tablas de negocio incluyen columnas de auditoría: `created_by`, `updated_by`, `created_at`, `updated_at` y, cuando aplica, `deleted_at`.
 - El modelo asume que los registros eliminados no deben borrarse físicamente; deben marcarse con `deleted_at` y filtrarse en lecturas normales.
 
@@ -38,3 +38,10 @@
 - Si el cambio afecta negocio y no solo infraestructura, probablemente debe pasar por las tablas de dominio (`products`, `stock`, `prices`, `channels`) y no solo por tablas auxiliares.
 - Si se necesita trazabilidad, priorizar el uso de `created_by`/`updated_by` y conservar la relación con el usuario correspondiente.
 - Si se detecta ambigüedad entre tablas de soporte y tablas principales, tomar como base la tabla central del módulo y luego extender con sus tablas auxiliares.
+
+## Acceso desde `core-orchestrator` (Go)
+- Pool único (`mysql.NewConnection`) con límites `MYSQL_MAX_OPEN_CONNS` / `MYSQL_MAX_IDLE_CONNS` / `MYSQL_CONN_MAX_LIFETIME_MINUTES` / `MYSQL_CONN_MAX_IDLE_TIME_MINUTES`.
+- Cada repo (`internal/infrastructure/mysql/*`) se construye con `mysql.Querier`, así puede correr contra el pool o contra una `*sql.Tx`.
+- Operación que escribe en **varias tablas** (p. ej. actualizar el estado actual + insertar en la tabla de histórico como `ecom_product_stock`/`ecom_stock_movements` o `ecom_product_prices`/`ecom_price_history`, o resolver marca + asignarla a un producto): correr dentro de `mysql.WithinTx` para que sea todo-o-nada.
+- Operación de **una sola sentencia**: repo sobre el pool, sin transacción.
+- Detalle y estado de la migración: `infrastructure/decisions/0001-persistencia-transacciones-y-context.md`.

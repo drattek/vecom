@@ -1,11 +1,11 @@
 {
     "schema_version": 2,
-    "commit": "c72d054f35960854f6bfa098c703f312090a415a",
-    "indexed_at": "2026-08-13T17:32:41Z",
+    "commit": "d9407be27ad205fb601ffd63295acb2a40ef13a4",
+    "indexed_at": "2026-08-19T17:15:16Z",
     "project": "V-e-commerce-orchestrator",
-    "nodes": 2948,
-    "edges": 11514,
-    "original_size": 11534336,
-    "compressed_size": 1940463,
+    "nodes": 3053,
+    "edges": 12886,
+    "original_size": 12124160,
+    "compressed_size": 2056522,
     "compression_level": 3
 }

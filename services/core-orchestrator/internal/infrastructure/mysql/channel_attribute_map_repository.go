@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -50,14 +51,14 @@ type UpdateChannelAttributeMapInput struct {
 }
 
 type ChannelAttributeMapRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewChannelAttributeMapRepository(db *sql.DB) *ChannelAttributeMapRepository {
+func NewChannelAttributeMapRepository(db Querier) *ChannelAttributeMapRepository {
 	return &ChannelAttributeMapRepository{db: db}
 }
 
-func (r *ChannelAttributeMapRepository) FindByChannelAttributeID(channelAttributeID int64) ([]ChannelAttributeMapDTO, error) {
+func (r *ChannelAttributeMapRepository) FindByChannelAttributeID(ctx context.Context, channelAttributeID int64) ([]ChannelAttributeMapDTO, error) {
 	query := `
 		SELECT id, channel_attribute_id, connection_id, source_type, attribute_id, system_field, static_value,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -66,7 +67,7 @@ func (r *ChannelAttributeMapRepository) FindByChannelAttributeID(channelAttribut
 		ORDER BY connection_id IS NULL ASC, id ASC
 	`
 
-	rows, err := r.db.Query(query, channelAttributeID)
+	rows, err := r.db.QueryContext(ctx, query, channelAttributeID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying channel attribute map: %w", err)
 	}
@@ -92,7 +93,7 @@ func (r *ChannelAttributeMapRepository) FindByChannelAttributeID(channelAttribut
 // match wins over the channel-wide row (connection_id IS NULL). Not called
 // anywhere yet — this is the exact-then-generic lookup the future attribute
 // resolver needs once ecom_channel_attribute_map is populated.
-func (r *ChannelAttributeMapRepository) FindByChannelAttributeAndConnection(channelAttributeID int64, connectionID int64) (*ChannelAttributeMapDTO, error) {
+func (r *ChannelAttributeMapRepository) FindByChannelAttributeAndConnection(ctx context.Context, channelAttributeID int64, connectionID int64) (*ChannelAttributeMapDTO, error) {
 	query := `
 		SELECT id, channel_attribute_id, connection_id, source_type, attribute_id, system_field, static_value,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -102,10 +103,10 @@ func (r *ChannelAttributeMapRepository) FindByChannelAttributeAndConnection(chan
 		LIMIT 1
 	`
 
-	return scanChannelAttributeMapRow(r.db.QueryRow(query, channelAttributeID, connectionID))
+	return scanChannelAttributeMapRow(r.db.QueryRowContext(ctx, query, channelAttributeID, connectionID))
 }
 
-func (r *ChannelAttributeMapRepository) FindByID(id int64) (*ChannelAttributeMapDTO, error) {
+func (r *ChannelAttributeMapRepository) FindByID(ctx context.Context, id int64) (*ChannelAttributeMapDTO, error) {
 	query := `
 		SELECT id, channel_attribute_id, connection_id, source_type, attribute_id, system_field, static_value,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -114,17 +115,17 @@ func (r *ChannelAttributeMapRepository) FindByID(id int64) (*ChannelAttributeMap
 		LIMIT 1
 	`
 
-	return scanChannelAttributeMapRow(r.db.QueryRow(query, id))
+	return scanChannelAttributeMapRow(r.db.QueryRowContext(ctx, query, id))
 }
 
-func (r *ChannelAttributeMapRepository) Create(input CreateChannelAttributeMapInput) (*ChannelAttributeMapDTO, error) {
+func (r *ChannelAttributeMapRepository) Create(ctx context.Context, input CreateChannelAttributeMapInput) (*ChannelAttributeMapDTO, error) {
 	query := `
 		INSERT INTO ecom_channel_attribute_map
 			(channel_attribute_id, connection_id, source_type, attribute_id, system_field, static_value, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.ChannelAttributeID, input.ConnectionID, input.SourceType, input.AttributeID, input.SystemField, input.StaticValue, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.ChannelAttributeID, input.ConnectionID, input.SourceType, input.AttributeID, input.SystemField, input.StaticValue, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating channel attribute map: %w", err)
 	}
@@ -134,17 +135,17 @@ func (r *ChannelAttributeMapRepository) Create(input CreateChannelAttributeMapIn
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ChannelAttributeMapRepository) Update(id int64, input UpdateChannelAttributeMapInput) (*ChannelAttributeMapDTO, error) {
+func (r *ChannelAttributeMapRepository) Update(ctx context.Context, id int64, input UpdateChannelAttributeMapInput) (*ChannelAttributeMapDTO, error) {
 	query := `
 		UPDATE ecom_channel_attribute_map
 		SET source_type = ?, attribute_id = ?, system_field = ?, static_value = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.SourceType, input.AttributeID, input.SystemField, input.StaticValue, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.SourceType, input.AttributeID, input.SystemField, input.StaticValue, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating channel attribute map: %w", err)
 	}
@@ -157,13 +158,13 @@ func (r *ChannelAttributeMapRepository) Update(id int64, input UpdateChannelAttr
 		return nil, ErrChannelAttributeMapNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ChannelAttributeMapRepository) SoftDelete(id int64) error {
+func (r *ChannelAttributeMapRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `UPDATE ecom_channel_attribute_map SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting channel attribute map: %w", err)
 	}

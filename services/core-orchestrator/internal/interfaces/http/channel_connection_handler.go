@@ -47,7 +47,7 @@ func (h *ChannelConnectionHandler) GetChannelConnections(w http.ResponseWriter, 
 		}
 	}
 
-	result, err := h.service.GetPaginatedChannelConnections(offset, pageSize)
+	result, err := h.service.GetPaginatedChannelConnections(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -65,7 +65,7 @@ func (h *ChannelConnectionHandler) GetChannelConnectionByID(w http.ResponseWrite
 		return
 	}
 
-	channelConnection, err := h.service.GetChannelConnectionByID(id)
+	channelConnection, err := h.service.GetChannelConnectionByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, channelConnectionsApp.ErrInvalidChannelConnectionPayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid channel connection id")
@@ -98,7 +98,7 @@ func (h *ChannelConnectionHandler) CreateChannelConnection(w http.ResponseWriter
 		return
 	}
 
-	channelConnection, err := h.service.CreateChannelConnection(input, user.ID)
+	channelConnection, err := h.service.CreateChannelConnection(r.Context(), input, user.ID)
 	if err != nil {
 		if errors.Is(err, channelConnectionsApp.ErrInvalidChannelConnectionPayload) {
 			writeJSONError(w, http.StatusBadRequest, "channelId, name and currencyId are required; status and environment must be valid")
@@ -137,7 +137,7 @@ func (h *ChannelConnectionHandler) UpdateChannelConnection(w http.ResponseWriter
 		return
 	}
 
-	channelConnection, err := h.service.UpdateChannelConnection(id, input, user.ID)
+	channelConnection, err := h.service.UpdateChannelConnection(r.Context(), id, input, user.ID)
 	if err != nil {
 		if errors.Is(err, channelConnectionsApp.ErrInvalidChannelConnectionPayload) {
 			writeJSONError(w, http.StatusBadRequest, "channelId, name and currencyId are required; status and environment must be valid")
@@ -174,7 +174,7 @@ func (h *ChannelConnectionHandler) DeleteChannelConnection(w http.ResponseWriter
 		return
 	}
 
-	err = h.service.SoftDeleteChannelConnection(id, user.ID)
+	err = h.service.SoftDeleteChannelConnection(r.Context(), id, user.ID)
 	if err != nil {
 		if errors.Is(err, channelConnectionsApp.ErrInvalidChannelConnectionPayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid channel connection id")

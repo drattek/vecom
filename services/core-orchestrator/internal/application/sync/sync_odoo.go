@@ -68,10 +68,10 @@ func (s *OdooConnectionService) TestConnection(ctx context.Context, connectionID
 	}
 
 	defer func() {
-		s.recordConnectionStatus(connectionID, err)
+		s.recordConnectionStatus(ctx, connectionID, err)
 	}()
 
-	values, err := s.loadConnectionValues(connectionID)
+	values, err := s.loadConnectionValues(ctx, connectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -108,8 +108,8 @@ func (s *OdooConnectionService) TestConnection(ctx context.Context, connectionID
 	return &OdooTestConnectionResult{ConnectionID: connectionID, Products: products}, nil
 }
 
-func (s *OdooConnectionService) loadConnectionValues(connectionID int64) (map[string]string, error) {
-	return LoadOdooConnectionValues(s.credentialsRepository, s.settingsRepository, connectionID)
+func (s *OdooConnectionService) loadConnectionValues(ctx context.Context, connectionID int64) (map[string]string, error) {
+	return LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
 }
 
 // LoadOdooConnectionValues merges ecom_connection_settings and
@@ -121,16 +121,17 @@ func (s *OdooConnectionService) loadConnectionValues(connectionID int64) (map[st
 // (e.g. the category migration service) can resolve the same connection
 // values without duplicating this lookup.
 func LoadOdooConnectionValues(
+	ctx context.Context,
 	credentialsRepository *mysqlInfra.ConnectionCredentialsRepository,
 	settingsRepository *mysqlInfra.ConnectionSettingsRepository,
 	connectionID int64,
 ) (map[string]string, error) {
-	settings, err := settingsRepository.FindByConnectionID(connectionID)
+	settings, err := settingsRepository.FindByConnectionID(ctx, connectionID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading connection settings: %w", err)
 	}
 
-	credentials, err := credentialsRepository.FindByConnectionID(connectionID)
+	credentials, err := credentialsRepository.FindByConnectionID(ctx, connectionID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading connection credentials: %w", err)
 	}
@@ -157,7 +158,7 @@ func LoadOdooConnectionValues(
 // recordConnectionStatus persists the outcome of a TestConnection call into
 // ecom_connection_status. Odoo API keys don't expire, so ExpiresAt is never
 // set here (see ConnectionStatusRepository.FindDueForRefresh).
-func (s *OdooConnectionService) recordConnectionStatus(connectionID int64, opErr error) {
+func (s *OdooConnectionService) recordConnectionStatus(ctx context.Context, connectionID int64, opErr error) {
 	if s.statusRepository == nil {
 		return
 	}
@@ -175,7 +176,7 @@ func (s *OdooConnectionService) recordConnectionStatus(connectionID int64, opErr
 		input.LastAuth = &now
 	}
 
-	if _, err := s.statusRepository.Upsert(input); err != nil {
+	if _, err := s.statusRepository.Upsert(ctx, input); err != nil {
 		log.Printf("Error recording connection status for connection %d: %v", connectionID, err)
 	}
 }

@@ -43,7 +43,7 @@ func (h *BranchHandler) GetBranches(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.service.GetPaginatedBranches(offset, pageSize)
+	result, err := h.service.GetPaginatedBranches(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -61,7 +61,7 @@ func (h *BranchHandler) GetBranchByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	branch, err := h.service.GetBranchByID(id)
+	branch, err := h.service.GetBranchByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrBranchNotFound) {
 			writeJSONError(w, http.StatusNotFound, "branch not found")
@@ -94,7 +94,7 @@ func (h *BranchHandler) CreateBranch(w http.ResponseWriter, r *http.Request) {
 		CreatedBy: user.ID,
 	}
 
-	branch, err := h.service.CreateBranch(input)
+	branch, err := h.service.CreateBranch(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, inventoryApp.ErrInvalidInventoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
@@ -133,7 +133,7 @@ func (h *BranchHandler) UpdateBranch(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy: user.ID,
 	}
 
-	branch, err := h.service.UpdateBranch(id, input)
+	branch, err := h.service.UpdateBranch(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, inventoryApp.ErrInvalidInventoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
@@ -159,7 +159,7 @@ func (h *BranchHandler) DeleteBranch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteBranch(id)
+	err = h.service.DeleteBranch(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrBranchNotFound) {
 			writeJSONError(w, http.StatusNotFound, "branch not found")
@@ -210,7 +210,7 @@ func (h *WarehouseHandler) GetWarehouses(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	result, err := h.service.GetPaginatedWarehouses(offset, pageSize)
+	result, err := h.service.GetPaginatedWarehouses(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -228,7 +228,7 @@ func (h *WarehouseHandler) GetWarehouseByID(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	warehouse, err := h.service.GetWarehouseByID(id)
+	warehouse, err := h.service.GetWarehouseByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrWarehouseNotFound) {
 			writeJSONError(w, http.StatusNotFound, "warehouse not found")
@@ -262,7 +262,7 @@ func (h *WarehouseHandler) CreateWarehouse(w http.ResponseWriter, r *http.Reques
 		CreatedBy: user.ID,
 	}
 
-	warehouse, err := h.service.CreateWarehouse(input)
+	warehouse, err := h.service.CreateWarehouse(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, inventoryApp.ErrInvalidInventoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name and branchId are required")
@@ -302,7 +302,7 @@ func (h *WarehouseHandler) UpdateWarehouse(w http.ResponseWriter, r *http.Reques
 		UpdatedBy: user.ID,
 	}
 
-	warehouse, err := h.service.UpdateWarehouse(id, input)
+	warehouse, err := h.service.UpdateWarehouse(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, inventoryApp.ErrInvalidInventoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name and branchId are required")
@@ -328,7 +328,7 @@ func (h *WarehouseHandler) DeleteWarehouse(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	err = h.service.DeleteWarehouse(id)
+	err = h.service.DeleteWarehouse(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrWarehouseNotFound) {
 			writeJSONError(w, http.StatusNotFound, "warehouse not found")
@@ -381,7 +381,7 @@ func (h *ProductStockHandler) GetProductStock(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	result, err := h.service.GetPaginatedProductStock(offset, pageSize)
+	result, err := h.service.GetPaginatedProductStock(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -399,7 +399,7 @@ func (h *ProductStockHandler) GetProductStockByID(w http.ResponseWriter, r *http
 		return
 	}
 
-	stock, err := h.service.GetProductStockByID(id)
+	stock, err := h.service.GetProductStockByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductStockNotFound) {
 			writeJSONError(w, http.StatusNotFound, "product stock not found")
@@ -434,7 +434,7 @@ func (h *ProductStockHandler) CreateProductStock(w http.ResponseWriter, r *http.
 		AvailableQty: req.AvailableQty,
 	}
 
-	stock, err := h.service.CreateProductStock(input)
+	stock, err := h.service.CreateProductStock(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, inventoryApp.ErrInvalidInventoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "productId, branchId, and warehouseId are required")
@@ -475,7 +475,7 @@ func (h *ProductStockHandler) UpdateProductStock(w http.ResponseWriter, r *http.
 		UpdatedBy:    user.ID,
 	}
 
-	stock, err := h.service.UpdateProductStock(id, input)
+	stock, err := h.service.UpdateProductStock(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, inventoryApp.ErrInvalidInventoryPayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid payload")

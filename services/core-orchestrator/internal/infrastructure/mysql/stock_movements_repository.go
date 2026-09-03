@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -48,7 +49,7 @@ func NewStockMovementsRepository(db Querier) *StockMovementsRepository {
 	return &StockMovementsRepository{db: db}
 }
 
-func (r *StockMovementsRepository) FindPaginated(offset, pageSize int) (*PaginatedStockMovements, error) {
+func (r *StockMovementsRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedStockMovements, error) {
 	query := `
 		SELECT id, product_id, branch_id, warehouse_id, movement_type, 
 		       quantity_before, quantity_change, quantity_after, updated_by, created_at, updated_at
@@ -57,7 +58,7 @@ func (r *StockMovementsRepository) FindPaginated(offset, pageSize int) (*Paginat
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -75,14 +76,14 @@ func (r *StockMovementsRepository) FindPaginated(offset, pageSize int) (*Paginat
 
 	countQuery := "SELECT COUNT(*) FROM ecom_stock_movements WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedStockMovements{Data: movements, Total: total}, nil
 }
 
-func (r *StockMovementsRepository) FindByID(id int64) (*StockMovementDTO, error) {
+func (r *StockMovementsRepository) FindByID(ctx context.Context, id int64) (*StockMovementDTO, error) {
 	query := `
 		SELECT id, product_id, branch_id, warehouse_id, movement_type, 
 		       quantity_before, quantity_change, quantity_after, updated_by, created_at, updated_at
@@ -91,7 +92,7 @@ func (r *StockMovementsRepository) FindByID(id int64) (*StockMovementDTO, error)
 	`
 
 	var s StockMovementDTO
-	if err := r.db.QueryRow(query, id).Scan(&s.ID, &s.ProductID, &s.BranchID, &s.WarehouseID,
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&s.ID, &s.ProductID, &s.BranchID, &s.WarehouseID,
 		&s.MovementType, &s.QuantityBefore, &s.QuantityChange, &s.QuantityAfter, &s.UpdatedBy, &s.CreatedAt, &s.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrStockMovementNotFound
@@ -102,7 +103,7 @@ func (r *StockMovementsRepository) FindByID(id int64) (*StockMovementDTO, error)
 	return &s, nil
 }
 
-func (r *StockMovementsRepository) FindByProductID(productID int64, offset, pageSize int) (*PaginatedStockMovements, error) {
+func (r *StockMovementsRepository) FindByProductID(ctx context.Context, productID int64, offset, pageSize int) (*PaginatedStockMovements, error) {
 	query := `
 		SELECT id, product_id, branch_id, warehouse_id, movement_type, 
 		       quantity_before, quantity_change, quantity_after, updated_by, created_at, updated_at
@@ -111,7 +112,7 @@ func (r *StockMovementsRepository) FindByProductID(productID int64, offset, page
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, productID, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, productID, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -129,21 +130,21 @@ func (r *StockMovementsRepository) FindByProductID(productID int64, offset, page
 
 	countQuery := "SELECT COUNT(*) FROM ecom_stock_movements WHERE product_id = ? AND deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery, productID).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, productID).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedStockMovements{Data: movements, Total: total}, nil
 }
 
-func (r *StockMovementsRepository) Create(input CreateStockMovementInput) (*StockMovementDTO, error) {
+func (r *StockMovementsRepository) Create(ctx context.Context, input CreateStockMovementInput) (*StockMovementDTO, error) {
 	query := `
 		INSERT INTO ecom_stock_movements (product_id, branch_id, warehouse_id, movement_type, 
 		                                   quantity_before, quantity_change, quantity_after, updated_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ProductID, input.BranchID, input.WarehouseID, input.MovementType,
+	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.BranchID, input.WarehouseID, input.MovementType,
 		input.QuantityBefore, input.QuantityChange, input.QuantityAfter, input.UpdatedBy)
 	if err != nil {
 		return nil, err
@@ -154,13 +155,13 @@ func (r *StockMovementsRepository) Create(input CreateStockMovementInput) (*Stoc
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *StockMovementsRepository) SoftDelete(id int64) error {
+func (r *StockMovementsRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := "UPDATE ecom_stock_movements SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

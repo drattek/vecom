@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -71,16 +72,16 @@ type UpdateFileInput struct {
 }
 
 type FilesRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewFilesRepository(db *sql.DB) *FilesRepository {
+func NewFilesRepository(db Querier) *FilesRepository {
 	return &FilesRepository{db: db}
 }
 
-func (r *FilesRepository) FindPaginated(offset, pageSize int) (*PaginatedFiles, error) {
+func (r *FilesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedFiles, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_files WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_files WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting files: %w", err)
 	}
@@ -111,7 +112,7 @@ func (r *FilesRepository) FindPaginated(offset, pageSize int) (*PaginatedFiles, 
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying files: %w", err)
 	}
@@ -139,7 +140,7 @@ func (r *FilesRepository) FindPaginated(offset, pageSize int) (*PaginatedFiles, 
 	}, nil
 }
 
-func (r *FilesRepository) FindByID(id int64) (*FileDTO, error) {
+func (r *FilesRepository) FindByID(ctx context.Context, id int64) (*FileDTO, error) {
 	query := `
 		SELECT
 			c.id,
@@ -163,7 +164,7 @@ func (r *FilesRepository) FindByID(id int64) (*FileDTO, error) {
 		FROM ecom_files c
 		WHERE c.id = ? AND c.deleted_at IS NULL
 	`
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	file, err := scanFile(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -177,7 +178,7 @@ func (r *FilesRepository) FindByID(id int64) (*FileDTO, error) {
 // FindByPath looks up an existing file by its stored path/URL, so callers
 // that receive the same URL twice can reuse the existing ecom_files row
 // instead of re-downloading/re-inserting it.
-func (r *FilesRepository) FindByPath(path string) (*FileDTO, error) {
+func (r *FilesRepository) FindByPath(ctx context.Context, path string) (*FileDTO, error) {
 	query := `
 		SELECT
 			c.id,
@@ -202,7 +203,7 @@ func (r *FilesRepository) FindByPath(path string) (*FileDTO, error) {
 		WHERE c.path = ? AND c.deleted_at IS NULL
 		LIMIT 1
 	`
-	row := r.db.QueryRow(query, path)
+	row := r.db.QueryRowContext(ctx, query, path)
 	file, err := scanFile(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -213,12 +214,12 @@ func (r *FilesRepository) FindByPath(path string) (*FileDTO, error) {
 	return &file, nil
 }
 
-func (r *FilesRepository) Create(input CreateFileInput) (*FileDTO, error) {
+func (r *FilesRepository) Create(ctx context.Context, input CreateFileInput) (*FileDTO, error) {
 	query := `
 		INSERT INTO ecom_files (disk_id, path, filename, original_filename, mime_type, file_type, extension, size, checksum, width, height, is_public, created_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 	`
-	result, err := r.db.Exec(
+	result, err := r.db.ExecContext(ctx,
 		query,
 		input.DiskID,
 		input.Path,
@@ -243,17 +244,17 @@ func (r *FilesRepository) Create(input CreateFileInput) (*FileDTO, error) {
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *FilesRepository) Update(id int64, input UpdateFileInput) (*FileDTO, error) {
+func (r *FilesRepository) Update(ctx context.Context, id int64, input UpdateFileInput) (*FileDTO, error) {
 	query := `
 		UPDATE ecom_files
 		SET disk_id = ?, path = ?, filename = ?, original_filename = ?, mime_type = ?, file_type = ?, extension = ?, size = ?, checksum = ?, width = ?, height = ?, is_public = ?, updated_by = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(
+	result, err := r.db.ExecContext(ctx,
 		query,
 		input.DiskID,
 		input.Path,
@@ -283,7 +284,7 @@ func (r *FilesRepository) Update(id int64, input UpdateFileInput) (*FileDTO, err
 		return nil, ErrFileNotFound
 	}
 
-	file, err := r.FindByID(id)
+	file, err := r.FindByID(ctx, id)
 	if err != nil {
 		return nil, err
 	}
@@ -291,14 +292,14 @@ func (r *FilesRepository) Update(id int64, input UpdateFileInput) (*FileDTO, err
 	return file, nil
 }
 
-func (r *FilesRepository) SoftDelete(id, updatedBy int64) error {
+func (r *FilesRepository) SoftDelete(ctx context.Context, id, updatedBy int64) error {
 	query := `
 		UPDATE ecom_files
 		SET deleted_at = CURRENT_TIMESTAMP, updated_by = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, updatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, updatedBy, id)
 	if err != nil {
 		return fmt.Errorf("error soft deleting file: %w", err)
 	}

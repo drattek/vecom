@@ -3,6 +3,7 @@ module core-orchestrator
 go 1.26.4
 
 require (
+	github.com/expr-lang/expr v1.17.8
 	github.com/go-chi/chi/v5 v5.3.0
 	github.com/go-sql-driver/mysql v1.8.1
 	github.com/golang-jwt/jwt/v5 v5.3.0

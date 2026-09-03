@@ -1,6 +1,7 @@
 package consumers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 
@@ -8,8 +9,8 @@ import (
 	"core-orchestrator/internal/domain"
 )
 
-func NissanExistenciasSyncCompletedConsumer(service *sync.SyncService) func([]byte) error {
-	return func(body []byte) error {
+func NissanExistenciasSyncCompletedConsumer(service *sync.SyncService) func(context.Context, []byte) error {
+	return func(ctx context.Context, body []byte) error {
 		var event domain.SyncCompletedEvent
 
 		err := json.Unmarshal(body, &event)
@@ -20,6 +21,6 @@ func NissanExistenciasSyncCompletedConsumer(service *sync.SyncService) func([]by
 
 		log.Printf("[nissan.existencias.sync.completed] received: %+v", event)
 
-		return service.ProcessNissanExistenciasSyncCompleted(event)
+		return service.ProcessNissanExistenciasSyncCompleted(ctx, event)
 	}
 }

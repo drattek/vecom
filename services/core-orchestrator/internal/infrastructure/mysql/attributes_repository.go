@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -52,16 +53,16 @@ type UpdateAttributeInput struct {
 }
 
 type AttributesRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewAttributesRepository(db *sql.DB) *AttributesRepository {
+func NewAttributesRepository(db Querier) *AttributesRepository {
 	return &AttributesRepository{db: db}
 }
 
-func (r *AttributesRepository) FindPaginated(offset, pageSize int) (*PaginatedAttributes, error) {
+func (r *AttributesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedAttributes, error) {
 	var total int64
-	if err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_attributes WHERE deleted_at IS NULL").Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_attributes WHERE deleted_at IS NULL").Scan(&total); err != nil {
 		return nil, fmt.Errorf("error counting attributes: %w", err)
 	}
 
@@ -73,7 +74,7 @@ func (r *AttributesRepository) FindPaginated(offset, pageSize int) (*PaginatedAt
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying attributes: %w", err)
 	}
@@ -99,7 +100,7 @@ func (r *AttributesRepository) FindPaginated(offset, pageSize int) (*PaginatedAt
 	}, nil
 }
 
-func (r *AttributesRepository) FindByID(id int64) (*AttributeDTO, error) {
+func (r *AttributesRepository) FindByID(ctx context.Context, id int64) (*AttributeDTO, error) {
 	query := `
 		SELECT id, code, name, data_type, unit, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_attributes
@@ -107,10 +108,10 @@ func (r *AttributesRepository) FindByID(id int64) (*AttributeDTO, error) {
 		LIMIT 1
 	`
 
-	return scanAttributeRow(r.db.QueryRow(query, id))
+	return scanAttributeRow(r.db.QueryRowContext(ctx, query, id))
 }
 
-func (r *AttributesRepository) FindByCode(code string) (*AttributeDTO, error) {
+func (r *AttributesRepository) FindByCode(ctx context.Context, code string) (*AttributeDTO, error) {
 	query := `
 		SELECT id, code, name, data_type, unit, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_attributes
@@ -118,16 +119,16 @@ func (r *AttributesRepository) FindByCode(code string) (*AttributeDTO, error) {
 		LIMIT 1
 	`
 
-	return scanAttributeRow(r.db.QueryRow(query, code))
+	return scanAttributeRow(r.db.QueryRowContext(ctx, query, code))
 }
 
-func (r *AttributesRepository) Create(input CreateAttributeInput) (*AttributeDTO, error) {
+func (r *AttributesRepository) Create(ctx context.Context, input CreateAttributeInput) (*AttributeDTO, error) {
 	query := `
 		INSERT INTO ecom_attributes (code, name, data_type, unit, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.Code, input.Name, input.DataType, input.Unit, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.Code, input.Name, input.DataType, input.Unit, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating attribute: %w", err)
 	}
@@ -137,17 +138,17 @@ func (r *AttributesRepository) Create(input CreateAttributeInput) (*AttributeDTO
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *AttributesRepository) Update(id int64, input UpdateAttributeInput) (*AttributeDTO, error) {
+func (r *AttributesRepository) Update(ctx context.Context, id int64, input UpdateAttributeInput) (*AttributeDTO, error) {
 	query := `
 		UPDATE ecom_attributes
 		SET name = ?, data_type = ?, unit = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.DataType, input.Unit, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.DataType, input.Unit, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating attribute: %w", err)
 	}
@@ -160,13 +161,13 @@ func (r *AttributesRepository) Update(id int64, input UpdateAttributeInput) (*At
 		return nil, ErrAttributeNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *AttributesRepository) SoftDelete(id int64) error {
+func (r *AttributesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `UPDATE ecom_attributes SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting attribute: %w", err)
 	}

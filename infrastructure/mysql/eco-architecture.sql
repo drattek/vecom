@@ -1,4 +1,4 @@
-CREATE TABLE IF NOT EXISTS vecom_api_user (
+CREATE TABLE IF NOT EXISTS ecom_api_user (
 	id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 	username VARCHAR(100) NOT NULL,
 	password_hash VARCHAR(255) NOT NULL,
@@ -7,10 +7,10 @@ CREATE TABLE IF NOT EXISTS vecom_api_user (
 	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
 	PRIMARY KEY (id),
-	UNIQUE KEY uq_vecom_api_user_username (username)
+	UNIQUE KEY uq_ecom_api_user_username (username)
 );
 
-CREATE TABLE IF NOT EXISTS vecom_api_token (
+CREATE TABLE IF NOT EXISTS ecom_api_token (
 	id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT,
 	jti CHAR(32) NOT NULL,
 	user_id BIGINT UNSIGNED NOT NULL,
@@ -22,16 +22,16 @@ CREATE TABLE IF NOT EXISTS vecom_api_token (
 	client_ip VARCHAR(64) NULL,
 	created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
 	PRIMARY KEY (id),
-	UNIQUE KEY uq_vecom_api_token_jti (jti),
-	KEY idx_vecom_api_token_user (user_id),
-	KEY idx_vecom_api_token_expiration (expires_at),
-	CONSTRAINT fk_vecom_api_token_user
-	  FOREIGN KEY (user_id) REFERENCES vecom_api_user(id)
+	UNIQUE KEY uq_ecom_api_token_jti (jti),
+	KEY idx_ecom_api_token_user (user_id),
+	KEY idx_ecom_api_token_expiration (expires_at),
+	CONSTRAINT fk_ecom_api_token_user
+	  FOREIGN KEY (user_id) REFERENCES ecom_api_user(id)
 	  ON DELETE CASCADE
 );
 
 -- Usuario inicial (reemplazar password_hash por un hash bcrypt real).
-INSERT INTO vecom_api_user (username, password_hash, role)
+INSERT INTO ecom_api_user (username, password_hash, role)
 VALUES ('admin', '$2a$10$REPLACE_WITH_BCRYPT_HASH', 'admin')
 ON DUPLICATE KEY UPDATE username = username;
 
@@ -342,6 +342,44 @@ create table ecom_price_list (
     deleted_at timestamp default null,
     constraint fk_price_list_created_by foreign key (created_by) references ecom_api_user(id),
     constraint fk_price_list_updated_by foreign key (updated_by) references ecom_api_user(id)
+);
+
+-- Formula de precios que convierte el precio base (ecom_product_prices, vía
+-- FindEffectivePrice) en el precio publicado en marketplaces (MercadoLibre,
+-- Odoo). expression es una fórmula matemática en texto que solo puede
+-- referenciar la variable "base" (ej. "(((base*1.13)/0.85)+90)*1.16"),
+-- evaluada en Go con github.com/expr-lang/expr. brand_id, connection_id y/o
+-- price_list_id null = comodín ("cualquier marca" / "cualquier canal" /
+-- "cualquier lista de precios"); la fila con los tres null es el default
+-- universal. price_list_id referencia la lista que ganó al resolver el
+-- precio efectivo del producto (ecom_price_list, vía FindEffectivePrice),
+-- no una lista elegida a mano. PricingFormulaRepository.Resolve elige la
+-- fila más específica disponible, en orden de prioridad: connection_id >
+-- brand_id > price_list_id, con más dimensiones coincidentes ganando ante
+-- menos (ver el comentario de Resolve para la tabla completa de 8 combinaciones).
+-- MySQL permite múltiples NULL en una unique key (y los trata como valores
+-- distintos incluso dentro de una key compuesta), así que la unicidad de
+-- cada combinación (brand_id, connection_id, price_list_id) se refuerza en
+-- la capa de aplicación, no aquí. idx_pricing_formula_brand sostiene
+-- fk_pricing_formula_brand.
+create table ecom_pricing_formulas (
+    id bigint unsigned primary key auto_increment,
+    brand_id bigint unsigned default null,
+    connection_id bigint unsigned default null,
+    price_list_id bigint unsigned default null,
+    expression varchar(1000) not null,
+    description varchar(255) default null,
+    created_by bigint unsigned not null ,
+    updated_by bigint unsigned default null,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp on update current_timestamp,
+    deleted_at timestamp default null,
+    constraint fk_pricing_formula_brand foreign key (brand_id) references ecom_brands(id),
+    constraint fk_pricing_formula_connection foreign key (connection_id) references ecom_channel_connections(id),
+    constraint fk_pricing_formula_price_list foreign key (price_list_id) references ecom_price_list(id),
+    constraint fk_pricing_formula_created_by foreign key (created_by) references ecom_api_user(id),
+    constraint fk_pricing_formula_updated_by foreign key (updated_by) references ecom_api_user(id),
+    index idx_pricing_formula_brand (brand_id)
 );
 
 create table ecom_product_prices (

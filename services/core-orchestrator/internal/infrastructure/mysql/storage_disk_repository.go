@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -56,16 +57,16 @@ type UpdateStorageDiskInput struct {
 }
 
 type StorageDiskRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewStorageDiskRepository(db *sql.DB) *StorageDiskRepository {
+func NewStorageDiskRepository(db Querier) *StorageDiskRepository {
 	return &StorageDiskRepository{db: db}
 }
 
-func (r *StorageDiskRepository) FindPaginated(offset, pageSize int) (*PaginatedStorageDisks, error) {
+func (r *StorageDiskRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedStorageDisks, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_storage_disks WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_storage_disks WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting storage disks: %w", err)
 	}
@@ -78,7 +79,7 @@ func (r *StorageDiskRepository) FindPaginated(offset, pageSize int) (*PaginatedS
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying storage disks: %w", err)
 	}
@@ -106,7 +107,7 @@ func (r *StorageDiskRepository) FindPaginated(offset, pageSize int) (*PaginatedS
 	}, nil
 }
 
-func (r *StorageDiskRepository) FindByID(id int64) (*StorageDiskDTO, error) {
+func (r *StorageDiskRepository) FindByID(ctx context.Context, id int64) (*StorageDiskDTO, error) {
 	query := `
 		SELECT id, name, code, base_url, bucket, endpoint, is_public, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_storage_disks
@@ -114,7 +115,7 @@ func (r *StorageDiskRepository) FindByID(id int64) (*StorageDiskDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	storageDisk, err := scanStorageDisk(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -126,13 +127,13 @@ func (r *StorageDiskRepository) FindByID(id int64) (*StorageDiskDTO, error) {
 	return &storageDisk, nil
 }
 
-func (r *StorageDiskRepository) Create(input CreateStorageDiskInput) (*StorageDiskDTO, error) {
+func (r *StorageDiskRepository) Create(ctx context.Context, input CreateStorageDiskInput) (*StorageDiskDTO, error) {
 	query := `
 		INSERT INTO ecom_storage_disks (name, code, base_url, bucket, endpoint, is_public, created_by, updated_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
 	`
 
-	result, err := r.db.Exec(
+	result, err := r.db.ExecContext(ctx,
 		query,
 		input.Name,
 		input.Code,
@@ -154,17 +155,17 @@ func (r *StorageDiskRepository) Create(input CreateStorageDiskInput) (*StorageDi
 		return nil, fmt.Errorf("error getting storage disk id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *StorageDiskRepository) Update(id int64, input UpdateStorageDiskInput) (*StorageDiskDTO, error) {
+func (r *StorageDiskRepository) Update(ctx context.Context, id int64, input UpdateStorageDiskInput) (*StorageDiskDTO, error) {
 	query := `
 		UPDATE ecom_storage_disks
 		SET name = ?, code = ?, base_url = ?, bucket = ?, endpoint = ?, is_public = ?, updated_by = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(
+	result, err := r.db.ExecContext(ctx,
 		query,
 		input.Name,
 		input.Code,
@@ -191,17 +192,17 @@ func (r *StorageDiskRepository) Update(id int64, input UpdateStorageDiskInput) (
 		return nil, ErrStorageDiskNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *StorageDiskRepository) SoftDelete(id, updatedBy int64) error {
+func (r *StorageDiskRepository) SoftDelete(ctx context.Context, id, updatedBy int64) error {
 	query := `
 		UPDATE ecom_storage_disks
 		SET deleted_at = CURRENT_TIMESTAMP, updated_by = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, updatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, updatedBy, id)
 	if err != nil {
 		return fmt.Errorf("error soft deleting storage disk: %w", err)
 	}

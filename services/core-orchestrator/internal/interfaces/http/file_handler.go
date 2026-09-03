@@ -58,7 +58,7 @@ func (h *FileHandler) GetFiles(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.service.GetPaginatedFiles(offset, pageSize)
+	result, err := h.service.GetPaginatedFiles(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -76,7 +76,7 @@ func (h *FileHandler) GetFileByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := h.service.GetFileByID(id)
+	file, err := h.service.GetFileByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, filesApp.ErrInvalidFilePayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid file id")
@@ -109,7 +109,7 @@ func (h *FileHandler) CreateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := h.service.CreateFile(input, user.ID)
+	file, err := h.service.CreateFile(r.Context(), input, user.ID)
 	if err != nil {
 		if errors.Is(err, filesApp.ErrInvalidFilePayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid file payload")
@@ -144,7 +144,7 @@ func (h *FileHandler) UpdateFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	file, err := h.service.UpdateFile(id, input, user.ID)
+	file, err := h.service.UpdateFile(r.Context(), id, input, user.ID)
 	if err != nil {
 		if errors.Is(err, filesApp.ErrInvalidFilePayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid file payload")
@@ -177,7 +177,7 @@ func (h *FileHandler) DeleteFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.SoftDeleteFile(id, user.ID)
+	err = h.service.SoftDeleteFile(r.Context(), id, user.ID)
 	if err != nil {
 		if errors.Is(err, filesApp.ErrInvalidFilePayload) {
 			writeJSONError(w, http.StatusBadRequest, "invalid file id")

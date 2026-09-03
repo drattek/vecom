@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -37,14 +38,14 @@ type UpdateProductSEOInput struct {
 }
 
 type ProductSEORepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewProductSEORepository(db *sql.DB) *ProductSEORepository {
+func NewProductSEORepository(db Querier) *ProductSEORepository {
 	return &ProductSEORepository{db: db}
 }
 
-func (r *ProductSEORepository) FindByProductID(productID int64) (*ProductSEODTO, error) {
+func (r *ProductSEORepository) FindByProductID(ctx context.Context, productID int64) (*ProductSEODTO, error) {
 	query := `
 		SELECT product_id, meta_title, meta_description, keywords, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_seo
@@ -52,7 +53,7 @@ func (r *ProductSEORepository) FindByProductID(productID int64) (*ProductSEODTO,
 	`
 
 	var p ProductSEODTO
-	if err := r.db.QueryRow(query, productID).Scan(&p.ProductID, &p.MetaTitle, &p.MetaDescription, &p.Keywords, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, productID).Scan(&p.ProductID, &p.MetaTitle, &p.MetaDescription, &p.Keywords, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProductSEONotFound
 		}
@@ -62,28 +63,28 @@ func (r *ProductSEORepository) FindByProductID(productID int64) (*ProductSEODTO,
 	return &p, nil
 }
 
-func (r *ProductSEORepository) Create(input CreateProductSEOInput) (*ProductSEODTO, error) {
+func (r *ProductSEORepository) Create(ctx context.Context, input CreateProductSEOInput) (*ProductSEODTO, error) {
 	query := `
 		INSERT INTO ecom_product_seo (product_id, meta_title, meta_description, keywords, created_by)
 		VALUES (?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.Exec(query, input.ProductID, input.MetaTitle, input.MetaDescription, input.Keywords, input.CreatedBy)
+	_, err := r.db.ExecContext(ctx, query, input.ProductID, input.MetaTitle, input.MetaDescription, input.Keywords, input.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
 
-	return r.FindByProductID(input.ProductID)
+	return r.FindByProductID(ctx, input.ProductID)
 }
 
-func (r *ProductSEORepository) Update(productID int64, input UpdateProductSEOInput) (*ProductSEODTO, error) {
+func (r *ProductSEORepository) Update(ctx context.Context, productID int64, input UpdateProductSEOInput) (*ProductSEODTO, error) {
 	query := `
 		UPDATE ecom_product_seo
 		SET meta_title = ?, meta_description = ?, keywords = ?, updated_by = ?, updated_at = NOW()
 		WHERE product_id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.MetaTitle, input.MetaDescription, input.Keywords, input.UpdatedBy, productID)
+	result, err := r.db.ExecContext(ctx, query, input.MetaTitle, input.MetaDescription, input.Keywords, input.UpdatedBy, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -97,13 +98,13 @@ func (r *ProductSEORepository) Update(productID int64, input UpdateProductSEOInp
 		return nil, ErrProductSEONotFound
 	}
 
-	return r.FindByProductID(productID)
+	return r.FindByProductID(ctx, productID)
 }
 
-func (r *ProductSEORepository) SoftDelete(productID int64) error {
+func (r *ProductSEORepository) SoftDelete(ctx context.Context, productID int64) error {
 	query := "UPDATE ecom_product_seo SET deleted_at = NOW() WHERE product_id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, productID)
+	result, err := r.db.ExecContext(ctx, query, productID)
 	if err != nil {
 		return err
 	}

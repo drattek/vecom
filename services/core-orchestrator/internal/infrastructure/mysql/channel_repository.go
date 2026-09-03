@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -53,16 +54,16 @@ type UpdateChannelInput struct {
 }
 
 type ChannelRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewChannelRepository(db *sql.DB) *ChannelRepository {
+func NewChannelRepository(db Querier) *ChannelRepository {
 	return &ChannelRepository{db: db}
 }
 
-func (r *ChannelRepository) FindPaginated(offset, pageSize int) (*PaginatedChannels, error) {
+func (r *ChannelRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedChannels, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_channels WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_channels WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting channels: %w", err)
 	}
@@ -93,7 +94,7 @@ func (r *ChannelRepository) FindPaginated(offset, pageSize int) (*PaginatedChann
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying channels: %w", err)
 	}
@@ -121,7 +122,7 @@ func (r *ChannelRepository) FindPaginated(offset, pageSize int) (*PaginatedChann
 	}, nil
 }
 
-func (r *ChannelRepository) FindByID(id int64) (*ChannelDTO, error) {
+func (r *ChannelRepository) FindByID(ctx context.Context, id int64) (*ChannelDTO, error) {
 	query := `
 		SELECT
 			c.id,
@@ -147,7 +148,7 @@ func (r *ChannelRepository) FindByID(id int64) (*ChannelDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	channel, err := scanChannel(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -159,7 +160,7 @@ func (r *ChannelRepository) FindByID(id int64) (*ChannelDTO, error) {
 	return &channel, nil
 }
 
-func (r *ChannelRepository) FindByCode(code string) (*ChannelDTO, error) {
+func (r *ChannelRepository) FindByCode(ctx context.Context, code string) (*ChannelDTO, error) {
 	query := `
 		SELECT
 			c.id,
@@ -185,7 +186,7 @@ func (r *ChannelRepository) FindByCode(code string) (*ChannelDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, code)
+	row := r.db.QueryRowContext(ctx, query, code)
 	channel, err := scanChannel(row)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
@@ -197,13 +198,13 @@ func (r *ChannelRepository) FindByCode(code string) (*ChannelDTO, error) {
 	return &channel, nil
 }
 
-func (r *ChannelRepository) Create(input CreateChannelInput) (*ChannelDTO, error) {
+func (r *ChannelRepository) Create(ctx context.Context, input CreateChannelInput) (*ChannelDTO, error) {
 	query := `
 		INSERT INTO ecom_channels (name, code, status, icon_id, description, created_by, updated_by)
 		VALUES (?, ?, ?, ?, ?, ?, NULL)
 	`
 
-	result, err := r.db.Exec(
+	result, err := r.db.ExecContext(ctx,
 		query,
 		input.Name,
 		input.Code,
@@ -227,17 +228,17 @@ func (r *ChannelRepository) Create(input CreateChannelInput) (*ChannelDTO, error
 		return nil, fmt.Errorf("error getting channel id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ChannelRepository) Update(id int64, input UpdateChannelInput) (*ChannelDTO, error) {
+func (r *ChannelRepository) Update(ctx context.Context, id int64, input UpdateChannelInput) (*ChannelDTO, error) {
 	query := `
 		UPDATE ecom_channels
 		SET name = ?, code = ?, status = ?, icon_id = ?, description = ?, updated_by = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(
+	result, err := r.db.ExecContext(ctx,
 		query,
 		input.Name,
 		input.Code,
@@ -266,17 +267,17 @@ func (r *ChannelRepository) Update(id int64, input UpdateChannelInput) (*Channel
 		return nil, ErrChannelNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ChannelRepository) SoftDelete(id, updatedBy int64) error {
+func (r *ChannelRepository) SoftDelete(ctx context.Context, id, updatedBy int64) error {
 	query := `
 		UPDATE ecom_channels
 		SET deleted_at = CURRENT_TIMESTAMP, updated_by = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, updatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, updatedBy, id)
 	if err != nil {
 		return fmt.Errorf("error soft deleting channel: %w", err)
 	}

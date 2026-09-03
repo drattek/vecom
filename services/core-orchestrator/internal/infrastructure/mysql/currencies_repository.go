@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -54,9 +55,9 @@ func NewCurrenciesRepository(db Querier) *CurrenciesRepository {
 	return &CurrenciesRepository{db: db}
 }
 
-func (r *CurrenciesRepository) FindPaginated(offset, pageSize int) (*PaginatedCurrencies, error) {
+func (r *CurrenciesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedCurrencies, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_currencies WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_currencies WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting currencies: %w", err)
 	}
@@ -69,7 +70,7 @@ func (r *CurrenciesRepository) FindPaginated(offset, pageSize int) (*PaginatedCu
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying currencies: %w", err)
 	}
@@ -97,7 +98,7 @@ func (r *CurrenciesRepository) FindPaginated(offset, pageSize int) (*PaginatedCu
 	}, nil
 }
 
-func (r *CurrenciesRepository) FindByID(id int64) (*CurrencyDTO, error) {
+func (r *CurrenciesRepository) FindByID(ctx context.Context, id int64) (*CurrencyDTO, error) {
 	query := `
 		SELECT id, name, code, symbol, decimal_places, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_currencies
@@ -105,11 +106,11 @@ func (r *CurrenciesRepository) FindByID(id int64) (*CurrencyDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanCurrencyRow(row)
 }
 
-func (r *CurrenciesRepository) FindByCode(code string) (*CurrencyDTO, error) {
+func (r *CurrenciesRepository) FindByCode(ctx context.Context, code string) (*CurrencyDTO, error) {
 	query := `
 		SELECT id, name, code, symbol, decimal_places, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_currencies
@@ -117,17 +118,17 @@ func (r *CurrenciesRepository) FindByCode(code string) (*CurrencyDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, code)
+	row := r.db.QueryRowContext(ctx, query, code)
 	return scanCurrencyRow(row)
 }
 
-func (r *CurrenciesRepository) Create(input CreateCurrencyInput) (*CurrencyDTO, error) {
+func (r *CurrenciesRepository) Create(ctx context.Context, input CreateCurrencyInput) (*CurrencyDTO, error) {
 	query := `
 		INSERT INTO ecom_currencies (name, code, symbol, decimal_places, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.Code, input.Symbol, input.DecimalPlaces, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.Code, input.Symbol, input.DecimalPlaces, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating currency: %w", err)
 	}
@@ -137,17 +138,17 @@ func (r *CurrenciesRepository) Create(input CreateCurrencyInput) (*CurrencyDTO, 
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *CurrenciesRepository) Update(id int64, input UpdateCurrencyInput) (*CurrencyDTO, error) {
+func (r *CurrenciesRepository) Update(ctx context.Context, id int64, input UpdateCurrencyInput) (*CurrencyDTO, error) {
 	query := `
 		UPDATE ecom_currencies
 		SET name = ?, code = ?, symbol = ?, decimal_places = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.Code, input.Symbol, input.DecimalPlaces, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.Code, input.Symbol, input.DecimalPlaces, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating currency: %w", err)
 	}
@@ -161,17 +162,17 @@ func (r *CurrenciesRepository) Update(id int64, input UpdateCurrencyInput) (*Cur
 		return nil, ErrCurrencyNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *CurrenciesRepository) SoftDelete(id int64) error {
+func (r *CurrenciesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_currencies
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting currency: %w", err)
 	}

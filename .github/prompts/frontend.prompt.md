@@ -1,5 +1,9 @@
 # Frontend Prompt
 
+## Idioma
+
+Responde siempre en español.
+
 ## Scope
 
 Aplicable a cambios en `services/admin-dashboard`.

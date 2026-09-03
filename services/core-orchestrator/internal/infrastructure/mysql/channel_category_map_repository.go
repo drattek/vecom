@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -36,14 +37,14 @@ type UpsertChannelCategoryMapInput struct {
 }
 
 type ChannelCategoryMapRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewChannelCategoryMapRepository(db *sql.DB) *ChannelCategoryMapRepository {
+func NewChannelCategoryMapRepository(db Querier) *ChannelCategoryMapRepository {
 	return &ChannelCategoryMapRepository{db: db}
 }
 
-func (r *ChannelCategoryMapRepository) FindByCategoryAndConnection(categoryID, connectionID int64) (*ChannelCategoryMapDTO, error) {
+func (r *ChannelCategoryMapRepository) FindByCategoryAndConnection(ctx context.Context, categoryID, connectionID int64) (*ChannelCategoryMapDTO, error) {
 	query := `
 		SELECT id, category_id, connection_id, external_category_id, external_category_name,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -52,7 +53,7 @@ func (r *ChannelCategoryMapRepository) FindByCategoryAndConnection(categoryID, c
 		LIMIT 1
 	`
 
-	return scanChannelCategoryMapRow(r.db.QueryRow(query, categoryID, connectionID))
+	return scanChannelCategoryMapRow(r.db.QueryRowContext(ctx, query, categoryID, connectionID))
 }
 
 // FindByExternalCategoryAndConnection finds the mapping row for a
@@ -60,7 +61,7 @@ func (r *ChannelCategoryMapRepository) FindByCategoryAndConnection(categoryID, c
 // FindByCategoryAndConnection, used to tell whether a category MercadoLibre
 // (or another channel) just returned has already been replicated locally for
 // this connection.
-func (r *ChannelCategoryMapRepository) FindByExternalCategoryAndConnection(externalCategoryID string, connectionID int64) (*ChannelCategoryMapDTO, error) {
+func (r *ChannelCategoryMapRepository) FindByExternalCategoryAndConnection(ctx context.Context, externalCategoryID string, connectionID int64) (*ChannelCategoryMapDTO, error) {
 	query := `
 		SELECT id, category_id, connection_id, external_category_id, external_category_name,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -69,10 +70,10 @@ func (r *ChannelCategoryMapRepository) FindByExternalCategoryAndConnection(exter
 		LIMIT 1
 	`
 
-	return scanChannelCategoryMapRow(r.db.QueryRow(query, externalCategoryID, connectionID))
+	return scanChannelCategoryMapRow(r.db.QueryRowContext(ctx, query, externalCategoryID, connectionID))
 }
 
-func (r *ChannelCategoryMapRepository) findByID(id int64) (*ChannelCategoryMapDTO, error) {
+func (r *ChannelCategoryMapRepository) findByID(ctx context.Context, id int64) (*ChannelCategoryMapDTO, error) {
 	query := `
 		SELECT id, category_id, connection_id, external_category_id, external_category_name,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -80,15 +81,15 @@ func (r *ChannelCategoryMapRepository) findByID(id int64) (*ChannelCategoryMapDT
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	return scanChannelCategoryMapRow(r.db.QueryRow(query, id))
+	return scanChannelCategoryMapRow(r.db.QueryRowContext(ctx, query, id))
 }
 
 // Upsert creates the mapping row for a (category, connection) pair on first
 // write, or updates the external category id/name on subsequent writes (so
 // re-running a migration keeps the mapping current instead of erroring on
 // the unique key).
-func (r *ChannelCategoryMapRepository) Upsert(input UpsertChannelCategoryMapInput) (*ChannelCategoryMapDTO, error) {
-	existing, err := r.FindByCategoryAndConnection(input.CategoryID, input.ConnectionID)
+func (r *ChannelCategoryMapRepository) Upsert(ctx context.Context, input UpsertChannelCategoryMapInput) (*ChannelCategoryMapDTO, error) {
+	existing, err := r.FindByCategoryAndConnection(ctx, input.CategoryID, input.ConnectionID)
 	if err != nil && !errors.Is(err, ErrChannelCategoryMapNotFound) {
 		return nil, fmt.Errorf("error loading channel category map: %w", err)
 	}
@@ -100,7 +101,7 @@ func (r *ChannelCategoryMapRepository) Upsert(input UpsertChannelCategoryMapInpu
 			VALUES (?, ?, ?, ?, ?)
 		`
 
-		result, err := r.db.Exec(query, input.CategoryID, input.ConnectionID, input.ExternalCategoryID, input.ExternalCategoryName, input.ActorID)
+		result, err := r.db.ExecContext(ctx, query, input.CategoryID, input.ConnectionID, input.ExternalCategoryID, input.ExternalCategoryName, input.ActorID)
 		if err != nil {
 			return nil, fmt.Errorf("error creating channel category map: %w", err)
 		}
@@ -110,7 +111,7 @@ func (r *ChannelCategoryMapRepository) Upsert(input UpsertChannelCategoryMapInpu
 			return nil, fmt.Errorf("error getting last insert id: %w", err)
 		}
 
-		return r.findByID(id)
+		return r.findByID(ctx, id)
 	}
 
 	query := `
@@ -119,11 +120,11 @@ func (r *ChannelCategoryMapRepository) Upsert(input UpsertChannelCategoryMapInpu
 		WHERE id = ?
 	`
 
-	if _, err := r.db.Exec(query, input.ExternalCategoryID, input.ExternalCategoryName, input.ActorID, existing.ID); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, input.ExternalCategoryID, input.ExternalCategoryName, input.ActorID, existing.ID); err != nil {
 		return nil, fmt.Errorf("error updating channel category map: %w", err)
 	}
 
-	return r.findByID(existing.ID)
+	return r.findByID(ctx, existing.ID)
 }
 
 func scanChannelCategoryMapRow(row *sql.Row) (*ChannelCategoryMapDTO, error) {

@@ -40,7 +40,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	clientIP := clientIPFromRequest(r)
 	userAgent := r.UserAgent()
 
-	result, err := h.service.Login(body.Username, body.Password, userAgent, clientIP)
+	result, err := h.service.Login(r.Context(), body.Username, body.Password, userAgent, clientIP)
 	if err != nil {
 		if errors.Is(err, credentials.ErrInvalidCredentials) || errors.Is(err, credentials.ErrUnauthorized) {
 			writeJSONError(w, http.StatusUnauthorized, "invalid credentials")
@@ -54,6 +54,40 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(result)
+}
+
+// Logout revokes the caller's access token. It runs behind RequireAuth, so a
+// missing/expired token is already rejected there; here we just pull the bearer
+// token back out of the header and hand it to the service to revoke.
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	tokenString := bearerTokenFromRequest(r)
+	if tokenString == "" {
+		writeJSONError(w, http.StatusUnauthorized, "missing token")
+		return
+	}
+
+	err := h.service.Logout(r.Context(), tokenString)
+	if err != nil {
+		if errors.Is(err, credentials.ErrUnauthorized) {
+			writeJSONError(w, http.StatusUnauthorized, "invalid token")
+			return
+		}
+
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.WriteHeader(http.StatusNoContent)
+}
+
+func bearerTokenFromRequest(r *http.Request) string {
+	const bearerPrefix = "Bearer "
+	authorizationHeader := strings.TrimSpace(r.Header.Get("Authorization"))
+	if !strings.HasPrefix(authorizationHeader, bearerPrefix) {
+		return ""
+	}
+
+	return strings.TrimSpace(strings.TrimPrefix(authorizationHeader, bearerPrefix))
 }
 
 func clientIPFromRequest(r *http.Request) string {

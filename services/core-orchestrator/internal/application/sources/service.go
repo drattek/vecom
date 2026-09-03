@@ -1,6 +1,8 @@
 package sources
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
@@ -9,14 +11,15 @@ import (
 var ErrInvalidSourcePayload = errors.New("invalid source payload")
 
 type SourceService struct {
+	db         *sql.DB
 	repository *mysqlInfra.SourcesRepository
 }
 
-func NewSourceService(repository *mysqlInfra.SourcesRepository) *SourceService {
-	return &SourceService{repository: repository}
+func NewSourceService(db *sql.DB, repository *mysqlInfra.SourcesRepository) *SourceService {
+	return &SourceService{db: db, repository: repository}
 }
 
-func (s *SourceService) GetPaginatedSources(offset, pageSize int) (*mysqlInfra.PaginatedSources, error) {
+func (s *SourceService) GetPaginatedSources(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedSources, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -27,24 +30,24 @@ func (s *SourceService) GetPaginatedSources(offset, pageSize int) (*mysqlInfra.P
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *SourceService) GetSourceByID(id int64) (*mysqlInfra.SourceDTO, error) {
+func (s *SourceService) GetSourceByID(ctx context.Context, id int64) (*mysqlInfra.SourceDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidSourcePayload
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *SourceService) GetSourceByCode(code string) (*mysqlInfra.SourceDTO, error) {
+func (s *SourceService) GetSourceByCode(ctx context.Context, code string) (*mysqlInfra.SourceDTO, error) {
 	if code == "" {
 		return nil, ErrInvalidSourcePayload
 	}
-	return s.repository.FindByCode(code)
+	return s.repository.FindByCode(ctx, code)
 }
 
-func (s *SourceService) CreateSource(input mysqlInfra.CreateSourceInput) (*mysqlInfra.SourceDTO, error) {
+func (s *SourceService) CreateSource(ctx context.Context, input mysqlInfra.CreateSourceInput) (*mysqlInfra.SourceDTO, error) {
 	if input.Code == "" || input.Name == "" {
 		return nil, ErrInvalidSourcePayload
 	}
@@ -52,10 +55,10 @@ func (s *SourceService) CreateSource(input mysqlInfra.CreateSourceInput) (*mysql
 		return nil, ErrInvalidSourcePayload
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *SourceService) UpdateSource(id int64, input mysqlInfra.UpdateSourceInput) (*mysqlInfra.SourceDTO, error) {
+func (s *SourceService) UpdateSource(ctx context.Context, id int64, input mysqlInfra.UpdateSourceInput) (*mysqlInfra.SourceDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidSourcePayload
 	}
@@ -66,12 +69,12 @@ func (s *SourceService) UpdateSource(id int64, input mysqlInfra.UpdateSourceInpu
 		return nil, ErrInvalidSourcePayload
 	}
 
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *SourceService) DeleteSource(id int64) error {
+func (s *SourceService) DeleteSource(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidSourcePayload
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }

@@ -30,7 +30,7 @@ func NewAttributeHandler(service *attributesApp.AttributeService) *AttributeHand
 func (h *AttributeHandler) GetAttributes(w http.ResponseWriter, r *http.Request) {
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetPaginatedAttributes(offset, pageSize)
+	result, err := h.service.GetPaginatedAttributes(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -47,7 +47,7 @@ func (h *AttributeHandler) GetAttributeByID(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	attribute, err := h.service.GetAttributeByID(id)
+	attribute, err := h.service.GetAttributeByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrAttributeNotFound) {
 			writeJSONError(w, http.StatusNotFound, "attribute not found")
@@ -82,7 +82,7 @@ func (h *AttributeHandler) CreateAttribute(w http.ResponseWriter, r *http.Reques
 		CreatedBy: user.ID,
 	}
 
-	attribute, err := h.service.CreateAttribute(input)
+	attribute, err := h.service.CreateAttribute(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, attributesApp.ErrInvalidAttributePayload) {
 			writeJSONError(w, http.StatusBadRequest, "code, name and a valid dataType are required")
@@ -123,7 +123,7 @@ func (h *AttributeHandler) UpdateAttribute(w http.ResponseWriter, r *http.Reques
 		UpdatedBy: user.ID,
 	}
 
-	attribute, err := h.service.UpdateAttribute(id, input)
+	attribute, err := h.service.UpdateAttribute(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, attributesApp.ErrInvalidAttributePayload) {
 			writeJSONError(w, http.StatusBadRequest, "name and a valid dataType are required")
@@ -148,7 +148,7 @@ func (h *AttributeHandler) DeleteAttribute(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.service.DeleteAttribute(id); err != nil {
+	if err := h.service.DeleteAttribute(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrAttributeNotFound) {
 			writeJSONError(w, http.StatusNotFound, "attribute not found")
 			return
@@ -183,7 +183,7 @@ func (h *AttributeOptionHandler) GetOptionsByAttribute(w http.ResponseWriter, r 
 		return
 	}
 
-	options, err := h.service.GetOptionsByAttribute(attributeID)
+	options, err := h.service.GetOptionsByAttribute(r.Context(), attributeID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -212,7 +212,7 @@ func (h *AttributeOptionHandler) CreateOption(w http.ResponseWriter, r *http.Req
 		CreatedBy:   user.ID,
 	}
 
-	option, err := h.service.CreateOption(input)
+	option, err := h.service.CreateOption(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, attributesApp.ErrInvalidAttributeOptionPayload) {
 			writeJSONError(w, http.StatusBadRequest, "attributeId and value are required")
@@ -253,7 +253,7 @@ func (h *AttributeOptionHandler) UpdateOption(w http.ResponseWriter, r *http.Req
 		UpdatedBy: user.ID,
 	}
 
-	option, err := h.service.UpdateOption(id, input)
+	option, err := h.service.UpdateOption(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, attributesApp.ErrInvalidAttributeOptionPayload) {
 			writeJSONError(w, http.StatusBadRequest, "value is required")
@@ -278,7 +278,7 @@ func (h *AttributeOptionHandler) DeleteOption(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if err := h.service.DeleteOption(id); err != nil {
+	if err := h.service.DeleteOption(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrAttributeOptionNotFound) {
 			writeJSONError(w, http.StatusNotFound, "option not found")
 			return
@@ -318,7 +318,7 @@ func (h *ProductAttributeHandler) GetAttributesByProduct(w http.ResponseWriter, 
 		return
 	}
 
-	attributes, err := h.service.GetAttributesByProduct(productID)
+	attributes, err := h.service.GetAttributesByProduct(r.Context(), productID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -358,7 +358,7 @@ func (h *ProductAttributeHandler) SetAttribute(w http.ResponseWriter, r *http.Re
 		ActorID:     user.ID,
 	}
 
-	attribute, err := h.service.SetValue(input)
+	attribute, err := h.service.SetValue(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, attributesApp.ErrInvalidProductAttributePayload) {
 			writeJSONError(w, http.StatusBadRequest, "attributeId is required")
@@ -388,7 +388,7 @@ func (h *ProductAttributeHandler) DeleteAttribute(w http.ResponseWriter, r *http
 		return
 	}
 
-	if err := h.service.DeleteValue(id); err != nil {
+	if err := h.service.DeleteValue(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductAttributeNotFound) {
 			writeJSONError(w, http.StatusNotFound, "product attribute not found")
 			return

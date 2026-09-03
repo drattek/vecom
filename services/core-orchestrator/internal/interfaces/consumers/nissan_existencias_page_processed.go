@@ -1,6 +1,7 @@
 package consumers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 
@@ -8,8 +9,8 @@ import (
 	"core-orchestrator/internal/domain"
 )
 
-func NissanExistenciasPageProcessedConsumer(service *sync.SyncService) func([]byte) error {
-	return func(body []byte) error {
+func NissanExistenciasPageProcessedConsumer(service *sync.SyncService) func(context.Context, []byte) error {
+	return func(ctx context.Context, body []byte) error {
 		var event domain.PageProcessedEvent
 
 		err := json.Unmarshal(body, &event)
@@ -20,6 +21,6 @@ func NissanExistenciasPageProcessedConsumer(service *sync.SyncService) func([]by
 
 		log.Printf("[nissan.existencias.page.processed] received: %+v", event)
 
-		return service.ProcessNissanExistenciasPageProcessed(event)
+		return service.ProcessNissanExistenciasPageProcessed(ctx, event)
 	}
 }

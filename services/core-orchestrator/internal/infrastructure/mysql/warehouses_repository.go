@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -47,9 +48,9 @@ func NewWarehousesRepository(db Querier) *WarehousesRepository {
 	return &WarehousesRepository{db: db}
 }
 
-func (r *WarehousesRepository) FindPaginated(offset, pageSize int) (*PaginatedWarehouses, error) {
+func (r *WarehousesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedWarehouses, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_warehouses WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_warehouses WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting warehouses: %w", err)
 	}
@@ -62,7 +63,7 @@ func (r *WarehousesRepository) FindPaginated(offset, pageSize int) (*PaginatedWa
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying warehouses: %w", err)
 	}
@@ -90,7 +91,7 @@ func (r *WarehousesRepository) FindPaginated(offset, pageSize int) (*PaginatedWa
 	}, nil
 }
 
-func (r *WarehousesRepository) FindByID(id int64) (*WarehouseDTO, error) {
+func (r *WarehousesRepository) FindByID(ctx context.Context, id int64) (*WarehouseDTO, error) {
 	query := `
 		SELECT id, name, branch_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_warehouses
@@ -98,11 +99,11 @@ func (r *WarehousesRepository) FindByID(id int64) (*WarehouseDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanWarehouseRow(row)
 }
 
-func (r *WarehousesRepository) FindByBranchID(branchID int64) ([]WarehouseDTO, error) {
+func (r *WarehousesRepository) FindByBranchID(ctx context.Context, branchID int64) ([]WarehouseDTO, error) {
 	query := `
 		SELECT id, name, branch_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_warehouses
@@ -110,7 +111,7 @@ func (r *WarehousesRepository) FindByBranchID(branchID int64) ([]WarehouseDTO, e
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query, branchID)
+	rows, err := r.db.QueryContext(ctx, query, branchID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying warehouses by branch: %w", err)
 	}
@@ -128,7 +129,7 @@ func (r *WarehousesRepository) FindByBranchID(branchID int64) ([]WarehouseDTO, e
 	return warehouses, rows.Err()
 }
 
-func (r *WarehousesRepository) FindByNameAndBranch(name string, branchID int64) (*WarehouseDTO, error) {
+func (r *WarehousesRepository) FindByNameAndBranch(ctx context.Context, name string, branchID int64) (*WarehouseDTO, error) {
 	query := `
 		SELECT id, name, branch_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_warehouses
@@ -136,17 +137,17 @@ func (r *WarehousesRepository) FindByNameAndBranch(name string, branchID int64) 
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, name, branchID)
+	row := r.db.QueryRowContext(ctx, query, name, branchID)
 	return scanWarehouseRow(row)
 }
 
-func (r *WarehousesRepository) Create(input CreateWarehouseInput) (*WarehouseDTO, error) {
+func (r *WarehousesRepository) Create(ctx context.Context, input CreateWarehouseInput) (*WarehouseDTO, error) {
 	query := `
 		INSERT INTO ecom_warehouses (name, branch_id, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.BranchID, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.BranchID, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating warehouse: %w", err)
 	}
@@ -156,17 +157,17 @@ func (r *WarehousesRepository) Create(input CreateWarehouseInput) (*WarehouseDTO
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *WarehousesRepository) Update(id int64, input UpdateWarehouseInput) (*WarehouseDTO, error) {
+func (r *WarehousesRepository) Update(ctx context.Context, id int64, input UpdateWarehouseInput) (*WarehouseDTO, error) {
 	query := `
 		UPDATE ecom_warehouses
 		SET name = ?, branch_id = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.BranchID, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.BranchID, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating warehouse: %w", err)
 	}
@@ -180,17 +181,17 @@ func (r *WarehousesRepository) Update(id int64, input UpdateWarehouseInput) (*Wa
 		return nil, ErrWarehouseNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *WarehousesRepository) SoftDelete(id int64) error {
+func (r *WarehousesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_warehouses
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting warehouse: %w", err)
 	}

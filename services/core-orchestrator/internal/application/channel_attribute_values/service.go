@@ -13,6 +13,7 @@ package channel_attribute_values
 
 import (
 	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -136,6 +137,7 @@ type SetValueResult struct {
 }
 
 type Service struct {
+	db                            *sql.DB
 	productRepository             *mysqlInfra.ProductRepository
 	channelRepository             *mysqlInfra.ChannelRepository
 	attributesRepository          *mysqlInfra.AttributesRepository
@@ -148,6 +150,7 @@ type Service struct {
 }
 
 func NewService(
+	db *sql.DB,
 	productRepository *mysqlInfra.ProductRepository,
 	channelRepository *mysqlInfra.ChannelRepository,
 	attributesRepository *mysqlInfra.AttributesRepository,
@@ -159,6 +162,7 @@ func NewService(
 	categoryPredictorService LocalCategoryResolver,
 ) *Service {
 	return &Service{
+		db:                            db,
 		productRepository:             productRepository,
 		channelRepository:             channelRepository,
 		attributesRepository:          attributesRepository,
@@ -197,12 +201,12 @@ func (s *Service) SetValue(ctx context.Context, input SetValueInput) (*SetValueR
 		return nil, err
 	}
 
-	product, err := s.productRepository.FindBySKU(strings.TrimSpace(input.SKU))
+	product, err := s.productRepository.FindBySKU(ctx, strings.TrimSpace(input.SKU))
 	if err != nil {
 		return nil, err
 	}
 
-	channel, err := s.channelRepository.FindByCode(mercadoLibreChannelCode)
+	channel, err := s.channelRepository.FindByCode(ctx, mercadoLibreChannelCode)
 	if err != nil {
 		return nil, fmt.Errorf("error loading %s channel: %w", mercadoLibreChannelCode, err)
 	}
@@ -219,17 +223,17 @@ func (s *Service) SetValue(ctx context.Context, input SetValueInput) (*SetValueR
 	// below (resolveOrCreateOption) actually take effect for a
 	// list-provisioned attribute even though this call site itself never
 	// requests value_id mode.
-	channelAttribute, err := s.resolveOrCreateChannelAttribute(channel.ID, product.CategoryID, externalKey, false, channelAttributeDefaultValueMode, input.ActorID)
+	channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, product.CategoryID, externalKey, false, channelAttributeDefaultValueMode, input.ActorID)
 	if err != nil {
 		return nil, err
 	}
 
-	attribute, err := s.resolveOrCreateAttribute(externalKey, externalKey, input.DataType, input.ActorID)
+	attribute, err := s.resolveOrCreateAttribute(ctx, externalKey, externalKey, input.DataType, input.ActorID)
 	if err != nil {
 		return nil, err
 	}
 
-	channelAttributeMap, err := s.resolveOrCreateChannelAttributeMap(channelAttribute.ID, "custom_attribute", &attribute.ID, nil, input.ActorID)
+	channelAttributeMap, err := s.resolveOrCreateChannelAttributeMap(ctx, channelAttribute.ID, "custom_attribute", &attribute.ID, nil, input.ActorID)
 	if err != nil {
 		return nil, err
 	}
@@ -250,14 +254,14 @@ func (s *Service) SetValue(ctx context.Context, input SetValueInput) (*SetValueR
 		// provisioned from that catalogue (ecom_attribute_options.external_value_id
 		// set — see ProvisionCategoryAttributes) may be selected here.
 		requireExisting := channelAttribute.ValueMode == channelAttributeValueModeValueID
-		option, err := s.resolveOrCreateOption(attribute.ID, *input.EnumValue, requireExisting, input.ActorID)
+		option, err := s.resolveOrCreateOption(ctx, attribute.ID, *input.EnumValue, requireExisting, input.ActorID)
 		if err != nil {
 			return nil, err
 		}
 		upsertInput.OptionID = &option.ID
 	}
 
-	productAttribute, err := s.productAttributeService.SetValue(upsertInput)
+	productAttribute, err := s.productAttributeService.SetValue(ctx, upsertInput)
 	if err != nil {
 		return nil, err
 	}
@@ -387,12 +391,12 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		return nil, ErrInvalidProvisionInput
 	}
 
-	product, err := s.productRepository.FindBySKU(strings.TrimSpace(input.SKU))
+	product, err := s.productRepository.FindBySKU(ctx, strings.TrimSpace(input.SKU))
 	if err != nil {
 		return nil, err
 	}
 
-	channel, err := s.channelRepository.FindByCode(mercadoLibreChannelCode)
+	channel, err := s.channelRepository.FindByCode(ctx, mercadoLibreChannelCode)
 	if err != nil {
 		return nil, fmt.Errorf("error loading %s channel: %w", mercadoLibreChannelCode, err)
 	}
@@ -403,7 +407,7 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		if err != nil {
 			return nil, fmt.Errorf("error resolving local category for mercadolibre category %s: %w", categoryID, err)
 		}
-		if err := s.productRepository.UpdateCategoryID(product.ID, leafCategoryID, input.ActorID); err != nil {
+		if err := s.productRepository.UpdateCategoryID(ctx, product.ID, leafCategoryID, input.ActorID); err != nil {
 			return nil, fmt.Errorf("error assigning category %d to product %d: %w", leafCategoryID, product.ID, err)
 		}
 		localCategoryID = &leafCategoryID
@@ -435,13 +439,13 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 			// system_field slots are always value_name: their value comes
 			// straight from product/brand/dimensions data, never from a
 			// MercadoLibre closed list.
-			channelAttribute, err := s.resolveOrCreateChannelAttribute(channel.ID, localCategoryID, attr.ID, attr.Tags.Required, channelAttributeDefaultValueMode, input.ActorID)
+			channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, localCategoryID, attr.ID, attr.Tags.Required, channelAttributeDefaultValueMode, input.ActorID)
 			if err != nil {
 				outcome.Error = err.Error()
 				results = append(results, outcome)
 				continue
 			}
-			if _, err := s.resolveOrCreateChannelAttributeMap(channelAttribute.ID, "system_field", nil, &systemField, input.ActorID); err != nil {
+			if _, err := s.resolveOrCreateChannelAttributeMap(ctx, channelAttribute.ID, "system_field", nil, &systemField, input.ActorID); err != nil {
 				outcome.Error = err.Error()
 				results = append(results, outcome)
 				continue
@@ -456,7 +460,7 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		if attr.IsListType() {
 			valueMode = channelAttributeValueModeValueID
 		}
-		channelAttribute, err := s.resolveOrCreateChannelAttribute(channel.ID, localCategoryID, attr.ID, attr.Tags.Required, valueMode, input.ActorID)
+		channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, localCategoryID, attr.ID, attr.Tags.Required, valueMode, input.ActorID)
 		if err != nil {
 			outcome.Error = err.Error()
 			results = append(results, outcome)
@@ -464,21 +468,21 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		}
 
 		dataType := mapMercadoLibreValueType(attr.ValueType)
-		attribute, err := s.resolveOrCreateAttribute(attr.ID, attr.Name, dataType, input.ActorID)
+		attribute, err := s.resolveOrCreateAttribute(ctx, attr.ID, attr.Name, dataType, input.ActorID)
 		if err != nil {
 			outcome.Error = err.Error()
 			results = append(results, outcome)
 			continue
 		}
 
-		if _, err := s.resolveOrCreateChannelAttributeMap(channelAttribute.ID, "custom_attribute", &attribute.ID, nil, input.ActorID); err != nil {
+		if _, err := s.resolveOrCreateChannelAttributeMap(ctx, channelAttribute.ID, "custom_attribute", &attribute.ID, nil, input.ActorID); err != nil {
 			outcome.Error = err.Error()
 			results = append(results, outcome)
 			continue
 		}
 
 		if attr.IsListType() {
-			if err := s.provisionAttributeOptions(attribute.ID, attr.Values, input.ActorID); err != nil {
+			if err := s.provisionAttributeOptions(ctx, attribute.ID, attr.Values, input.ActorID); err != nil {
 				outcome.Error = err.Error()
 				results = append(results, outcome)
 				continue
@@ -524,7 +528,7 @@ func mapMercadoLibreValueType(valueType string) string {
 // value failing never stops the rest of the batch — the first error is
 // returned once every value has been attempted, same shape as
 // channel_listings.updateExistingListings.
-func (s *Service) provisionAttributeOptions(attributeID int64, values []mercadoLibreInfra.CategoryAttributeValue, actorID int64) error {
+func (s *Service) provisionAttributeOptions(ctx context.Context, attributeID int64, values []mercadoLibreInfra.CategoryAttributeValue, actorID int64) error {
 	var firstErr error
 
 	for _, value := range values {
@@ -533,7 +537,7 @@ func (s *Service) provisionAttributeOptions(attributeID int64, values []mercadoL
 			continue
 		}
 
-		existing, err := s.attributeOptionsRepository.FindByAttributeAndExternalValueID(attributeID, externalValueID)
+		existing, err := s.attributeOptionsRepository.FindByAttributeAndExternalValueID(ctx, attributeID, externalValueID)
 		if err != nil && !errors.Is(err, mysqlInfra.ErrAttributeOptionNotFound) {
 			if firstErr == nil {
 				firstErr = fmt.Errorf("error loading option %s for attribute %d: %w", externalValueID, attributeID, err)
@@ -544,7 +548,7 @@ func (s *Service) provisionAttributeOptions(attributeID int64, values []mercadoL
 			continue
 		}
 
-		if _, err := s.attributeOptionsRepository.Create(mysqlInfra.CreateAttributeOptionInput{
+		if _, err := s.attributeOptionsRepository.Create(ctx, mysqlInfra.CreateAttributeOptionInput{
 			AttributeID:     attributeID,
 			Value:           value.Name,
 			ExternalValueID: &externalValueID,
@@ -571,8 +575,8 @@ func (s *Service) provisionAttributeOptions(attributeID int64, values []mercadoL
 // or switches it between a closed list and free text, for a category, the
 // slot needs a direct edit (or deletion so it gets re-created) to pick that
 // up.
-func (s *Service) resolveOrCreateChannelAttribute(channelID int64, productCategoryID *int64, externalKey string, isRequired bool, valueMode string, actorID int64) (*mysqlInfra.ChannelAttributeDTO, error) {
-	applicable, err := s.channelAttributesRepository.FindApplicable(channelID, productCategoryID)
+func (s *Service) resolveOrCreateChannelAttribute(ctx context.Context, channelID int64, productCategoryID *int64, externalKey string, isRequired bool, valueMode string, actorID int64) (*mysqlInfra.ChannelAttributeDTO, error) {
+	applicable, err := s.channelAttributesRepository.FindApplicable(ctx, channelID, productCategoryID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel attributes for external key %s: %w", externalKey, err)
 	}
@@ -582,7 +586,7 @@ func (s *Service) resolveOrCreateChannelAttribute(channelID int64, productCatego
 		}
 	}
 
-	created, err := s.channelAttributesRepository.Create(mysqlInfra.CreateChannelAttributeInput{
+	created, err := s.channelAttributesRepository.Create(ctx, mysqlInfra.CreateChannelAttributeInput{
 		ChannelID:      channelID,
 		TargetStrategy: channelAttributeDefaultTargetStrategy,
 		ExternalKey:    &externalKey,
@@ -605,8 +609,8 @@ func (s *Service) resolveOrCreateChannelAttribute(channelID int64, productCatego
 // none exists yet (SetValue has no separate display label to offer, so it
 // passes externalKey as name too; ProvisionCategoryAttributes passes
 // MercadoLibre's own attribute name).
-func (s *Service) resolveOrCreateAttribute(externalKey, name, dataType string, actorID int64) (*mysqlInfra.AttributeDTO, error) {
-	existing, err := s.attributesRepository.FindByCode(externalKey)
+func (s *Service) resolveOrCreateAttribute(ctx context.Context, externalKey, name, dataType string, actorID int64) (*mysqlInfra.AttributeDTO, error) {
+	existing, err := s.attributesRepository.FindByCode(ctx, externalKey)
 	if err != nil && !errors.Is(err, mysqlInfra.ErrAttributeNotFound) {
 		return nil, fmt.Errorf("error loading attribute %s: %w", externalKey, err)
 	}
@@ -617,7 +621,7 @@ func (s *Service) resolveOrCreateAttribute(externalKey, name, dataType string, a
 		return existing, nil
 	}
 
-	created, err := s.attributesRepository.Create(mysqlInfra.CreateAttributeInput{
+	created, err := s.attributesRepository.Create(ctx, mysqlInfra.CreateAttributeInput{
 		Code:      externalKey,
 		Name:      name,
 		DataType:  dataType,
@@ -635,8 +639,8 @@ func (s *Service) resolveOrCreateAttribute(externalKey, name, dataType string, a
 // is meaningful, matching sourceType) — anything else is a conflict this
 // endpoint refuses to silently overwrite (see channelAttributeMapMatches).
 // Creates a channel-wide row with the given source if none exists yet.
-func (s *Service) resolveOrCreateChannelAttributeMap(channelAttributeID int64, sourceType string, attributeID *int64, systemField *string, actorID int64) (*mysqlInfra.ChannelAttributeMapDTO, error) {
-	maps, err := s.channelAttributeMapRepository.FindByChannelAttributeID(channelAttributeID)
+func (s *Service) resolveOrCreateChannelAttributeMap(ctx context.Context, channelAttributeID int64, sourceType string, attributeID *int64, systemField *string, actorID int64) (*mysqlInfra.ChannelAttributeMapDTO, error) {
+	maps, err := s.channelAttributeMapRepository.FindByChannelAttributeID(ctx, channelAttributeID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel attribute map for slot %d: %w", channelAttributeID, err)
 	}
@@ -651,7 +655,7 @@ func (s *Service) resolveOrCreateChannelAttributeMap(channelAttributeID int64, s
 		return &maps[i], nil
 	}
 
-	created, err := s.channelAttributeMapRepository.Create(mysqlInfra.CreateChannelAttributeMapInput{
+	created, err := s.channelAttributeMapRepository.Create(ctx, mysqlInfra.CreateChannelAttributeMapInput{
 		ChannelAttributeID: channelAttributeID,
 		SourceType:         sourceType,
 		AttributeID:        attributeID,
@@ -689,10 +693,10 @@ func channelAttributeMapMatches(m *mysqlInfra.ChannelAttributeMapDTO, sourceType
 // list (provisionAttributeOptions) — ErrAttributeOptionNotProvisioned is
 // returned instead of inventing a new, external_value_id-less option that
 // MercadoLibre wouldn't recognize.
-func (s *Service) resolveOrCreateOption(attributeID int64, value string, requireExisting bool, actorID int64) (*mysqlInfra.AttributeOptionDTO, error) {
+func (s *Service) resolveOrCreateOption(ctx context.Context, attributeID int64, value string, requireExisting bool, actorID int64) (*mysqlInfra.AttributeOptionDTO, error) {
 	value = strings.TrimSpace(value)
 
-	existing, err := s.attributeOptionsRepository.FindByAttributeAndValue(attributeID, value)
+	existing, err := s.attributeOptionsRepository.FindByAttributeAndValue(ctx, attributeID, value)
 	if err != nil && !errors.Is(err, mysqlInfra.ErrAttributeOptionNotFound) {
 		return nil, fmt.Errorf("error loading attribute option %q: %w", value, err)
 	}
@@ -704,7 +708,7 @@ func (s *Service) resolveOrCreateOption(attributeID int64, value string, require
 		return nil, fmt.Errorf("%w: %q", ErrAttributeOptionNotProvisioned, value)
 	}
 
-	created, err := s.attributeOptionsRepository.Create(mysqlInfra.CreateAttributeOptionInput{
+	created, err := s.attributeOptionsRepository.Create(ctx, mysqlInfra.CreateAttributeOptionInput{
 		AttributeID: attributeID,
 		Value:       value,
 		CreatedBy:   actorID,

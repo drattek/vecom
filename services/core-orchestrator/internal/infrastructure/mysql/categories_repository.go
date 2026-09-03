@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -33,10 +34,10 @@ type UpdateCategoryInput struct {
 }
 
 type CategoriesRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewCategoriesRepository(db *sql.DB) *CategoriesRepository {
+func NewCategoriesRepository(db Querier) *CategoriesRepository {
 	return &CategoriesRepository{db: db}
 }
 
@@ -57,7 +58,7 @@ type CategoryTreeDTO struct {
 // FindTree returns every non-deleted category as a nested tree built from
 // parent_id: each category's own children are collected under its
 // Children key (siblings kept in id ASC order), instead of a flat list.
-func (r *CategoriesRepository) FindTree() ([]CategoryTreeDTO, error) {
+func (r *CategoriesRepository) FindTree(ctx context.Context) ([]CategoryTreeDTO, error) {
 	query := `
 		SELECT id, name, parent_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_categories
@@ -65,7 +66,7 @@ func (r *CategoriesRepository) FindTree() ([]CategoryTreeDTO, error) {
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("error querying categories: %w", err)
 	}
@@ -134,7 +135,7 @@ func buildCategoryTree(categories []CategoryDTO) []CategoryTreeDTO {
 	return tree
 }
 
-func (r *CategoriesRepository) FindByID(id int64) (*CategoryDTO, error) {
+func (r *CategoriesRepository) FindByID(ctx context.Context, id int64) (*CategoryDTO, error) {
 	query := `
 		SELECT id, name, parent_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_categories
@@ -142,14 +143,14 @@ func (r *CategoriesRepository) FindByID(id int64) (*CategoryDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanCategoryRow(row)
 }
 
 // FindByNameAndParentID looks up a category by name scoped to a parent
 // (nil parent means a root category), since name alone isn't unique across
 // different branches of the hierarchy.
-func (r *CategoriesRepository) FindByNameAndParentID(name string, parentID *int64) (*CategoryDTO, error) {
+func (r *CategoriesRepository) FindByNameAndParentID(ctx context.Context, name string, parentID *int64) (*CategoryDTO, error) {
 	if parentID == nil {
 		query := `
 			SELECT id, name, parent_id, created_by, updated_by, created_at, updated_at, deleted_at
@@ -158,7 +159,7 @@ func (r *CategoriesRepository) FindByNameAndParentID(name string, parentID *int6
 			ORDER BY id ASC
 			LIMIT 1
 		`
-		return scanCategoryRow(r.db.QueryRow(query, name))
+		return scanCategoryRow(r.db.QueryRowContext(ctx, query, name))
 	}
 
 	query := `
@@ -168,10 +169,10 @@ func (r *CategoriesRepository) FindByNameAndParentID(name string, parentID *int6
 		ORDER BY id ASC
 		LIMIT 1
 	`
-	return scanCategoryRow(r.db.QueryRow(query, name, *parentID))
+	return scanCategoryRow(r.db.QueryRowContext(ctx, query, name, *parentID))
 }
 
-func (r *CategoriesRepository) FindByParentID(parentID int64) ([]CategoryDTO, error) {
+func (r *CategoriesRepository) FindByParentID(ctx context.Context, parentID int64) ([]CategoryDTO, error) {
 	query := `
 		SELECT id, name, parent_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_categories
@@ -179,7 +180,7 @@ func (r *CategoriesRepository) FindByParentID(parentID int64) ([]CategoryDTO, er
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query, parentID)
+	rows, err := r.db.QueryContext(ctx, query, parentID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying categories by parent: %w", err)
 	}
@@ -197,13 +198,13 @@ func (r *CategoriesRepository) FindByParentID(parentID int64) ([]CategoryDTO, er
 	return categories, rows.Err()
 }
 
-func (r *CategoriesRepository) Create(input CreateCategoryInput) (*CategoryDTO, error) {
+func (r *CategoriesRepository) Create(ctx context.Context, input CreateCategoryInput) (*CategoryDTO, error) {
 	query := `
 		INSERT INTO ecom_categories (name, parent_id, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.ParentID, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.ParentID, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating category: %w", err)
 	}
@@ -213,17 +214,17 @@ func (r *CategoriesRepository) Create(input CreateCategoryInput) (*CategoryDTO, 
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *CategoriesRepository) Update(id int64, input UpdateCategoryInput) (*CategoryDTO, error) {
+func (r *CategoriesRepository) Update(ctx context.Context, id int64, input UpdateCategoryInput) (*CategoryDTO, error) {
 	query := `
 		UPDATE ecom_categories
 		SET name = ?, parent_id = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.ParentID, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.ParentID, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating category: %w", err)
 	}
@@ -237,17 +238,17 @@ func (r *CategoriesRepository) Update(id int64, input UpdateCategoryInput) (*Cat
 		return nil, ErrCategoryNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *CategoriesRepository) SoftDelete(id int64) error {
+func (r *CategoriesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_categories
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting category: %w", err)
 	}

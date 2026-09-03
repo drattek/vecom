@@ -11,6 +11,7 @@ import (
 	"time"
 
 	channelAttributeValuesApp "core-orchestrator/internal/application/channel_attribute_values"
+	pricingApp "core-orchestrator/internal/application/pricing"
 	mercadoLibreInfra "core-orchestrator/internal/infrastructure/marketplace/mercadolibre"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
@@ -115,6 +116,8 @@ type MercadoLibreProductSyncService struct {
 	tokenService                 *MercadoLibreTokenService
 	categoryPredictorService     *MercadoLibreCategoryPredictorService
 	itemsHandler                 *mercadoLibreInfra.ItemsHandler
+	formulaCalculator            *pricingApp.PricingFormulaCalculator
+	effectivePriceResolver       *pricingApp.EffectivePriceResolver
 	// channelAttributeValuesService/productAttributesRepository/
 	// attributeOptionsRepository back resolveCustomAttributes: provisioning
 	// the required-attribute slots for a listing's category and reading
@@ -123,6 +126,13 @@ type MercadoLibreProductSyncService struct {
 	channelAttributeValuesService *channelAttributeValuesApp.Service
 	productAttributesRepository   *mysqlInfra.ProductAttributesRepository
 	attributeOptionsRepository    *mysqlInfra.AttributeOptionsRepository
+	// compatibilityService pushes a product's ecom_product_vehicle_compatibility
+	// rows to a listing right after it's created (createNewItem), so an
+	// autopart listing starts life with its vehicle compatibilities already
+	// reported instead of waiting for the daily CompatibilitiesFixScheduler to
+	// catch the incomplete_compatibilities tag. nil-safe: a nil here disables
+	// the at-creation push (the scheduler still covers it later).
+	compatibilityService *MercadoLibreCompatibilityService
 }
 
 func NewMercadoLibreProductSyncService(
@@ -143,6 +153,9 @@ func NewMercadoLibreProductSyncService(
 	channelAttributeValuesService *channelAttributeValuesApp.Service,
 	productAttributesRepository *mysqlInfra.ProductAttributesRepository,
 	attributeOptionsRepository *mysqlInfra.AttributeOptionsRepository,
+	formulaCalculator *pricingApp.PricingFormulaCalculator,
+	effectivePriceResolver *pricingApp.EffectivePriceResolver,
+	compatibilityService *MercadoLibreCompatibilityService,
 ) *MercadoLibreProductSyncService {
 	client := mercadoLibreInfra.NewClient(nil, "", rateLimiter)
 
@@ -161,9 +174,12 @@ func NewMercadoLibreProductSyncService(
 		tokenService:                  tokenService,
 		categoryPredictorService:      categoryPredictorService,
 		itemsHandler:                  mercadoLibreInfra.NewItemsHandler(client),
+		formulaCalculator:             formulaCalculator,
+		effectivePriceResolver:        effectivePriceResolver,
 		channelAttributeValuesService: channelAttributeValuesService,
 		productAttributesRepository:   productAttributesRepository,
 		attributeOptionsRepository:    attributeOptionsRepository,
+		compatibilityService:          compatibilityService,
 	}
 }
 
@@ -180,7 +196,7 @@ func (s *MercadoLibreProductSyncService) Upload(ctx context.Context, input Uploa
 		return nil, ErrEmptyMercadoLibreUpload
 	}
 
-	connection, err := s.channelConnectionRepository.FindByID(input.ConnectionID)
+	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
 			return nil, ErrInvalidMercadoLibreConnection
@@ -189,6 +205,19 @@ func (s *MercadoLibreProductSyncService) Upload(ctx context.Context, input Uploa
 	}
 
 	log.Printf("mercadolibre upload: starting batch of %d product(s) for connection %d (allowsMultipleListings=%v)", len(input.Products), input.ConnectionID, connection.AllowsMultipleListings)
+
+	// Fetched once for the whole batch and handed to every createNewItem below,
+	// so listing N products doesn't re-pull MercadoLibre's site-wide
+	// compatibility dump N times. Non-fatal: on failure createNewItem's compat
+	// push falls back to fetching its own, and the listing is created anyway.
+	var compatDump []mercadoLibreInfra.DomainDumpEntry
+	if s.compatibilityService != nil {
+		if dump, err := s.compatibilityService.DomainDump(ctx, input.ConnectionID); err != nil {
+			log.Printf("mercadolibre upload: could not prefetch compatibility dump for connection %d: %v", input.ConnectionID, err)
+		} else {
+			compatDump = dump
+		}
+	}
 
 	results := make([]UploadResultItem, 0, len(input.Products))
 
@@ -214,7 +243,7 @@ func (s *MercadoLibreProductSyncService) Upload(ctx context.Context, input Uploa
 		}
 
 		log.Printf("mercadolibre upload: %s looking up product by sku", step)
-		product, err := s.productRepository.FindBySKU(sku)
+		product, err := s.productRepository.FindBySKU(ctx, sku)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 				log.Printf("mercadolibre upload: %s product not found", step)
@@ -225,18 +254,29 @@ func (s *MercadoLibreProductSyncService) Upload(ctx context.Context, input Uploa
 			return nil, fmt.Errorf("error looking up product by sku %q: %w", sku, err)
 		}
 
-		existingListings, err := s.channelProductMapRepository.FindAllByProductAndConnection(product.ID, input.ConnectionID)
+		existingListings, err := s.channelProductMapRepository.FindAllByProductAndConnection(ctx, product.ID, input.ConnectionID)
 		if err != nil {
 			return nil, fmt.Errorf("error loading existing listings for product %d: %w", product.ID, err)
 		}
 
-		if !connection.AllowsMultipleListings && len(existingListings) > 0 {
+		// Nissan (brand id nissanBrandID) never gets more than one listing per
+		// connection, even where allows_multiple_listings is true — the sole
+		// exception to the per-fitment fan-out. The listing is published with no
+		// vehicle fitment attached (mirrors channel_listings' publishReady).
+		allowsMultiple := connection.AllowsMultipleListings
+		listingVehicleFitmentID := item.VehicleFitmentID
+		if product.BrandID != nil && *product.BrandID == nissanBrandID {
+			allowsMultiple = false
+			listingVehicleFitmentID = nil
+		}
+
+		if !allowsMultiple && len(existingListings) > 0 {
 			log.Printf("mercadolibre upload: %s product %d already has a listing on connection %d, which does not allow multiple listings", step, product.ID, input.ConnectionID)
 			result.Error = "product already has a listing on this connection; this connection does not allow multiple listings per product"
 			results = append(results, result)
 			continue
 		}
-		if connection.AllowsMultipleListings && hasExistingFitmentListing(existingListings, item.VehicleFitmentID) {
+		if allowsMultiple && hasExistingFitmentListing(existingListings, listingVehicleFitmentID) {
 			log.Printf("mercadolibre upload: %s product %d already has a listing for this vehicle fitment on connection %d", step, product.ID, input.ConnectionID)
 			result.Error = "a listing already exists for this vehicle fitment on this connection"
 			results = append(results, result)
@@ -245,7 +285,7 @@ func (s *MercadoLibreProductSyncService) Upload(ctx context.Context, input Uploa
 
 		log.Printf("mercadolibre upload: %s resolved product id=%d, creating item", step, product.ID)
 
-		externalID, missingRequiredAttributes, missingOptionalAttributes, err := s.createItem(ctx, product, input.ConnectionID, name, item.VehicleFitmentID, product.ID, nil)
+		externalID, missingRequiredAttributes, missingOptionalAttributes, err := s.createItem(ctx, product, input.ConnectionID, name, listingVehicleFitmentID, product.ID, nil, compatDump)
 		if err != nil {
 			log.Printf("mercadolibre upload: %s failed: %v", step, err)
 			result.Error = err.Error()
@@ -287,7 +327,9 @@ func (s *MercadoLibreProductSyncService) Upload(ctx context.Context, input Uploa
 // by MercadoLibre's own Tags.Required for that attribute — the item is still
 // created regardless.
 func (s *MercadoLibreProductSyncService) Publish(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, title string, vehicleFitmentID *int64, imageSourceProductID int64, officialStoreID *int64) (string, []string, []string, error) {
-	return s.createItem(ctx, product, connectionID, title, vehicleFitmentID, imageSourceProductID, officialStoreID)
+	// compatDump nil: the channel_listings orchestrator calls Publish once per
+	// (product, fitment); createNewItem's compat push fetches its own dump.
+	return s.createItem(ctx, product, connectionID, title, vehicleFitmentID, imageSourceProductID, officialStoreID, nil)
 }
 
 // SyncListingStatus implements channel_listings.StatusSyncer (duck-typed: no
@@ -312,56 +354,74 @@ func (s *MercadoLibreProductSyncService) SyncListingStatus(ctx context.Context, 
 
 // Refresh implements channel_listings.Refresher (duck-typed: no import from
 // that package is needed here) for an already-published MercadoLibre
-// listing. It fires only when product's effective price or total stock
-// changed since listing.LastSyncedAt (see priceOrStockChangedSince, shared
-// with Odoo's Refresh in sync_odoo_products.go). The PUT /items call sends
-// only price, stock, and attributes — MercadoLibre's update endpoint requires
-// price/stock together regardless of which one actually moved, and
-// attributes ride along for free so a custom attribute value added to the
-// product after the listing was first published (see resolveCustomAttributes)
-// reaches MercadoLibre without a separate call. Category is deliberately
-// never sent here: channel_listings.RefreshListings calls SyncListingStatus
-// right before this, which already reconciles any category drift against
-// MercadoLibre's live state (see RefreshChannelProductMapStatusAndCategory) —
-// resending it here would just repeat that work with a possibly stale local
-// value. Listings currently paused/under_review are left untouched, same as
-// updateExistingListings.
+// listing. It fires when product's effective price or total stock changed
+// since listing.LastSyncedAt (see priceOrStockChangedSince, shared with
+// Odoo's Refresh in sync_odoo_products.go) — or unconditionally when the
+// listing is currently under_review, since that status is otherwise a dead
+// end: MercadoLibre sometimes reactivates a listing without this system's
+// local status ever finding out, and the only way to detect that is to just
+// retry the update and see whether MercadoLibre now accepts it. The PUT
+// /items call sends only price, stock, and attributes — MercadoLibre's
+// update endpoint requires price/stock together regardless of which one
+// actually moved, and attributes ride along for free so a custom attribute
+// value added to the product after the listing was first published (see
+// resolveCustomAttributes) reaches MercadoLibre without a separate call.
+// Category is deliberately never sent here: channel_listings.RefreshListings
+// calls SyncListingStatus right before this, which already reconciles any
+// category drift against MercadoLibre's live state (see
+// RefreshChannelProductMapStatusAndCategory) — resending it here would just
+// repeat that work with a possibly stale local value. Listings currently
+// paused/closed are left untouched, same as updateExistingListings — only
+// under_review gets this extra retry. A successful retry falls through to
+// the same Upsert every other successful update goes through, which always
+// writes status "synced" — exactly what should happen once MercadoLibre
+// confirms the listing is no longer under review. A retry MercadoLibre still
+// rejects is treated as the expected outcome for a listing that's still
+// genuinely under review, not a batch error: the row is left completely
+// untouched (already recorded as under_review) so the next refresh run
+// simply tries again.
 func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error) {
 	externalID := derefString(listing.ExternalID)
 	if externalID == "" {
 		return false, nil
 	}
-	if isPausedOrUnderReview(listing.Status) {
+	if listing.Status == mercadoLibreMapStatusPaused || listing.Status == mercadoLibreMapStatusClosed {
 		return false, nil
 	}
+	isUnderReview := listing.Status == mercadoLibreMapStatusUnderReview
+	// El sku de pinnedSKUPriceOverrideSKU se refresca siempre, sin pasar por el
+	// gate de "solo si cambió precio/stock" (ver mercadoLibreRefreshPriceStockGateEnabled
+	// más abajo): su precio fijo debe mantenerse en MercadoLibre incluso cuando
+	// nada más del producto cambió desde el último sync.
+	isPinnedSKU := isPinnedSKUPriceOverride(product.SKU)
 
-	mxnCurrency, err := s.currenciesRepository.FindByCode(mercadoLibreItemCurrencyID)
+	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, mercadoLibreItemCurrencyID)
 	if err != nil {
 		return false, fmt.Errorf("error loading %s currency: %w", mercadoLibreItemCurrencyID, err)
 	}
 
-	price, err := s.productPricesRepository.FindEffectivePrice(product.ID, mxnCurrency.ID)
+	basePrice, priceUpdatedAt, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, product.ID, mxnCurrency.ID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
-			return false, fmt.Errorf("no active %s price list entry for product %d", mercadoLibreItemCurrencyID, product.ID)
+			return false, fmt.Errorf("no active price list entry for product %d", product.ID)
 		}
 		return false, fmt.Errorf("error loading effective price for product %d: %w", product.ID, err)
 	}
 
-	stocks, err := s.productStockRepository.FindByProductID(product.ID)
+	stocks, err := s.productStockRepository.FindByProductID(ctx, product.ID)
 	if err != nil {
 		return false, fmt.Errorf("error loading stock for product %d: %w", product.ID, err)
 	}
 
-	if !priceOrStockChangedSince(price.UpdatedAt, stocks, listing.LastSyncedAt) {
+	if mercadoLibreRefreshPriceStockGateEnabled && !isUnderReview && !isPinnedSKU && !priceOrStockChangedSince(priceUpdatedAt, stocks, listing.LastSyncedAt) {
 		return false, nil
 	}
 
-	basePrice, err := strconv.ParseFloat(price.Price, 64)
+	finalPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
 	if err != nil {
-		return false, fmt.Errorf("error parsing price %q for product %d: %w", price.Price, product.ID, err)
+		return false, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
 	}
-	finalPrice := math.Round((((basePrice*1.13)/0.85)+90)*1.16*100) / 100
+	finalPrice = applyPinnedSKUPriceOverride(product.SKU, finalPrice)
 
 	qtyAvailable := 0
 	for _, stock := range stocks {
@@ -373,14 +433,39 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 		return false, fmt.Errorf("error getting mercadolibre access token for connection %d: %w", connectionID, err)
 	}
 
-	attributes := s.resolvePackageAttributes(product.ID)
 	externalCategoryID := derefString(listing.ExternalCategoryID)
-	if externalCategoryID != "" {
-		customAttributes, _, _, err := s.resolveCustomAttributes(ctx, product, connectionID, externalCategoryID)
-		if err != nil {
-			return false, fmt.Errorf("error resolving custom attributes for product %d: %w", product.ID, err)
+
+	// mercadoLibreRefreshAttributesEnabled temporarily disabled: attributes
+	// only need to be sent once, on Publish (item creation) — Refresh no
+	// longer resends them on every price/stock push.
+	var attributes []mercadoLibreInfra.ItemAttribute
+	if mercadoLibreRefreshAttributesEnabled {
+		attributes = s.resolvePackageAttributes(ctx, product.ID)
+		if externalCategoryID != "" {
+			customAttributes, _, _, err := s.resolveCustomAttributes(ctx, product, connectionID, externalCategoryID)
+			if err != nil {
+				return false, fmt.Errorf("error resolving custom attributes for product %d: %w", product.ID, err)
+			}
+			attributes = append(attributes, customAttributes...)
 		}
-		attributes = append(attributes, customAttributes...)
+	}
+
+	// mercadoLibreRefreshFamilyNameEnabled temporarily enabled: see its doc
+	// comment. Reconstructs the same family_name Publish would send today
+	// ("<listing.ListingTitle> Original <brand name>" for Nissan, "<title>
+	// <brand name>" otherwise) from what's already on
+	// ecom_channel_product_map/ecom_brands — no need to touch listingName
+	// input, since Refresh never receives it. Left empty (omitted from the
+	// request) when the flag is off or the brand can't be resolved, so a
+	// missing brand never blanks out an existing title.
+	var familyName string
+	if mercadoLibreRefreshFamilyNameEnabled && product.BrandID != nil {
+		brand, err := s.brandsRepository.FindByID(ctx, *product.BrandID)
+		if err != nil {
+			log.Printf("mercadolibre: product %d — error loading brand %d for family_name refresh, leaving title unchanged: %v", product.ID, *product.BrandID, err)
+		} else {
+			familyName = strings.TrimSpace(withNissanOriginalSuffix(product.BrandID, derefString(listing.ListingTitle)) + " " + brand.Name)
+		}
 	}
 
 	if err := s.itemsHandler.UpdateItem(ctx, mercadoLibreInfra.UpdateItemRequest{
@@ -389,13 +474,18 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 		Vals: mercadoLibreInfra.UpdateItemVals{
 			Price:             finalPrice,
 			AvailableQuantity: qtyAvailable,
+			FamilyName:        familyName,
 			Attributes:        attributes,
 		},
 	}); err != nil {
+		if isUnderReview {
+			log.Printf("mercadolibre: listing %s still under review, leaving status unchanged: %v", externalID, err)
+			return false, nil
+		}
 		return false, fmt.Errorf("error updating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
 	}
 
-	if _, err := s.channelProductMapRepository.Upsert(mysqlInfra.UpsertChannelProductMapInput{
+	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 		ProductID:          product.ID,
 		ConnectionID:       connectionID,
 		VehicleFitmentID:   listing.VehicleFitmentID,
@@ -481,47 +571,147 @@ func derefString(s *string) string {
 // product.Name, so the same product can be listed more than once with
 // different names), recording it against vehicleFitmentID. Pictures come
 // from imageSourceProductID, not necessarily product.ID (see Publish).
-func (s *MercadoLibreProductSyncService) createItem(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listingName string, vehicleFitmentID *int64, imageSourceProductID int64, officialStoreID *int64) (string, []string, []string, error) {
-	finalPrice, qtyAvailable, accessToken, err := s.resolvePriceStockAndToken(ctx, product.ID, connectionID)
+func (s *MercadoLibreProductSyncService) createItem(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listingName string, vehicleFitmentID *int64, imageSourceProductID int64, officialStoreID *int64, compatDump []mercadoLibreInfra.DomainDumpEntry) (string, []string, []string, error) {
+	finalPrice, qtyAvailable, accessToken, err := s.resolvePriceStockAndToken(ctx, product.ID, product.SKU, product.BrandID, connectionID)
 	if err != nil {
 		return "", nil, nil, err
 	}
 
-	return s.createNewItem(ctx, product, connectionID, listingName, vehicleFitmentID, accessToken, finalPrice, qtyAvailable, imageSourceProductID, officialStoreID)
+	return s.createNewItem(ctx, product, connectionID, listingName, vehicleFitmentID, accessToken, finalPrice, qtyAvailable, imageSourceProductID, officialStoreID, compatDump)
 }
 
-// resolvePriceStockAndToken computes the current MXN price (via the
-// configured formula) and total stock for a product, and ensures a valid
-// MercadoLibre access token for connectionID — the inputs both createItem
-// and UpdatePricesAndStock need before talking to MercadoLibre.
-func (s *MercadoLibreProductSyncService) resolvePriceStockAndToken(ctx context.Context, productID, connectionID int64) (finalPrice float64, qtyAvailable int, accessToken string, err error) {
+// TEMPORARY: sku pinnedSKUPriceOverrideSKU is pinned to a fixed MXN price on
+// MercadoLibre only (Odoo is untouched), overriding whatever its pricing
+// formula would otherwise compute. Every listing for this sku ends up at
+// this price: resolvePriceStockAndToken's single computed finalPrice is
+// applied to every one of a product's existing listings by
+// updateExistingListings, and a connection with allow_multi=true publishes
+// one listing per vehicle fitment via a separate createItem call each —
+// each going through this same override independently. Remove
+// pinnedSKUPriceOverrideSKU/pinnedSKUPriceOverridePrice,
+// applyPinnedSKUPriceOverride, and its two call sites (here and in Refresh)
+// once no longer needed.
+const (
+	pinnedSKUPriceOverrideSKU   = "22042021OM"
+	pinnedSKUPriceOverridePrice = 110.00
+)
+
+// applyPinnedSKUPriceOverride returns pinnedSKUPriceOverridePrice when sku
+// matches pinnedSKUPriceOverrideSKU (case-insensitive), otherwise price
+// unchanged.
+func applyPinnedSKUPriceOverride(sku string, price float64) float64 {
+	if isPinnedSKUPriceOverride(sku) {
+		return pinnedSKUPriceOverridePrice
+	}
+	return price
+}
+
+// isPinnedSKUPriceOverride reports whether sku is pinnedSKUPriceOverrideSKU
+// (case-insensitive) — shared by applyPinnedSKUPriceOverride and Refresh's
+// price/stock-changed gate bypass, so the pinned sku's fixed MercadoLibre
+// price keeps being pushed on every refresh even when nothing else about the
+// product changed.
+func isPinnedSKUPriceOverride(sku string) bool {
+	return strings.EqualFold(strings.TrimSpace(sku), pinnedSKUPriceOverrideSKU)
+}
+
+// nissanBrandID is ecom_brands.id for "Nissan" in this deployment's seed
+// data — hardcoded rather than resolved by name/code since no
+// BrandsRepository.FindByCode/FindByName exists today (mirrors
+// pinnedSKUPriceOverrideSKU's hardcoded-identifier approach above).
+const nissanBrandID int64 = 1
+
+// omnipartsBrandID is ecom_brands.id for "Omniparts" in this deployment's
+// seed data — hardcoded rather than resolved by name/code, same as
+// nissanBrandID above. Brand-new MercadoLibre listings for this brand must be
+// assigned to Omniparts' Official Store: a publish request sends
+// official_store_id = null by default (no store), and createNewItem forces it
+// to omnipartsOfficialStoreID for this brand, overriding whatever the request
+// carried.
+const omnipartsBrandID int64 = 36
+
+// omnipartsOfficialStoreID is the MercadoLibre official_store_id for the
+// Omniparts Official Store in this deployment.
+const omnipartsOfficialStoreID int64 = 71022
+
+// nissanOfficialStoreID is the MercadoLibre official_store_id for the Nissan
+// Official Store in this deployment. Like Omniparts, brand-new Nissan-branded
+// listings are forced onto this store regardless of the official_store_id the
+// publish request carried. See nissanBrandID.
+const nissanOfficialStoreID int64 = 342646
+
+// nissanOriginalSuffix is appended to the title portion of Nissan-branded
+// listings' MercadoLibre family_name — producing "<title> Original <brand>"
+// — to flag them as genuine Nissan parts, distinct from third-party
+// compatible parts sold under other brands. It only affects what's sent to
+// MercadoLibre — never ecom_products.name or the category prediction query,
+// which stays title+brand-name-only.
+const nissanOriginalSuffix = "Original"
+
+// withNissanOriginalSuffix appends nissanOriginalSuffix to name when
+// brandID is nissanBrandID, otherwise returns name unchanged. Callers apply
+// this to the title alone, then append the brand name afterward, so the
+// suffix always lands between the two ("<title> Original <brand>").
+func withNissanOriginalSuffix(brandID *int64, name string) string {
+	if brandID != nil && *brandID == nissanBrandID {
+		return strings.TrimSpace(name + " " + nissanOriginalSuffix)
+	}
+	return name
+}
+
+// mercadoLibreRefreshPriceStockGateEnabled gates Refresh so it only calls out
+// to MercadoLibre when product's price or stock actually changed since
+// listing.LastSyncedAt (priceOrStockChangedSince below) — see
+// odooRefreshPriceStockGateEnabled in sync_odoo_products.go for the same gate
+// on Odoo's Refresh, toggled independently. Note: this alone does NOT resend
+// package attributes (SELLER_PACKAGE_*) — Refresh only includes those when
+// mercadoLibreRefreshAttributesEnabled is also true.
+const mercadoLibreRefreshPriceStockGateEnabled = true
+
+// mercadoLibreRefreshAttributesEnabled controls whether Refresh sends item
+// attributes (package dimensions plus category-specific custom attributes)
+// on every price/stock push. Kept disabled: attributes only need to reach
+// MercadoLibre once, at Publish (item creation) — a plain refresh must only
+// ever send price and stock, never attributes.
+const mercadoLibreRefreshAttributesEnabled = false
+
+// mercadoLibreRefreshFamilyNameEnabled controls whether Refresh resends
+// family_name (title) on every price/stock push. Kept disabled: title only
+// needs to reach MercadoLibre once, at Publish — same reason as
+// mercadoLibreRefreshAttributesEnabled. MercadoLibre also rejects
+// family_name changes outright on items that already have sales
+// (sold_quantity > 0), so a plain refresh must never send it.
+const mercadoLibreRefreshFamilyNameEnabled = false
+
+// resolvePriceStockAndToken computes the current MXN price (via
+// formulaCalculator, resolved against brandID, then
+// applyPinnedSKUPriceOverride) and total stock for a product, and ensures a
+// valid MercadoLibre access token for connectionID — the inputs both
+// createItem and UpdatePricesAndStock need before talking to MercadoLibre.
+func (s *MercadoLibreProductSyncService) resolvePriceStockAndToken(ctx context.Context, productID int64, sku string, brandID *int64, connectionID int64) (finalPrice float64, qtyAvailable int, accessToken string, err error) {
 	log.Printf("mercadolibre: product %d — resolving %s currency", productID, mercadoLibreItemCurrencyID)
-	mxnCurrency, err := s.currenciesRepository.FindByCode(mercadoLibreItemCurrencyID)
+	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, mercadoLibreItemCurrencyID)
 	if err != nil {
 		return 0, 0, "", fmt.Errorf("error loading %s currency: %w", mercadoLibreItemCurrencyID, err)
 	}
 
 	log.Printf("mercadolibre: product %d — resolving effective price", productID)
-	price, err := s.productPricesRepository.FindEffectivePrice(productID, mxnCurrency.ID)
+	basePrice, _, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, productID, mxnCurrency.ID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
-			return 0, 0, "", fmt.Errorf("no active %s price list entry for product %d", mercadoLibreItemCurrencyID, productID)
+			return 0, 0, "", fmt.Errorf("no active price list entry for product %d", productID)
 		}
 		return 0, 0, "", fmt.Errorf("error loading effective price for product %d: %w", productID, err)
 	}
-	basePrice, err := strconv.ParseFloat(price.Price, 64)
+	finalPrice, err = s.formulaCalculator.CalculatePrice(ctx, brandID, connectionID, priceListID, basePrice)
 	if err != nil {
-		return 0, 0, "", fmt.Errorf("error parsing price %q for product %d: %w", price.Price, productID, err)
+		return 0, 0, "", fmt.Errorf("error calculating final price for product %d: %w", productID, err)
 	}
-	finalPrice = (((basePrice * 1.13) / 0.85) + 90) * 1.16
-	// MXN accepts at most 2 decimals; the raw formula result carries far
-	// more precision than that (e.g. 112.80762541176469), which MercadoLibre
-	// rejects with item.price.invalid.
-	finalPrice = math.Round(finalPrice*100) / 100
-	log.Printf("mercadolibre: product %d — base price=%s, final price=%.2f", productID, price.Price, finalPrice)
+	finalPrice = applyPinnedSKUPriceOverride(sku, finalPrice)
+	log.Printf("mercadolibre: product %d — base price=%.2f, final price=%.2f", productID, basePrice, finalPrice)
 
 	log.Printf("mercadolibre: product %d — summing stock", productID)
-	qtyAvailable, err = s.sumAvailableStock(productID)
+	qtyAvailable, err = s.sumAvailableStock(ctx, productID)
 	if err != nil {
 		return 0, 0, "", fmt.Errorf("error summing stock for product %d: %w", productID, err)
 	}
@@ -583,7 +773,7 @@ func (s *MercadoLibreProductSyncService) updateExistingListings(
 			Vals: mercadoLibreInfra.UpdateItemVals{
 				Price:             finalPrice,
 				AvailableQuantity: qtyAvailable,
-				Attributes:        s.resolvePackageAttributes(product.ID),
+				Attributes:        s.resolvePackageAttributes(ctx, product.ID),
 			},
 		}); err != nil {
 			log.Printf("mercadolibre update: product %d — error updating listing %s: %v", product.ID, externalID, err)
@@ -593,7 +783,7 @@ func (s *MercadoLibreProductSyncService) updateExistingListings(
 			continue
 		}
 
-		if _, err := s.channelProductMapRepository.Upsert(mysqlInfra.UpsertChannelProductMapInput{
+		if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 			ProductID:          product.ID,
 			ConnectionID:       listing.ConnectionID,
 			VehicleFitmentID:   listing.VehicleFitmentID,
@@ -629,7 +819,7 @@ func (s *MercadoLibreProductSyncService) updateExistingListings(
 // package attributes and is never read here. Falls back to the generic
 // mercadoLibreItemPackageSide/Weight defaults when productID has no
 // dimensions row yet, mirroring resolveDimensions' fallback for Odoo.
-func (s *MercadoLibreProductSyncService) resolvePackageAttributes(productID int64) []mercadoLibreInfra.ItemAttribute {
+func (s *MercadoLibreProductSyncService) resolvePackageAttributes(ctx context.Context, productID int64) []mercadoLibreInfra.ItemAttribute {
 	fallback := []mercadoLibreInfra.ItemAttribute{
 		{ID: "SELLER_PACKAGE_HEIGHT", ValueName: mercadoLibreItemPackageSide},
 		{ID: "SELLER_PACKAGE_LENGTH", ValueName: mercadoLibreItemPackageSide},
@@ -637,7 +827,7 @@ func (s *MercadoLibreProductSyncService) resolvePackageAttributes(productID int6
 		{ID: "SELLER_PACKAGE_WIDTH", ValueName: mercadoLibreItemPackageSide},
 	}
 
-	dimensions, err := s.productDimensionsRepository.FindByProductID(productID)
+	dimensions, err := s.productDimensionsRepository.FindByProductID(ctx, productID)
 	if err != nil {
 		return fallback
 	}
@@ -651,26 +841,42 @@ func (s *MercadoLibreProductSyncService) resolvePackageAttributes(productID int6
 }
 
 // formatPackageCM renders an ecom_product_dimensions cm value (e.g. "12.50")
-// as MercadoLibre's "<value> cm" package attribute format, trimming trailing
-// zeros. Falls back to the generic package side default when raw fails to
-// parse.
+// as MercadoLibre's "<value> cm" package attribute format. MercadoLibre only
+// accepts integers for these attributes — sending a decimal (its own
+// stored precision) is rejected with item.attribute.invalid.format.seller.
+// package.dimensions — so the value is rounded to the nearest whole
+// centimeter and floored at 1 (0 cm isn't a valid package side). Falls back
+// to the generic package side default when raw fails to parse.
 func formatPackageCM(raw string) string {
 	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return mercadoLibreItemPackageSide
 	}
-	return strconv.FormatFloat(value, 'f', -1, 64) + " cm"
+	return strconv.FormatFloat(roundPackageValue(value), 'f', 0, 64) + " cm"
 }
 
 // formatPackageGrams converts an ecom_product_dimensions weight value (kg)
-// into MercadoLibre's "<value> g" package attribute format. Falls back to
-// the generic package weight default when raw fails to parse.
+// into MercadoLibre's "<value> g" package attribute format, rounded to the
+// nearest whole gram and floored at 1 for the same integer-only reason as
+// formatPackageCM. Falls back to the generic package weight default when
+// raw fails to parse.
 func formatPackageGrams(raw string) string {
 	value, err := strconv.ParseFloat(strings.TrimSpace(raw), 64)
 	if err != nil {
 		return mercadoLibreItemPackageWeight
 	}
-	return strconv.FormatFloat(value*1000, 'f', -1, 64) + " g"
+	return strconv.FormatFloat(roundPackageValue(value*1000), 'f', 0, 64) + " g"
+}
+
+// roundPackageValue rounds to the nearest integer and floors at 1, since
+// MercadoLibre rejects both non-integer and zero/negative package
+// dimensions/weight.
+func roundPackageValue(value float64) float64 {
+	rounded := math.Round(value)
+	if rounded < 1 {
+		return 1
+	}
+	return rounded
 }
 
 // createNewItem resolves brand/images, predicts a category from listingName
@@ -691,13 +897,14 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 	qtyAvailable int,
 	imageSourceProductID int64,
 	officialStoreID *int64,
+	compatDump []mercadoLibreInfra.DomainDumpEntry,
 ) (string, []string, []string, error) {
 	log.Printf("mercadolibre upload: product %d — resolving brand", product.ID)
 	if product.BrandID == nil {
 		return "", nil, nil, fmt.Errorf("product %d has no brand", product.ID)
 	}
 
-	brand, err := s.brandsRepository.FindByID(*product.BrandID)
+	brand, err := s.brandsRepository.FindByID(ctx, *product.BrandID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrBrandNotFound) {
 			return "", nil, nil, fmt.Errorf("brand %d not found for product %d", *product.BrandID, product.ID)
@@ -706,8 +913,25 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 	}
 	log.Printf("mercadolibre upload: product %d — brand resolved: %s", product.ID, brand.Name)
 
+	// Certain brands always go to their own Official Store, regardless of the
+	// official_store_id the publish request carried (nil by default). Any other
+	// brand keeps the request's value (nil = no store). See omnipartsBrandID /
+	// omnipartsOfficialStoreID and nissanBrandID / nissanOfficialStoreID.
+	if product.BrandID != nil {
+		switch *product.BrandID {
+		case omnipartsBrandID:
+			storeID := omnipartsOfficialStoreID
+			officialStoreID = &storeID
+			log.Printf("mercadolibre upload: product %d — brand is Omniparts, forcing official_store_id=%d", product.ID, omnipartsOfficialStoreID)
+		case nissanBrandID:
+			storeID := nissanOfficialStoreID
+			officialStoreID = &storeID
+			log.Printf("mercadolibre upload: product %d — brand is Nissan, forcing official_store_id=%d", product.ID, nissanOfficialStoreID)
+		}
+	}
+
 	log.Printf("mercadolibre upload: product %d — loading images (source product %d)", product.ID, imageSourceProductID)
-	images, err := s.productImagesRepository.FindAllByProductID(imageSourceProductID)
+	images, err := s.productImagesRepository.FindAllByProductID(ctx, imageSourceProductID)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("error loading images for product %d: %w", imageSourceProductID, err)
 	}
@@ -718,7 +942,7 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 
 	pictures := make([]mercadoLibreInfra.ItemPicture, 0, len(images))
 	for _, image := range images {
-		file, err := s.filesRepository.FindByID(image.FileID)
+		file, err := s.filesRepository.FindByID(ctx, image.FileID)
 		if err != nil {
 			return "", nil, nil, fmt.Errorf("error loading file %d for product %d: %w", image.FileID, product.ID, err)
 		}
@@ -739,7 +963,7 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		{ID: "MODEL", ValueName: product.PartNumber},
 		{ID: "SELLER_SKU", ValueName: product.SKU},
 	}
-	attributes = append(attributes, s.resolvePackageAttributes(product.ID)...)
+	attributes = append(attributes, s.resolvePackageAttributes(ctx, product.ID)...)
 
 	customAttributes, missingRequiredAttributes, missingOptionalAttributes, err := s.resolveCustomAttributes(ctx, product, connectionID, externalCategoryID)
 	if err != nil {
@@ -756,7 +980,7 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		ListingTypeID:     mercadoLibreItemListingTypeID,
 		CategoryID:        externalCategoryID,
 		OfficialStoreID:   officialStoreID,
-		FamilyName:        query,
+		FamilyName:        strings.TrimSpace(withNissanOriginalSuffix(product.BrandID, listingName) + " " + brand.Name),
 		Pictures:          pictures,
 		Attributes:        attributes,
 	}
@@ -775,7 +999,7 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		return "", nil, nil, err
 	}
 
-	if _, err := s.channelProductMapRepository.Upsert(mysqlInfra.UpsertChannelProductMapInput{
+	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 		ProductID:          product.ID,
 		ConnectionID:       connectionID,
 		VehicleFitmentID:   vehicleFitmentID,
@@ -788,6 +1012,36 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		return "", nil, nil, fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)
 	}
 	log.Printf("mercadolibre upload: product %d — channel product map saved", product.ID)
+
+	if product.Description != nil && strings.TrimSpace(*product.Description) != "" {
+		if err := s.itemsHandler.CreateItemDescription(ctx, mercadoLibreInfra.CreateItemDescriptionRequest{
+			AccessToken: accessToken,
+			ExternalID:  created.ID,
+			PlainText:   *product.Description,
+		}); err != nil {
+			return "", nil, nil, fmt.Errorf("error creating mercadolibre item description for product %d (externalId=%s): %w", product.ID, created.ID, err)
+		}
+		log.Printf("mercadolibre upload: product %d — description created for externalId=%s", product.ID, created.ID)
+	}
+
+	// Report the product's vehicle compatibilities up front (when the category
+	// supports them and we have data) so the listing doesn't get the
+	// incomplete_compatibilities tag and wait for the daily
+	// CompatibilitiesFixScheduler. Non-fatal: the item is already created and
+	// recorded as synced; a failure here just leaves the scheduler to retry.
+	if s.compatibilityService != nil {
+		outcome, err := s.compatibilityService.PushForNewListing(ctx, accessToken, created.ID, product, compatDump)
+		switch {
+		case err != nil:
+			log.Printf("mercadolibre upload: product %d — compatibilities push failed for externalId=%s: %v", product.ID, created.ID, err)
+		case outcome.Error != "":
+			log.Printf("mercadolibre upload: product %d — compatibilities push errored for externalId=%s: %s", product.ID, created.ID, outcome.Error)
+		case outcome.Skipped:
+			log.Printf("mercadolibre upload: product %d — compatibilities push skipped for externalId=%s: %s", product.ID, created.ID, outcome.SkipReason)
+		default:
+			log.Printf("mercadolibre upload: product %d — %d vehicle compatibilit(ies) reported at creation for externalId=%s", product.ID, outcome.CreatedCompatibilitiesCount, created.ID)
+		}
+	}
 
 	return created.ID, missingRequiredAttributes, missingOptionalAttributes, nil
 }
@@ -824,7 +1078,7 @@ func (s *MercadoLibreProductSyncService) resolveCustomAttributes(ctx context.Con
 			continue
 		}
 
-		value, err := s.productAttributesRepository.FindByProductAndAttribute(product.ID, *outcome.AttributeID)
+		value, err := s.productAttributesRepository.FindByProductAndAttribute(ctx, product.ID, *outcome.AttributeID)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductAttributeNotFound) {
 				if outcome.IsRequired {
@@ -837,7 +1091,7 @@ func (s *MercadoLibreProductSyncService) resolveCustomAttributes(ctx context.Con
 			return nil, nil, nil, fmt.Errorf("error loading product attribute %s for product %d: %w", outcome.ExternalKey, product.ID, err)
 		}
 
-		formatted, isValueID, ok := s.formatProductAttributeValue(value)
+		formatted, isValueID, ok := s.formatProductAttributeValue(ctx, value)
 		if !ok {
 			if outcome.IsRequired {
 				missingRequiredAttributes = append(missingRequiredAttributes, outcome.ExternalKey)
@@ -872,7 +1126,7 @@ func (s *MercadoLibreProductSyncService) resolveCustomAttributes(ctx context.Con
 // sent as value_name same as before. ok is false when value has no usable
 // content (e.g. an empty ValueText, or an OptionID that no longer resolves)
 // — resolveCustomAttributes treats that the same as no value at all.
-func (s *MercadoLibreProductSyncService) formatProductAttributeValue(value *mysqlInfra.ProductAttributeDTO) (formatted string, isValueID bool, ok bool) {
+func (s *MercadoLibreProductSyncService) formatProductAttributeValue(ctx context.Context, value *mysqlInfra.ProductAttributeDTO) (formatted string, isValueID bool, ok bool) {
 	switch {
 	case value.ValueText != nil:
 		text := strings.TrimSpace(*value.ValueText)
@@ -880,11 +1134,11 @@ func (s *MercadoLibreProductSyncService) formatProductAttributeValue(value *mysq
 	case value.ValueNumber != nil:
 		return strconv.FormatFloat(*value.ValueNumber, 'f', -1, 64), false, true
 	case value.ValueBool != nil:
-		return strconv.FormatBool(*value.ValueBool), false, true
+		return formatMercadoLibreBoolean(*value.ValueBool), false, true
 	case value.ValueDate != nil:
 		return value.ValueDate.Format(time.DateOnly), false, true
 	case value.OptionID != nil:
-		option, err := s.attributeOptionsRepository.FindByID(*value.OptionID)
+		option, err := s.attributeOptionsRepository.FindByID(ctx, *value.OptionID)
 		if err != nil {
 			return "", false, false
 		}
@@ -897,6 +1151,18 @@ func (s *MercadoLibreProductSyncService) formatProductAttributeValue(value *mysq
 	}
 }
 
+// formatMercadoLibreBoolean renders value as the value_name MercadoLibre's
+// item-attribute validation actually accepts for a boolean attribute — Go's
+// own "true"/"false" (strconv.FormatBool) is rejected with
+// invalid.item.attribute.values, matching parseMercadoLibreBoolean's own
+// accepted spelling on the read side.
+func formatMercadoLibreBoolean(value bool) string {
+	if value {
+		return "Sí"
+	}
+	return "No"
+}
+
 // resolveExternalCategoryID returns the MercadoLibre category id to list
 // product under. If product already has a local category that's mapped to
 // connectionID in ecom_channel_category_map, that mapping's external id is
@@ -904,7 +1170,7 @@ func (s *MercadoLibreProductSyncService) formatProductAttributeValue(value *mysq
 // query is sent to the predictor and its best match is used.
 func (s *MercadoLibreProductSyncService) resolveExternalCategoryID(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, query string) (string, error) {
 	if product.CategoryID != nil {
-		existing, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(*product.CategoryID, connectionID)
+		existing, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, *product.CategoryID, connectionID)
 		if err != nil && !errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
 			return "", fmt.Errorf("error loading channel category map for product %d: %w", product.ID, err)
 		}
@@ -933,15 +1199,21 @@ func (s *MercadoLibreProductSyncService) resolveExternalCategoryID(ctx context.C
 // hierarchy and ecom_channel_category_map row for connectionID — replicating
 // MercadoLibre's own category tree the first time this external category is
 // seen for this connection — then assigns that hierarchy's leaf category to
-// product when product has no category yet, or replaces it when product's
-// current category has no mapping to this connection (i.e. isn't the
-// category MercadoLibre just listed the item under). A product whose current
-// category is already mapped to this connection is left untouched.
+// product only when product has no category yet. ecom_products.category_id
+// is a single column shared by every channel (Odoo, MercadoLibre, etc.), so a
+// product that already has a category — curated manually, assigned by
+// another channel, or by a previous MercadoLibre publish — is never
+// reassigned here just because THIS connection didn't have it mapped yet:
+// doing so would silently move the product away from a category some other
+// connection's ecom_channel_category_map row still points at. The
+// channel_category_map link for externalCategoryID is still recorded (via
+// EnsureLocalCategory above) regardless, so category prediction keeps
+// working; it just doesn't get written back onto the product.
 // The returned int64 is EnsureLocalCategory's leaf ecom_categories.id for
 // externalCategoryID regardless of which branch returns it — including the
-// early "already mapped" returns — so callers that only care about the local
-// category id (see RefreshChannelProductMapStatusAndCategory) don't need to
-// re-derive it themselves.
+// "product already has a category" early return — so callers that only care
+// about the local category id (see RefreshChannelProductMapStatusAndCategory)
+// don't need to re-derive it themselves.
 func (s *MercadoLibreProductSyncService) syncCategoryMapping(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, externalCategoryID string) (int64, error) {
 	if strings.TrimSpace(externalCategoryID) == "" {
 		return 0, nil
@@ -953,16 +1225,10 @@ func (s *MercadoLibreProductSyncService) syncCategoryMapping(ctx context.Context
 	}
 
 	if product.CategoryID != nil {
-		existing, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(*product.CategoryID, connectionID)
-		if err != nil && !errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
-			return leafCategoryID, fmt.Errorf("error loading channel category map for product %d: %w", product.ID, err)
-		}
-		if existing != nil {
-			return leafCategoryID, nil
-		}
+		return leafCategoryID, nil
 	}
 
-	if err := s.productRepository.UpdateCategoryID(product.ID, leafCategoryID, systemMercadoLibreSyncActorID); err != nil {
+	if err := s.productRepository.UpdateCategoryID(ctx, product.ID, leafCategoryID, systemMercadoLibreSyncActorID); err != nil {
 		return leafCategoryID, fmt.Errorf("error assigning category %d to product %d: %w", leafCategoryID, product.ID, err)
 	}
 
@@ -1025,7 +1291,7 @@ func (s *MercadoLibreProductSyncService) UpdatePricesAndStock(ctx context.Contex
 			continue
 		}
 
-		product, err := s.productRepository.FindBySKU(sku)
+		product, err := s.productRepository.FindBySKU(ctx, sku)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 				log.Printf("mercadolibre update: %s product not found", step)
@@ -1036,7 +1302,7 @@ func (s *MercadoLibreProductSyncService) UpdatePricesAndStock(ctx context.Contex
 			return nil, fmt.Errorf("error looking up product by sku %q: %w", sku, err)
 		}
 
-		existingListings, err := s.channelProductMapRepository.FindAllByProductAndConnection(product.ID, input.ConnectionID)
+		existingListings, err := s.channelProductMapRepository.FindAllByProductAndConnection(ctx, product.ID, input.ConnectionID)
 		if err != nil {
 			return nil, fmt.Errorf("error loading channel product map for product %d: %w", product.ID, err)
 		}
@@ -1047,7 +1313,7 @@ func (s *MercadoLibreProductSyncService) UpdatePricesAndStock(ctx context.Contex
 			continue
 		}
 
-		finalPrice, qtyAvailable, accessToken, err := s.resolvePriceStockAndToken(ctx, product.ID, input.ConnectionID)
+		finalPrice, qtyAvailable, accessToken, err := s.resolvePriceStockAndToken(ctx, product.ID, product.SKU, product.BrandID, input.ConnectionID)
 		if err != nil {
 			log.Printf("mercadolibre update: %s failed: %v", step, err)
 			result.Error = err.Error()
@@ -1075,8 +1341,8 @@ func (s *MercadoLibreProductSyncService) UpdatePricesAndStock(ctx context.Contex
 	return &UpdatePricesStockResult{Results: results}, nil
 }
 
-func (s *MercadoLibreProductSyncService) sumAvailableStock(productID int64) (int, error) {
-	stocks, err := s.productStockRepository.FindByProductID(productID)
+func (s *MercadoLibreProductSyncService) sumAvailableStock(ctx context.Context, productID int64) (int, error) {
+	stocks, err := s.productStockRepository.FindByProductID(ctx, productID)
 	if err != nil {
 		return 0, err
 	}
@@ -1132,7 +1398,7 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatus(ctx cont
 		return nil, ErrInvalidMercadoLibreConnection
 	}
 
-	listings, err := s.channelProductMapRepository.FindAllByConnectionID(connectionID)
+	listings, err := s.channelProductMapRepository.FindAllByConnectionID(ctx, connectionID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel product map for connection %d: %w", connectionID, err)
 	}
@@ -1154,7 +1420,7 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatus(ctx cont
 		}
 
 		sku := ""
-		if product, err := s.productRepository.FindByID(listing.ProductID); err == nil {
+		if product, err := s.productRepository.FindByID(ctx, listing.ProductID); err == nil {
 			sku = product.SKU
 		}
 
@@ -1213,7 +1479,7 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatus(ctx cont
 			continue
 		}
 
-		if err := s.channelProductMapRepository.UpdateStatus(item.listing.ID, mappedStatus); err != nil {
+		if err := s.channelProductMapRepository.UpdateStatus(ctx, item.listing.ID, mappedStatus); err != nil {
 			result.Error = fmt.Sprintf("error saving status: %v", err)
 			results = append(results, result)
 			continue
@@ -1278,8 +1544,7 @@ type ChannelProductMapSyncResult struct {
 //     of MercadoLibre's category tree into ecom_categories and upsert
 //     ecom_channel_category_map for it — reassigning the product's own
 //     category only under the same condition syncCategoryMapping already
-//     applies at publish time (no category yet, or its current one isn't
-//     mapped to this connection).
+//     applies at publish time (product has no category yet at all).
 //
 // Either change is persisted back into the row via Upsert (title/external id
 // passed through unchanged) so external_category_id keeps reflecting
@@ -1294,7 +1559,7 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatusAndCatego
 		return nil, ErrInvalidMercadoLibreConnection
 	}
 
-	listings, err := s.channelProductMapRepository.FindAllByConnectionID(connectionID)
+	listings, err := s.channelProductMapRepository.FindAllByConnectionID(ctx, connectionID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel product map for connection %d: %w", connectionID, err)
 	}
@@ -1318,7 +1583,7 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatusAndCatego
 		// product may end up nil (lookup failure) — still queued so its
 		// result item can report the lookup error rather than being silently
 		// dropped from the batch.
-		product, _ := s.productRepository.FindByID(listing.ProductID)
+		product, _ := s.productRepository.FindByID(ctx, listing.ProductID)
 
 		pending = append(pending, pendingListing{listing: listing, externalID: externalID, product: product})
 		if !seen[externalID] {
@@ -1404,7 +1669,7 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatusAndCatego
 			newExternalCategoryID = remoteCategoryID
 		}
 
-		if _, err := s.channelProductMapRepository.Upsert(mysqlInfra.UpsertChannelProductMapInput{
+		if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 			ProductID:          item.listing.ProductID,
 			ConnectionID:       connectionID,
 			VehicleFitmentID:   item.listing.VehicleFitmentID,

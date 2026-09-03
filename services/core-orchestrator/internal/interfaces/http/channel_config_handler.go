@@ -44,7 +44,7 @@ func (h *ConnectionCredentialsHandler) GetCredentials(w http.ResponseWriter, r *
 		}
 	}
 
-	result, err := h.service.GetPaginatedCredentials(offset, pageSize)
+	result, err := h.service.GetPaginatedCredentials(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -61,7 +61,7 @@ func (h *ConnectionCredentialsHandler) GetCredentialByID(w http.ResponseWriter, 
 		return
 	}
 
-	credential, err := h.service.GetCredentialByID(id)
+	credential, err := h.service.GetCredentialByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrConnectionCredentialNotFound) {
 			writeJSONError(w, http.StatusNotFound, "credential not found")
@@ -96,7 +96,7 @@ func (h *ConnectionCredentialsHandler) CreateCredential(w http.ResponseWriter, r
 		CreatedBy:    user.ID,
 	}
 
-	credential, err := h.service.CreateCredential(input)
+	credential, err := h.service.CreateCredential(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, channelConfigApp.ErrInvalidChannelConfig) {
 			writeJSONError(w, http.StatusBadRequest, "connectionId and keyName are required")
@@ -139,7 +139,7 @@ func (h *ConnectionCredentialsHandler) UpdateCredential(w http.ResponseWriter, r
 		UpdatedBy:   user.ID,
 	}
 
-	credential, err := h.service.UpdateCredential(id, input)
+	credential, err := h.service.UpdateCredential(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, channelConfigApp.ErrInvalidChannelConfig) {
 			writeJSONError(w, http.StatusBadRequest, "value is required")
@@ -164,7 +164,7 @@ func (h *ConnectionCredentialsHandler) DeleteCredential(w http.ResponseWriter, r
 		return
 	}
 
-	err := h.service.DeleteCredential(id)
+	err := h.service.DeleteCredential(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrConnectionCredentialNotFound) {
 			writeJSONError(w, http.StatusNotFound, "credential not found")
@@ -215,7 +215,7 @@ func (h *ConnectionSettingsHandler) GetSettings(w http.ResponseWriter, r *http.R
 		}
 	}
 
-	result, err := h.service.GetPaginatedSettings(offset, pageSize)
+	result, err := h.service.GetPaginatedSettings(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -232,7 +232,7 @@ func (h *ConnectionSettingsHandler) GetSettingByID(w http.ResponseWriter, r *htt
 		return
 	}
 
-	setting, err := h.service.GetSettingByID(id)
+	setting, err := h.service.GetSettingByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrConnectionSettingNotFound) {
 			writeJSONError(w, http.StatusNotFound, "setting not found")
@@ -267,7 +267,7 @@ func (h *ConnectionSettingsHandler) CreateSetting(w http.ResponseWriter, r *http
 		CreatedBy:    user.ID,
 	}
 
-	setting, err := h.service.CreateSetting(input)
+	setting, err := h.service.CreateSetting(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, channelConfigApp.ErrInvalidChannelConfig) {
 			writeJSONError(w, http.StatusBadRequest, "connectionId and keyName are required")
@@ -310,7 +310,7 @@ func (h *ConnectionSettingsHandler) UpdateSetting(w http.ResponseWriter, r *http
 		UpdatedBy:   user.ID,
 	}
 
-	setting, err := h.service.UpdateSetting(id, input)
+	setting, err := h.service.UpdateSetting(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, channelConfigApp.ErrInvalidChannelConfig) {
 			writeJSONError(w, http.StatusBadRequest, "value is required")
@@ -335,7 +335,7 @@ func (h *ConnectionSettingsHandler) DeleteSetting(w http.ResponseWriter, r *http
 		return
 	}
 
-	err := h.service.DeleteSetting(id)
+	err := h.service.DeleteSetting(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrConnectionSettingNotFound) {
 			writeJSONError(w, http.StatusNotFound, "setting not found")
@@ -371,7 +371,7 @@ func (h *ConnectionStatusHandler) GetStatusByConnection(w http.ResponseWriter, r
 		return
 	}
 
-	status, err := h.service.GetStatusByConnection(connectionID)
+	status, err := h.service.GetStatusByConnection(r.Context(), connectionID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrConnectionStatusNotFound) {
 			writeJSONError(w, http.StatusNotFound, "connection status not found")
@@ -420,7 +420,7 @@ func (h *ChannelParametersHandler) GetParameters(w http.ResponseWriter, r *http.
 		}
 	}
 
-	result, err := h.service.GetPaginatedParameters(offset, pageSize)
+	result, err := h.service.GetPaginatedParameters(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -437,7 +437,7 @@ func (h *ChannelParametersHandler) GetParameterByID(w http.ResponseWriter, r *ht
 		return
 	}
 
-	parameter, err := h.service.GetParameterByID(id)
+	parameter, err := h.service.GetParameterByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelParameterNotFound) {
 			writeJSONError(w, http.StatusNotFound, "parameter not found")
@@ -474,7 +474,7 @@ func (h *ChannelParametersHandler) GetParametersByChannel(w http.ResponseWriter,
 		}
 	}
 
-	result, err := h.service.GetParametersByChannel(channelID, offset, pageSize)
+	result, err := h.service.GetParametersByChannel(r.Context(), channelID, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -508,7 +508,7 @@ func (h *ChannelParametersHandler) CreateParameter(w http.ResponseWriter, r *htt
 		CreatedBy:     user.ID,
 	}
 
-	parameter, err := h.service.CreateParameter(input)
+	parameter, err := h.service.CreateParameter(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, channelConfigApp.ErrInvalidChannelConfig) {
 			writeJSONError(w, http.StatusBadRequest, "channelId and parameterName are required")
@@ -557,7 +557,7 @@ func (h *ChannelParametersHandler) UpdateParameter(w http.ResponseWriter, r *htt
 		UpdatedBy:     user.ID,
 	}
 
-	parameter, err := h.service.UpdateParameter(id, input)
+	parameter, err := h.service.UpdateParameter(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, channelConfigApp.ErrInvalidChannelConfig) {
 			writeJSONError(w, http.StatusBadRequest, "displayName is required")
@@ -582,7 +582,7 @@ func (h *ChannelParametersHandler) DeleteParameter(w http.ResponseWriter, r *htt
 		return
 	}
 
-	err := h.service.DeleteParameter(id)
+	err := h.service.DeleteParameter(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelParameterNotFound) {
 			writeJSONError(w, http.StatusNotFound, "parameter not found")

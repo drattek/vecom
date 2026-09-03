@@ -46,7 +46,7 @@ func (h *CurrencyHandler) GetCurrencies(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	result, err := h.service.GetPaginatedCurrencies(offset, pageSize)
+	result, err := h.service.GetPaginatedCurrencies(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -64,7 +64,7 @@ func (h *CurrencyHandler) GetCurrencyByID(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	currency, err := h.service.GetCurrencyByID(id)
+	currency, err := h.service.GetCurrencyByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrCurrencyNotFound) {
 			writeJSONError(w, http.StatusNotFound, "currency not found")
@@ -100,7 +100,7 @@ func (h *CurrencyHandler) CreateCurrency(w http.ResponseWriter, r *http.Request)
 		CreatedBy:     user.ID,
 	}
 
-	currency, err := h.service.CreateCurrency(input)
+	currency, err := h.service.CreateCurrency(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, currenciesApp.ErrInvalidCurrencyPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name, code, and symbol are required; decimalPlaces must be 0-8")
@@ -142,7 +142,7 @@ func (h *CurrencyHandler) UpdateCurrency(w http.ResponseWriter, r *http.Request)
 		UpdatedBy:     user.ID,
 	}
 
-	currency, err := h.service.UpdateCurrency(id, input)
+	currency, err := h.service.UpdateCurrency(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, currenciesApp.ErrInvalidCurrencyPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name, code, and symbol are required; decimalPlaces must be 0-8")
@@ -168,7 +168,7 @@ func (h *CurrencyHandler) DeleteCurrency(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err = h.service.DeleteCurrency(id)
+	err = h.service.DeleteCurrency(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrCurrencyNotFound) {
 			writeJSONError(w, http.StatusNotFound, "currency not found")

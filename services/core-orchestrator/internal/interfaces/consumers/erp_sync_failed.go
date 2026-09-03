@@ -1,6 +1,7 @@
 package consumers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 
@@ -8,8 +9,8 @@ import (
 	"core-orchestrator/internal/domain"
 )
 
-func ERPSyncFailedConsumer(service *sync.SyncService) func([]byte) error {
-	return func(body []byte) error {
+func ERPSyncFailedConsumer(service *sync.SyncService) func(context.Context, []byte) error {
+	return func(ctx context.Context, body []byte) error {
 		var event domain.SyncFailedEvent
 
 		err := json.Unmarshal(body, &event)
@@ -20,6 +21,6 @@ func ERPSyncFailedConsumer(service *sync.SyncService) func([]byte) error {
 
 		log.Printf("[item.sync.failed] received: %+v", event)
 
-		return service.ProcessERPSyncFailed(event)
+		return service.ProcessERPSyncFailed(ctx, event)
 	}
 }

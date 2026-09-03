@@ -44,7 +44,7 @@ func (h *SourceHandler) GetSources(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.service.GetPaginatedSources(offset, pageSize)
+	result, err := h.service.GetPaginatedSources(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -62,7 +62,7 @@ func (h *SourceHandler) GetSourceByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	source, err := h.service.GetSourceByID(id)
+	source, err := h.service.GetSourceByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrSourceNotFound) {
 			writeJSONError(w, http.StatusNotFound, "source not found")
@@ -96,7 +96,7 @@ func (h *SourceHandler) CreateSource(w http.ResponseWriter, r *http.Request) {
 		CreatedBy: user.ID,
 	}
 
-	source, err := h.service.CreateSource(input)
+	source, err := h.service.CreateSource(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, sourcesApp.ErrInvalidSourcePayload) {
 			writeJSONError(w, http.StatusBadRequest, "code and name are required")
@@ -136,7 +136,7 @@ func (h *SourceHandler) UpdateSource(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy: user.ID,
 	}
 
-	source, err := h.service.UpdateSource(id, input)
+	source, err := h.service.UpdateSource(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, sourcesApp.ErrInvalidSourcePayload) {
 			writeJSONError(w, http.StatusBadRequest, "code and name are required")
@@ -162,7 +162,7 @@ func (h *SourceHandler) DeleteSource(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteSource(id)
+	err = h.service.DeleteSource(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrSourceNotFound) {
 			writeJSONError(w, http.StatusNotFound, "source not found")

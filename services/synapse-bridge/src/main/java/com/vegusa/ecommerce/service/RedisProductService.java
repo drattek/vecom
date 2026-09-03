@@ -48,7 +48,11 @@ public class RedisProductService {
                 (RedisCallback<Object>)connection -> {
                     for (ItemInventLocationDTO product : products){
                         try {
-                            String key = "stock:" + product.articulo() + "-" + product.almacen();
+                            // La clave incluye la sucursal además del almacén porque el ERP puede repetir
+                            // el mismo código de almacén en distintas sucursales: usar solo articulo-almacen
+                            // pisaría el stock de una sucursal con el de otra (mismo problema ya corregido
+                            // para Nissan en saveExistencias).
+                            String key = "stock:" + product.articulo() + "-" + product.almacen() + "-" + product.sucursal();
 
                             String json = objectMapper.writeValueAsString(product);
 

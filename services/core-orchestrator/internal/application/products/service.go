@@ -1,6 +1,8 @@
 package products
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"log"
 
@@ -22,6 +24,7 @@ var validProductStatuses = map[string]bool{
 }
 
 type ProductService struct {
+	db                                    *sql.DB
 	repository                            *mysqlInfra.ProductRepository
 	pendingVehicleFitmentsRepository      *mysqlInfra.PendingProductVehicleFitmentsRepository
 	productVehicleCompatibilityRepository *mysqlInfra.ProductVehicleCompatibilityRepository
@@ -29,12 +32,14 @@ type ProductService struct {
 }
 
 func NewProductService(
+	db *sql.DB,
 	repository *mysqlInfra.ProductRepository,
 	pendingVehicleFitmentsRepository *mysqlInfra.PendingProductVehicleFitmentsRepository,
 	productVehicleCompatibilityRepository *mysqlInfra.ProductVehicleCompatibilityRepository,
 	partNumberSupersessionsRepository *mysqlInfra.PartNumberSupersessionsRepository,
 ) *ProductService {
 	return &ProductService{
+		db:                                    db,
 		repository:                            repository,
 		pendingVehicleFitmentsRepository:      pendingVehicleFitmentsRepository,
 		productVehicleCompatibilityRepository: productVehicleCompatibilityRepository,
@@ -42,7 +47,7 @@ func NewProductService(
 	}
 }
 
-func (s *ProductService) GetPaginatedProducts(offset, pageSize int) (*mysqlInfra.PaginatedProducts, error) {
+func (s *ProductService) GetPaginatedProducts(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string) (*mysqlInfra.PaginatedProducts, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -55,17 +60,21 @@ func (s *ProductService) GetPaginatedProducts(offset, pageSize int) (*mysqlInfra
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	// sortBy/sortDir/search are passed through as-is; FindPaginated
+	// whitelists sortBy against the columns it supports (sku, partNumber,
+	// name), falls back to the default id ASC order for anything else, and
+	// treats an empty search as no filter.
+	return s.repository.FindPaginated(ctx, offset, pageSize, sortBy, sortDir, search)
 }
 
-func (s *ProductService) GetProductByID(id int64) (*mysqlInfra.ProductDTO, error) {
+func (s *ProductService) GetProductByID(ctx context.Context, id int64) (*mysqlInfra.ProductDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidProductPayload
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *ProductService) CreateProduct(input mysqlInfra.CreateProductInput) (*mysqlInfra.ProductDTO, error) {
+func (s *ProductService) CreateProduct(ctx context.Context, input mysqlInfra.CreateProductInput) (*mysqlInfra.ProductDTO, error) {
 	if err := validateProductInput(input.SKU, input.PartNumber, input.Name, input.ProductType, input.Status, input.SourceID); err != nil {
 		return nil, err
 	}
@@ -73,13 +82,13 @@ func (s *ProductService) CreateProduct(input mysqlInfra.CreateProductInput) (*my
 		return nil, ErrInvalidProductPayload
 	}
 
-	product, err := s.repository.Create(input)
+	product, err := s.repository.Create(ctx, input)
 	if err != nil {
 		return nil, err
 	}
 
-	s.resolvePendingVehicleFitments(product)
-	s.resolvePartNumberSupersessions(product)
+	s.resolvePendingVehicleFitments(ctx, product)
+	s.resolvePartNumberSupersessions(ctx, product)
 
 	return product, nil
 }
@@ -89,15 +98,15 @@ func (s *ProductService) CreateProduct(input mysqlInfra.CreateProductInput) (*my
 // before this product existed) into real ecom_product_vehicle_compatibility
 // rows. It never fails product creation: a resolution issue here is logged
 // and left pending rather than rolling back the product that was just made.
-func (s *ProductService) resolvePendingVehicleFitments(product *mysqlInfra.ProductDTO) {
-	pending, err := s.pendingVehicleFitmentsRepository.FindUnresolvedBySKU(product.SKU)
+func (s *ProductService) resolvePendingVehicleFitments(ctx context.Context, product *mysqlInfra.ProductDTO) {
+	pending, err := s.pendingVehicleFitmentsRepository.FindUnresolvedBySKU(ctx, product.SKU)
 	if err != nil {
 		log.Printf("error looking up pending vehicle fitments for sku %s: %v", product.SKU, err)
 		return
 	}
 
 	for _, item := range pending {
-		_, err := s.productVehicleCompatibilityRepository.Create(mysqlInfra.CreateProductVehicleCompatibilityInput{
+		_, err := s.productVehicleCompatibilityRepository.Create(ctx, mysqlInfra.CreateProductVehicleCompatibilityInput{
 			ProductID:        product.ID,
 			VehicleFitmentID: item.VehicleFitmentID,
 			Motor:            item.Motor,
@@ -110,7 +119,7 @@ func (s *ProductService) resolvePendingVehicleFitments(product *mysqlInfra.Produ
 			continue
 		}
 
-		if markErr := s.pendingVehicleFitmentsRepository.MarkResolved(item.ID, product.ID, product.CreatedBy); markErr != nil {
+		if markErr := s.pendingVehicleFitmentsRepository.MarkResolved(ctx, item.ID, product.ID, product.CreatedBy); markErr != nil {
 			log.Printf("error marking pending vehicle fitment %d resolved for sku %s: %v", item.ID, product.SKU, markErr)
 		}
 	}
@@ -122,13 +131,13 @@ func (s *ProductService) resolvePendingVehicleFitments(product *mysqlInfra.Produ
 // los dos pudo no existir todavía en ecom_products cuando el ERP reportó la sucesión. Nunca
 // hace fallar la creación del producto: un problema de resolución aquí se loguea y la fila
 // queda pendiente en vez de revertir el producto que se acaba de crear.
-func (s *ProductService) resolvePartNumberSupersessions(product *mysqlInfra.ProductDTO) {
-	if err := s.partNumberSupersessionsRepository.ResolveForProduct(product.SourceID, product.ID, product.PartNumber, product.CreatedBy); err != nil {
+func (s *ProductService) resolvePartNumberSupersessions(ctx context.Context, product *mysqlInfra.ProductDTO) {
+	if err := s.partNumberSupersessionsRepository.ResolveForProduct(ctx, product.SourceID, product.ID, product.PartNumber, product.CreatedBy); err != nil {
 		log.Printf("error resolving part number supersessions for part number %s: %v", product.PartNumber, err)
 	}
 }
 
-func (s *ProductService) UpdateProduct(id int64, input mysqlInfra.UpdateProductInput) (*mysqlInfra.ProductDTO, error) {
+func (s *ProductService) UpdateProduct(ctx context.Context, id int64, input mysqlInfra.UpdateProductInput) (*mysqlInfra.ProductDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidProductPayload
 	}
@@ -139,14 +148,14 @@ func (s *ProductService) UpdateProduct(id int64, input mysqlInfra.UpdateProductI
 		return nil, ErrInvalidProductPayload
 	}
 
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *ProductService) DeleteProduct(id int64) error {
+func (s *ProductService) DeleteProduct(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidProductPayload
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }
 
 func validateProductInput(sku, partNumber, name, productType string, status *string, sourceID int64) error {

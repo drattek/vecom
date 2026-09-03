@@ -1,6 +1,8 @@
 package channel_sync_queue
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"fmt"
 	"strings"
@@ -39,17 +41,20 @@ type EnqueueResult struct {
 }
 
 type Service struct {
+	db             *sql.DB
 	productRepo    *mysqlInfra.ProductRepository
 	connectionRepo *mysqlInfra.ChannelConnectionRepository
 	queueRepo      *mysqlInfra.ChannelSyncQueueRepository
 }
 
 func NewService(
+	db *sql.DB,
 	productRepo *mysqlInfra.ProductRepository,
 	connectionRepo *mysqlInfra.ChannelConnectionRepository,
 	queueRepo *mysqlInfra.ChannelSyncQueueRepository,
 ) *Service {
 	return &Service{
+		db:             db,
 		productRepo:    productRepo,
 		connectionRepo: connectionRepo,
 		queueRepo:      queueRepo,
@@ -62,7 +67,7 @@ func NewService(
 // is validated before each insert rather than relying on the FK to reject
 // it, so the caller gets a specific per-pair error instead of a raw SQL
 // failure.
-func (s *Service) Enqueue(input EnqueueInput) (*EnqueueResult, error) {
+func (s *Service) Enqueue(ctx context.Context, input EnqueueInput) (*EnqueueResult, error) {
 	if len(input.Items) == 0 {
 		return nil, ErrEmptyEnqueueRequest
 	}
@@ -81,7 +86,7 @@ func (s *Service) Enqueue(input EnqueueInput) (*EnqueueResult, error) {
 			continue
 		}
 
-		product, err := s.productRepo.FindBySKU(sku)
+		product, err := s.productRepo.FindBySKU(ctx, sku)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 				results = append(results, EnqueueResultItem{SKU: sku, Error: "product not found for sku"})
@@ -99,7 +104,7 @@ func (s *Service) Enqueue(input EnqueueInput) (*EnqueueResult, error) {
 				continue
 			}
 
-			if _, err := s.connectionRepo.FindByID(connectionID); err != nil {
+			if _, err := s.connectionRepo.FindByID(ctx, connectionID); err != nil {
 				if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
 					result.Error = "connection not found"
 					results = append(results, result)
@@ -108,7 +113,7 @@ func (s *Service) Enqueue(input EnqueueInput) (*EnqueueResult, error) {
 				return nil, fmt.Errorf("error validating connection %d: %w", connectionID, err)
 			}
 
-			entry, err := s.queueRepo.Create(mysqlInfra.CreateChannelSyncQueueEntryInput{
+			entry, err := s.queueRepo.Create(ctx, mysqlInfra.CreateChannelSyncQueueEntryInput{
 				ProductID:    product.ID,
 				ConnectionID: connectionID,
 				UpdatedBy:    input.UpdatedBy,

@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -35,38 +36,38 @@ type UpsertConnectionStatusInput struct {
 }
 
 type ConnectionStatusRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewConnectionStatusRepository(db *sql.DB) *ConnectionStatusRepository {
+func NewConnectionStatusRepository(db Querier) *ConnectionStatusRepository {
 	return &ConnectionStatusRepository{db: db}
 }
 
-func (r *ConnectionStatusRepository) FindByConnectionID(connectionID int64) (*ConnectionStatusDTO, error) {
+func (r *ConnectionStatusRepository) FindByConnectionID(ctx context.Context, connectionID int64) (*ConnectionStatusDTO, error) {
 	query := `
 		SELECT id, connection_id, authenticated, last_auth, last_error, expires_at, last_sync, created_at, updated_at
 		FROM ecom_connection_status
 		WHERE connection_id = ?
 	`
 
-	return scanConnectionStatusRow(r.db.QueryRow(query, connectionID))
+	return scanConnectionStatusRow(r.db.QueryRowContext(ctx, query, connectionID))
 }
 
-func (r *ConnectionStatusRepository) findByID(id int64) (*ConnectionStatusDTO, error) {
+func (r *ConnectionStatusRepository) findByID(ctx context.Context, id int64) (*ConnectionStatusDTO, error) {
 	query := `
 		SELECT id, connection_id, authenticated, last_auth, last_error, expires_at, last_sync, created_at, updated_at
 		FROM ecom_connection_status
 		WHERE id = ?
 	`
 
-	return scanConnectionStatusRow(r.db.QueryRow(query, id))
+	return scanConnectionStatusRow(r.db.QueryRowContext(ctx, query, id))
 }
 
 // Upsert creates the status row for a connection on first write, or updates it
 // on subsequent writes, preserving LastAuth/ExpiresAt/LastSync when the caller
 // does not provide a new value for them.
-func (r *ConnectionStatusRepository) Upsert(input UpsertConnectionStatusInput) (*ConnectionStatusDTO, error) {
-	existing, err := r.FindByConnectionID(input.ConnectionID)
+func (r *ConnectionStatusRepository) Upsert(ctx context.Context, input UpsertConnectionStatusInput) (*ConnectionStatusDTO, error) {
+	existing, err := r.FindByConnectionID(ctx, input.ConnectionID)
 	if err != nil && !errors.Is(err, ErrConnectionStatusNotFound) {
 		return nil, fmt.Errorf("error loading connection status: %w", err)
 	}
@@ -93,7 +94,7 @@ func (r *ConnectionStatusRepository) Upsert(input UpsertConnectionStatusInput) (
 			VALUES (?, ?, ?, ?, ?, ?)
 		`
 
-		result, err := r.db.Exec(query, input.ConnectionID, input.Authenticated, lastAuth, input.LastError, expiresAt, lastSync)
+		result, err := r.db.ExecContext(ctx, query, input.ConnectionID, input.Authenticated, lastAuth, input.LastError, expiresAt, lastSync)
 		if err != nil {
 			return nil, fmt.Errorf("error creating connection status: %w", err)
 		}
@@ -103,7 +104,7 @@ func (r *ConnectionStatusRepository) Upsert(input UpsertConnectionStatusInput) (
 			return nil, fmt.Errorf("error getting last insert id: %w", err)
 		}
 
-		return r.findByID(id)
+		return r.findByID(ctx, id)
 	}
 
 	query := `
@@ -112,11 +113,11 @@ func (r *ConnectionStatusRepository) Upsert(input UpsertConnectionStatusInput) (
 		WHERE id = ?
 	`
 
-	if _, err := r.db.Exec(query, input.Authenticated, lastAuth, input.LastError, expiresAt, lastSync, existing.ID); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, input.Authenticated, lastAuth, input.LastError, expiresAt, lastSync, existing.ID); err != nil {
 		return nil, fmt.Errorf("error updating connection status: %w", err)
 	}
 
-	return r.findByID(existing.ID)
+	return r.findByID(ctx, existing.ID)
 }
 
 // DueTokenRefreshDTO identifies a connection whose token is close to expiring,
@@ -132,7 +133,7 @@ type DueTokenRefreshDTO struct {
 // before threshold. Connections with no expires_at (e.g. API-key based
 // integrations like Odoo, which have nothing to refresh) and connections/
 // channels that are soft-deleted or not active are excluded.
-func (r *ConnectionStatusRepository) FindDueForRefresh(threshold time.Time) ([]DueTokenRefreshDTO, error) {
+func (r *ConnectionStatusRepository) FindDueForRefresh(ctx context.Context, threshold time.Time) ([]DueTokenRefreshDTO, error) {
 	query := `
 		SELECT cs.connection_id, ch.code, cs.expires_at
 		FROM ecom_connection_status cs
@@ -145,7 +146,7 @@ func (r *ConnectionStatusRepository) FindDueForRefresh(threshold time.Time) ([]D
 			AND ch.status = 'active'
 	`
 
-	rows, err := r.db.Query(query, threshold)
+	rows, err := r.db.QueryContext(ctx, query, threshold)
 	if err != nil {
 		return nil, fmt.Errorf("error querying connections due for token refresh: %w", err)
 	}

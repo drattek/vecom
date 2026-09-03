@@ -1,13 +1,26 @@
 package config
 
 import (
+	"log"
 	"os"
 	"strconv"
 	"time"
 )
 
+// jwtSecretPlaceholder es el valor que traía el fallback anterior. Se rechaza
+// explícitamente para que nadie lo copie al .env pensando que "ya está seteado".
+const jwtSecretPlaceholder = "change-me-in-production"
+
 type Config struct {
+	// Port es el puerto HTTPS de core-orchestrator. Siempre 443 (env SERVER_PORT,
+	// default 443) — coincide con docker-compose.yml y .env.
 	Port string
+
+	// ShutdownTimeout acota cuánto espera main() a que server.Shutdown drene
+	// las requests en vuelo (crear listing, actualizar precio, etc.) ante un
+	// SIGTERM/SIGINT antes de forzar el cierre. Debe ser menor que el período
+	// de gracia que el orquestador de deploy concede al contenedor.
+	ShutdownTimeout time.Duration
 
 	TLSKeystorePath     string
 	TLSKeystorePassword string
@@ -22,6 +35,17 @@ type Config struct {
 	MySQLUser     string
 	MySQLPassword string
 	MySQLDatabase string
+
+	// Pool de conexiones MySQL (database/sql). Sin límites, un pico de carga o
+	// el endpoint de migración disparando muchas queries puede agotar
+	// max_connections de MySQL; sin ConnMaxLifetime aparecen "invalid
+	// connection" intermitentes tras un reinicio de MySQL o detrás de un LB.
+	// Si MySQLMaxIdleConns supera a MySQLMaxOpenConns, database/sql lo recorta
+	// solo al valor de open.
+	MySQLMaxOpenConns    int
+	MySQLMaxIdleConns    int
+	MySQLConnMaxLifetime time.Duration
+	MySQLConnMaxIdleTime time.Duration
 
 	RabbitMQHost     string
 	RabbitMQPort     string
@@ -47,17 +71,36 @@ type Config struct {
 	// re-checking every active MERCADOLIBRE connection for listings still
 	// needing vehicle compatibilities pushed (see
 	// internal/interfaces/schedulers/compatibilities_fix_scheduler.go). Each
-	// run can cost up to ~20 MercadoLibre API calls per connection
-	// (FixUnderReviewListings' default limit of 10 rows, ~2 calls/row),
-	// against a 10-calls/minute budget shared by the whole app.
+	// run costs ~2 MercadoLibre API calls per eligible row (GetItem +
+	// create), against a 10-calls/minute budget shared by the whole app —
+	// FixUnderReviewListings processes every eligible row per connection, so
+	// a large backlog makes the run take longer rather than fail.
 	CompatibilitiesFixRunAtHour   int
 	CompatibilitiesFixRunAtMinute int
+
+	// SIEAPIToken authenticates requests to Banco de México's SIE API (see
+	// internal/infrastructure/banxico), used by ExchangeRateScheduler to
+	// keep ecom_exchange_rates' USD→MXN row current daily.
+	SIEAPIToken string
+
+	// ExchangeRateRunAtHour/ExchangeRateRunAtMinute configure the
+	// server-local time of day ExchangeRateScheduler runs once a day. See
+	// internal/interfaces/schedulers/exchange_rate_scheduler.go — default
+	// is 08:00 which, on the UTC deployment server, is 02:00 CDMX (UTC-6);
+	// the job then picks up the most recent FIX rate already published by
+	// Banxico (SF43718, published ~12:00-13:00 hrs CDMX the prior business
+	// day).
+	ExchangeRateRunAtHour   int
+	ExchangeRateRunAtMinute int
 }
 
 func Load() Config {
+	// core-orchestrator siempre sirve HTTPS en :443 (ver docker-compose.yml y
+	// .env). El default acá coincide con eso para que el binario levante en el
+	// puerto correcto aunque falte SERVER_PORT.
 	port := os.Getenv("SERVER_PORT")
 	if port == "" {
-		port = "8081"
+		port = "443"
 	}
 
 	tlsKeystorePath := os.Getenv("SERVER_TLS_KEYSTORE_PATH")
@@ -67,9 +110,12 @@ func Load() Config {
 		tlsKeystoreType = "PKCS12"
 	}
 
+	// JWT_SECRET es obligatorio: sin él (o con el placeholder viejo) cualquiera
+	// puede firmar un JWT válido —rol admin incluido— y RequireAuth lo acepta.
+	// Se aborta el arranque en vez de caer a un secreto público.
 	jwtSecret := os.Getenv("JWT_SECRET")
-	if jwtSecret == "" {
-		jwtSecret = "change-me-in-production"
+	if jwtSecret == "" || jwtSecret == jwtSecretPlaceholder {
+		log.Fatal("JWT_SECRET no está definido (o usa el valor placeholder): la app no puede arrancar con un secreto de firma público")
 	}
 
 	jwtIssuer := os.Getenv("JWT_ISSUER")
@@ -103,6 +149,34 @@ func Load() Config {
 	mysqlDatabase := os.Getenv("MYSQL_DATABASE")
 	if mysqlDatabase == "" {
 		mysqlDatabase = "ecommerce"
+	}
+
+	mysqlMaxOpenConns := 25
+	if raw := os.Getenv("MYSQL_MAX_OPEN_CONNS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			mysqlMaxOpenConns = parsed
+		}
+	}
+
+	mysqlMaxIdleConns := 25
+	if raw := os.Getenv("MYSQL_MAX_IDLE_CONNS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			mysqlMaxIdleConns = parsed
+		}
+	}
+
+	mysqlConnMaxLifetimeMinutes := 5
+	if raw := os.Getenv("MYSQL_CONN_MAX_LIFETIME_MINUTES"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			mysqlConnMaxLifetimeMinutes = parsed
+		}
+	}
+
+	mysqlConnMaxIdleTimeMinutes := 5
+	if raw := os.Getenv("MYSQL_CONN_MAX_IDLE_TIME_MINUTES"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			mysqlConnMaxIdleTimeMinutes = parsed
+		}
 	}
 
 	rabbitMQHost := os.Getenv("RABBITMQ_HOST")
@@ -177,8 +251,32 @@ func Load() Config {
 		}
 	}
 
+	shutdownTimeoutSeconds := 25
+	if raw := os.Getenv("SERVER_SHUTDOWN_TIMEOUT_SECONDS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			shutdownTimeoutSeconds = parsed
+		}
+	}
+
+	sieAPIToken := os.Getenv("SIE_API_TOKEN")
+
+	exchangeRateRunAtHour := 8
+	if raw := os.Getenv("EXCHANGE_RATE_RUN_AT_HOUR"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 23 {
+			exchangeRateRunAtHour = parsed
+		}
+	}
+
+	exchangeRateRunAtMinute := 0
+	if raw := os.Getenv("EXCHANGE_RATE_RUN_AT_MINUTE"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 59 {
+			exchangeRateRunAtMinute = parsed
+		}
+	}
+
 	return Config{
 		Port:                port,
+		ShutdownTimeout:     time.Duration(shutdownTimeoutSeconds) * time.Second,
 		TLSKeystorePath:     tlsKeystorePath,
 		TLSKeystorePassword: tlsKeystorePassword,
 		TLSKeystoreType:     tlsKeystoreType,
@@ -190,12 +288,17 @@ func Load() Config {
 		MySQLUser:           mysqlUser,
 		MySQLPassword:       mysqlPassword,
 		MySQLDatabase:       mysqlDatabase,
-		RabbitMQHost:        rabbitMQHost,
-		RabbitMQPort:        rabbitMQPort,
-		RabbitMQUser:        rabbitMQUser,
-		RabbitMQPassword:    rabbitMQPassword,
-		RedisHost:           redisHost,
-		RedisPort:           redisPort,
+
+		MySQLMaxOpenConns:    mysqlMaxOpenConns,
+		MySQLMaxIdleConns:    mysqlMaxIdleConns,
+		MySQLConnMaxLifetime: time.Duration(mysqlConnMaxLifetimeMinutes) * time.Minute,
+		MySQLConnMaxIdleTime: time.Duration(mysqlConnMaxIdleTimeMinutes) * time.Minute,
+		RabbitMQHost:         rabbitMQHost,
+		RabbitMQPort:         rabbitMQPort,
+		RabbitMQUser:         rabbitMQUser,
+		RabbitMQPassword:     rabbitMQPassword,
+		RedisHost:            redisHost,
+		RedisPort:            redisPort,
 
 		TokenRefreshPollInterval: time.Duration(tokenRefreshPollMinutes) * time.Minute,
 		TokenRefreshLookahead:    time.Duration(tokenRefreshLookaheadMinutes) * time.Minute,
@@ -205,5 +308,9 @@ func Load() Config {
 
 		CompatibilitiesFixRunAtHour:   compatibilitiesFixRunAtHour,
 		CompatibilitiesFixRunAtMinute: compatibilitiesFixRunAtMinute,
+
+		SIEAPIToken:             sieAPIToken,
+		ExchangeRateRunAtHour:   exchangeRateRunAtHour,
+		ExchangeRateRunAtMinute: exchangeRateRunAtMinute,
 	}
 }

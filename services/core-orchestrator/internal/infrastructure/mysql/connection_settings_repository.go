@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"crypto/aes"
 	"crypto/cipher"
 	"crypto/rand"
@@ -51,12 +52,12 @@ type UpdateConnectionSettingInput struct {
 }
 
 type ConnectionSettingsRepository struct {
-	db            *sql.DB
+	db            Querier
 	encryptionKey []byte
 	encryptionErr error
 }
 
-func NewConnectionSettingsRepository(db *sql.DB) *ConnectionSettingsRepository {
+func NewConnectionSettingsRepository(db Querier) *ConnectionSettingsRepository {
 	key, err := loadConnectionSettingsEncryptionKey()
 
 	return &ConnectionSettingsRepository{
@@ -66,7 +67,7 @@ func NewConnectionSettingsRepository(db *sql.DB) *ConnectionSettingsRepository {
 	}
 }
 
-func (r *ConnectionSettingsRepository) FindPaginated(offset, pageSize int) (*PaginatedConnectionSettings, error) {
+func (r *ConnectionSettingsRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedConnectionSettings, error) {
 	query := `
 		SELECT id, connection_id, key_name, value, is_encrypted, created_by, updated_by, created_at, updated_at
 		FROM ecom_connection_settings
@@ -74,7 +75,7 @@ func (r *ConnectionSettingsRepository) FindPaginated(offset, pageSize int) (*Pag
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -97,14 +98,14 @@ func (r *ConnectionSettingsRepository) FindPaginated(offset, pageSize int) (*Pag
 
 	countQuery := "SELECT COUNT(*) FROM ecom_connection_settings WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedConnectionSettings{Data: settings, Total: total}, nil
 }
 
-func (r *ConnectionSettingsRepository) FindByID(id int64) (*ConnectionSettingDTO, error) {
+func (r *ConnectionSettingsRepository) FindByID(ctx context.Context, id int64) (*ConnectionSettingDTO, error) {
 	query := `
 		SELECT id, connection_id, key_name, value, is_encrypted, created_by, updated_by, created_at, updated_at
 		FROM ecom_connection_settings
@@ -112,7 +113,7 @@ func (r *ConnectionSettingsRepository) FindByID(id int64) (*ConnectionSettingDTO
 	`
 
 	var c ConnectionSettingDTO
-	if err := r.db.QueryRow(query, id).Scan(&c.ID, &c.ConnectionID, &c.KeyName, &c.Value, &c.IsEncrypted, &c.CreatedBy, &c.UpdatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&c.ID, &c.ConnectionID, &c.KeyName, &c.Value, &c.IsEncrypted, &c.CreatedBy, &c.UpdatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrConnectionSettingNotFound
 		}
@@ -128,14 +129,14 @@ func (r *ConnectionSettingsRepository) FindByID(id int64) (*ConnectionSettingDTO
 	return &c, nil
 }
 
-func (r *ConnectionSettingsRepository) FindByConnectionID(connectionID int64) ([]ConnectionSettingDTO, error) {
+func (r *ConnectionSettingsRepository) FindByConnectionID(ctx context.Context, connectionID int64) ([]ConnectionSettingDTO, error) {
 	query := `
 		SELECT id, connection_id, key_name, value, is_encrypted, created_by, updated_by, created_at, updated_at
 		FROM ecom_connection_settings
 		WHERE connection_id = ? AND deleted_at IS NULL
 	`
 
-	rows, err := r.db.Query(query, connectionID)
+	rows, err := r.db.QueryContext(ctx, query, connectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -159,7 +160,7 @@ func (r *ConnectionSettingsRepository) FindByConnectionID(connectionID int64) ([
 	return settings, nil
 }
 
-func (r *ConnectionSettingsRepository) Create(input CreateConnectionSettingInput) (*ConnectionSettingDTO, error) {
+func (r *ConnectionSettingsRepository) Create(ctx context.Context, input CreateConnectionSettingInput) (*ConnectionSettingDTO, error) {
 	valueToStore, err := r.encryptIfNeeded(input.Value, input.IsEncrypted)
 	if err != nil {
 		return nil, err
@@ -170,7 +171,7 @@ func (r *ConnectionSettingsRepository) Create(input CreateConnectionSettingInput
 		VALUES (?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ConnectionID, input.KeyName, valueToStore, input.IsEncrypted, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.ConnectionID, input.KeyName, valueToStore, input.IsEncrypted, input.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -180,10 +181,10 @@ func (r *ConnectionSettingsRepository) Create(input CreateConnectionSettingInput
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ConnectionSettingsRepository) Update(id int64, input UpdateConnectionSettingInput) (*ConnectionSettingDTO, error) {
+func (r *ConnectionSettingsRepository) Update(ctx context.Context, id int64, input UpdateConnectionSettingInput) (*ConnectionSettingDTO, error) {
 	valueToStore, err := r.encryptIfNeeded(input.Value, input.IsEncrypted)
 	if err != nil {
 		return nil, err
@@ -195,7 +196,7 @@ func (r *ConnectionSettingsRepository) Update(id int64, input UpdateConnectionSe
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, valueToStore, input.IsEncrypted, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, valueToStore, input.IsEncrypted, input.UpdatedBy, id)
 	if err != nil {
 		return nil, err
 	}
@@ -209,13 +210,13 @@ func (r *ConnectionSettingsRepository) Update(id int64, input UpdateConnectionSe
 		return nil, ErrConnectionSettingNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ConnectionSettingsRepository) SoftDelete(id int64) error {
+func (r *ConnectionSettingsRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := "UPDATE ecom_connection_settings SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

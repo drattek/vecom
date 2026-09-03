@@ -1,7 +1,9 @@
 package credentials
 
 import (
+	"context"
 	"crypto/rand"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -18,6 +20,7 @@ var ErrInvalidCredentials = errors.New("invalid credentials")
 var ErrUnauthorized = errors.New("unauthorized")
 
 type AuthService struct {
+	db         *sql.DB
 	repository *mysqlInfra.AuthRepository
 	jwtSecret  []byte
 	jwtIssuer  string
@@ -30,8 +33,9 @@ type AccessClaims struct {
 	jwt.RegisteredClaims
 }
 
-func NewAuthService(repository *mysqlInfra.AuthRepository, jwtSecret, jwtIssuer string, jwtTTLMinutes int) *AuthService {
+func NewAuthService(db *sql.DB, repository *mysqlInfra.AuthRepository, jwtSecret, jwtIssuer string, jwtTTLMinutes int) *AuthService {
 	return &AuthService{
+		db:         db,
 		repository: repository,
 		jwtSecret:  []byte(jwtSecret),
 		jwtIssuer:  jwtIssuer,
@@ -39,13 +43,13 @@ func NewAuthService(repository *mysqlInfra.AuthRepository, jwtSecret, jwtIssuer 
 	}
 }
 
-func (s *AuthService) Login(username, password, userAgent, clientIP string) (*domain.LoginResult, error) {
+func (s *AuthService) Login(ctx context.Context, username, password, userAgent, clientIP string) (*domain.LoginResult, error) {
 	username = strings.TrimSpace(username)
 	if username == "" || password == "" {
 		return nil, ErrInvalidCredentials
 	}
 
-	credentials, err := s.repository.FindUserCredentialsByUsername(username)
+	credentials, err := s.repository.FindUserCredentialsByUsername(ctx, username)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrAuthUserNotFound) {
 			return nil, ErrInvalidCredentials
@@ -88,7 +92,7 @@ func (s *AuthService) Login(username, password, userAgent, clientIP string) (*do
 		return nil, fmt.Errorf("error signing jwt: %w", err)
 	}
 
-	err = s.repository.StoreToken(jti, credentials.ID, tokenString, issuedAt, expiresAt, userAgent, clientIP)
+	err = s.repository.StoreToken(ctx, jti, credentials.ID, tokenString, issuedAt, expiresAt, userAgent, clientIP)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +110,35 @@ func (s *AuthService) Login(username, password, userAgent, clientIP string) (*do
 	}, nil
 }
 
-func (s *AuthService) ValidateToken(tokenString string) (*domain.AuthUser, error) {
+// Logout revokes the access token so it can no longer be used. A missing,
+// malformed or otherwise unverifiable token yields ErrUnauthorized; a valid
+// token whose row is already revoked/expired/unknown still returns nil, keeping
+// logout idempotent.
+func (s *AuthService) Logout(ctx context.Context, tokenString string) error {
+	tokenString = strings.TrimSpace(tokenString)
+	if tokenString == "" {
+		return ErrUnauthorized
+	}
+
+	claims := &AccessClaims{}
+	_, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (interface{}, error) {
+		if token.Method != jwt.SigningMethodHS256 {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+		return s.jwtSecret, nil
+	}, jwt.WithIssuer(s.jwtIssuer), jwt.WithLeeway(5*time.Second))
+	if err != nil || claims.ID == "" {
+		return ErrUnauthorized
+	}
+
+	if err := s.repository.RevokeToken(ctx, claims.ID, tokenString); err != nil {
+		return fmt.Errorf("error revoking token on logout: %w", err)
+	}
+
+	return nil
+}
+
+func (s *AuthService) ValidateToken(ctx context.Context, tokenString string) (*domain.AuthUser, error) {
 	if strings.TrimSpace(tokenString) == "" {
 		return nil, ErrUnauthorized
 	}
@@ -126,7 +158,7 @@ func (s *AuthService) ValidateToken(tokenString string) (*domain.AuthUser, error
 		return nil, ErrUnauthorized
 	}
 
-	user, err := s.repository.FindActiveUserByToken(claims.ID, tokenString)
+	user, err := s.repository.FindActiveUserByToken(ctx, claims.ID, tokenString)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrAuthUserNotFound) {
 			return nil, ErrUnauthorized

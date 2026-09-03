@@ -79,7 +79,7 @@ func (h *MercadoLibrePauseUnmappedListingsHandler) Run(w http.ResponseWriter, r 
 		return
 	}
 
-	mapped, err := h.channelProductMapRepo.FindAllByConnectionID(pauseUnmappedListingsConnectionID)
+	mapped, err := h.channelProductMapRepo.FindAllByConnectionID(r.Context(), pauseUnmappedListingsConnectionID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, fmt.Sprintf("error reading ecom_channel_product_map: %v", err))
 		return

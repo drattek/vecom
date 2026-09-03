@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -52,7 +53,7 @@ func NewPartNumberSupersessionsRepository(db Querier) *PartNumberSupersessionsRe
 // actual (a lo más una fila por source_id+old_part_number, igual que ecom_product_stock o
 // ecom_product_prices, no un log de eventos), esto es lo que se usa para decidir si lo que
 // llegó del ERP ya está reflejado o si hay que crear/actualizar.
-func (r *PartNumberSupersessionsRepository) FindByOldPartNumber(sourceID int64, oldPartNumber string) (*PartNumberSupersessionDTO, error) {
+func (r *PartNumberSupersessionsRepository) FindByOldPartNumber(ctx context.Context, sourceID int64, oldPartNumber string) (*PartNumberSupersessionDTO, error) {
 	query := `
 		SELECT id, source_id, old_part_number, new_part_number, old_product_id, new_product_id,
 			old_resolved_at, new_resolved_at, created_by, updated_by, created_at, updated_at, deleted_at
@@ -61,17 +62,17 @@ func (r *PartNumberSupersessionsRepository) FindByOldPartNumber(sourceID int64, 
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, sourceID, oldPartNumber)
+	row := r.db.QueryRowContext(ctx, query, sourceID, oldPartNumber)
 	return scanPartNumberSupersessionRow(row)
 }
 
-func (r *PartNumberSupersessionsRepository) Create(input CreatePartNumberSupersessionInput) (*PartNumberSupersessionDTO, error) {
+func (r *PartNumberSupersessionsRepository) Create(ctx context.Context, input CreatePartNumberSupersessionInput) (*PartNumberSupersessionDTO, error) {
 	query := `
 		INSERT INTO ecom_part_number_supersessions (source_id, old_part_number, new_part_number, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.SourceID, input.OldPartNumber, input.NewPartNumber, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.SourceID, input.OldPartNumber, input.NewPartNumber, input.CreatedBy)
 	if err != nil {
 		if isDuplicateKeyError(err) {
 			return nil, ErrPartNumberSupersessionAlreadyExists
@@ -87,7 +88,7 @@ func (r *PartNumberSupersessionsRepository) Create(input CreatePartNumberSuperse
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
 // Update cambia el número de parte sucesor de una sucesión existente (el ERP corrigió a qué
@@ -95,14 +96,14 @@ func (r *PartNumberSupersessionsRepository) Create(input CreatePartNumberSuperse
 // old_part_number no cambió, pero new_product_id/new_resolved_at se limpian: el vínculo
 // resuelto anteriormente apuntaba al número de parte viejo, ya no es válido, y
 // ResolveForProduct lo volverá a resolver contra el nuevo valor cuando corresponda.
-func (r *PartNumberSupersessionsRepository) Update(id int64, input UpdatePartNumberSupersessionInput) (*PartNumberSupersessionDTO, error) {
+func (r *PartNumberSupersessionsRepository) Update(ctx context.Context, id int64, input UpdatePartNumberSupersessionInput) (*PartNumberSupersessionDTO, error) {
 	query := `
 		UPDATE ecom_part_number_supersessions
 		SET new_part_number = ?, new_product_id = NULL, new_resolved_at = NULL, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.NewPartNumber, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.NewPartNumber, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating part number supersession: %w", err)
 	}
@@ -115,10 +116,10 @@ func (r *PartNumberSupersessionsRepository) Update(id int64, input UpdatePartNum
 		return nil, ErrPartNumberSupersessionNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *PartNumberSupersessionsRepository) FindByID(id int64) (*PartNumberSupersessionDTO, error) {
+func (r *PartNumberSupersessionsRepository) FindByID(ctx context.Context, id int64) (*PartNumberSupersessionDTO, error) {
 	query := `
 		SELECT id, source_id, old_part_number, new_part_number, old_product_id, new_product_id,
 			old_resolved_at, new_resolved_at, created_by, updated_by, created_at, updated_at, deleted_at
@@ -127,7 +128,7 @@ func (r *PartNumberSupersessionsRepository) FindByID(id int64) (*PartNumberSuper
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanPartNumberSupersessionRow(row)
 }
 
@@ -135,7 +136,7 @@ func (r *PartNumberSupersessionsRepository) FindByID(id int64) (*PartNumberSuper
 // el lado "nuevo" — es decir, toda pieza que fue reemplazada POR este número de parte. A
 // diferencia de FindUnresolvedByNewPartNumber, no filtra por new_product_id IS NULL: se usa
 // para recorrer la cadena de sucesión hacia atrás (predecesores), no para resolver FKs.
-func (r *PartNumberSupersessionsRepository) FindByNewPartNumber(sourceID int64, newPartNumber string) ([]PartNumberSupersessionDTO, error) {
+func (r *PartNumberSupersessionsRepository) FindByNewPartNumber(ctx context.Context, sourceID int64, newPartNumber string) ([]PartNumberSupersessionDTO, error) {
 	query := `
 		SELECT id, source_id, old_part_number, new_part_number, old_product_id, new_product_id,
 			old_resolved_at, new_resolved_at, created_by, updated_by, created_at, updated_at, deleted_at
@@ -144,12 +145,12 @@ func (r *PartNumberSupersessionsRepository) FindByNewPartNumber(sourceID int64, 
 		ORDER BY id ASC
 	`
 
-	return r.queryPartNumberSupersessions(query, sourceID, newPartNumber)
+	return r.queryPartNumberSupersessions(ctx, query, sourceID, newPartNumber)
 }
 
 // FindUnresolvedByOldPartNumber devuelve las sucesiones donde este número de parte es el
 // lado "viejo" (la pieza reemplazada) y todavía no se vinculó a un ecom_products.id.
-func (r *PartNumberSupersessionsRepository) FindUnresolvedByOldPartNumber(sourceID int64, partNumber string) ([]PartNumberSupersessionDTO, error) {
+func (r *PartNumberSupersessionsRepository) FindUnresolvedByOldPartNumber(ctx context.Context, sourceID int64, partNumber string) ([]PartNumberSupersessionDTO, error) {
 	query := `
 		SELECT id, source_id, old_part_number, new_part_number, old_product_id, new_product_id,
 			old_resolved_at, new_resolved_at, created_by, updated_by, created_at, updated_at, deleted_at
@@ -158,12 +159,12 @@ func (r *PartNumberSupersessionsRepository) FindUnresolvedByOldPartNumber(source
 		ORDER BY id ASC
 	`
 
-	return r.queryPartNumberSupersessions(query, sourceID, partNumber)
+	return r.queryPartNumberSupersessions(ctx, query, sourceID, partNumber)
 }
 
 // FindUnresolvedByNewPartNumber devuelve las sucesiones donde este número de parte es el
 // lado "nuevo" (la pieza que reemplaza) y todavía no se vinculó a un ecom_products.id.
-func (r *PartNumberSupersessionsRepository) FindUnresolvedByNewPartNumber(sourceID int64, partNumber string) ([]PartNumberSupersessionDTO, error) {
+func (r *PartNumberSupersessionsRepository) FindUnresolvedByNewPartNumber(ctx context.Context, sourceID int64, partNumber string) ([]PartNumberSupersessionDTO, error) {
 	query := `
 		SELECT id, source_id, old_part_number, new_part_number, old_product_id, new_product_id,
 			old_resolved_at, new_resolved_at, created_by, updated_by, created_at, updated_at, deleted_at
@@ -172,11 +173,11 @@ func (r *PartNumberSupersessionsRepository) FindUnresolvedByNewPartNumber(source
 		ORDER BY id ASC
 	`
 
-	return r.queryPartNumberSupersessions(query, sourceID, partNumber)
+	return r.queryPartNumberSupersessions(ctx, query, sourceID, partNumber)
 }
 
-func (r *PartNumberSupersessionsRepository) queryPartNumberSupersessions(query string, args ...interface{}) ([]PartNumberSupersessionDTO, error) {
-	rows, err := r.db.Query(query, args...)
+func (r *PartNumberSupersessionsRepository) queryPartNumberSupersessions(ctx context.Context, query string, args ...interface{}) ([]PartNumberSupersessionDTO, error) {
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("error querying part number supersessions: %w", err)
 	}
@@ -201,14 +202,14 @@ func (r *PartNumberSupersessionsRepository) queryPartNumberSupersessions(query s
 // MarkOldResolved vincula el lado "viejo" de la sucesión con el producto que se acaba de
 // crear/actualizar para ese número de parte. La fila se conserva (no se borra) como registro
 // de auditoría de cuándo y con qué producto se resolvió.
-func (r *PartNumberSupersessionsRepository) MarkOldResolved(id, productID, actorID int64) error {
+func (r *PartNumberSupersessionsRepository) MarkOldResolved(ctx context.Context, id, productID, actorID int64) error {
 	query := `
 		UPDATE ecom_part_number_supersessions
 		SET old_product_id = ?, old_resolved_at = NOW(), updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	_, err := r.db.Exec(query, productID, actorID, id)
+	_, err := r.db.ExecContext(ctx, query, productID, actorID, id)
 	if err != nil {
 		return fmt.Errorf("error marking part number supersession resolved (old side): %w", err)
 	}
@@ -218,14 +219,14 @@ func (r *PartNumberSupersessionsRepository) MarkOldResolved(id, productID, actor
 
 // MarkNewResolved vincula el lado "nuevo" de la sucesión con el producto que se acaba de
 // crear/actualizar para ese número de parte.
-func (r *PartNumberSupersessionsRepository) MarkNewResolved(id, productID, actorID int64) error {
+func (r *PartNumberSupersessionsRepository) MarkNewResolved(ctx context.Context, id, productID, actorID int64) error {
 	query := `
 		UPDATE ecom_part_number_supersessions
 		SET new_product_id = ?, new_resolved_at = NOW(), updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	_, err := r.db.Exec(query, productID, actorID, id)
+	_, err := r.db.ExecContext(ctx, query, productID, actorID, id)
 	if err != nil {
 		return fmt.Errorf("error marking part number supersession resolved (new side): %w", err)
 	}
@@ -237,28 +238,72 @@ func (r *PartNumberSupersessionsRepository) MarkNewResolved(id, productID, actor
 // estuviera esperando este producto, identificado por su source_id y part_number. Es segura
 // de llamar en cada sync de un producto, no solo al crearlo: para sucesiones ya resueltas
 // FindUnresolvedBy* no devuelve nada, así que no hace ningún UPDATE de más.
-func (r *PartNumberSupersessionsRepository) ResolveForProduct(sourceID, productID int64, partNumber string, actorID int64) error {
-	oldSide, err := r.FindUnresolvedByOldPartNumber(sourceID, partNumber)
+func (r *PartNumberSupersessionsRepository) ResolveForProduct(ctx context.Context, sourceID, productID int64, partNumber string, actorID int64) error {
+	oldSide, err := r.FindUnresolvedByOldPartNumber(ctx, sourceID, partNumber)
 	if err != nil {
 		return fmt.Errorf("looking up pending part number supersessions (old side) for part number %s: %w", partNumber, err)
 	}
 	for _, item := range oldSide {
-		if err := r.MarkOldResolved(item.ID, productID, actorID); err != nil {
+		if err := r.MarkOldResolved(ctx, item.ID, productID, actorID); err != nil {
 			return fmt.Errorf("resolving part number supersession %d (old side) for part number %s: %w", item.ID, partNumber, err)
 		}
 	}
 
-	newSide, err := r.FindUnresolvedByNewPartNumber(sourceID, partNumber)
+	newSide, err := r.FindUnresolvedByNewPartNumber(ctx, sourceID, partNumber)
 	if err != nil {
 		return fmt.Errorf("looking up pending part number supersessions (new side) for part number %s: %w", partNumber, err)
 	}
 	for _, item := range newSide {
-		if err := r.MarkNewResolved(item.ID, productID, actorID); err != nil {
+		if err := r.MarkNewResolved(ctx, item.ID, productID, actorID); err != nil {
 			return fmt.Errorf("resolving part number supersession %d (new side) for part number %s: %w", item.ID, partNumber, err)
 		}
 	}
 
 	return nil
+}
+
+// FindPendingPartNumbers devuelve, para esta fuente, el conjunto de part numbers con una
+// sucesión pendiente de resolver por el lado viejo (oldPending) y por el lado nuevo
+// (newPending). Se precarga una sola vez por corrida de sync (ver nissanSyncCache en
+// sync_nissan.go) para evitar los 2 SELECT que ResolveForProduct hacía por cada uno de los
+// miles de SKUs que nunca tienen una sucesión relacionada.
+func (r *PartNumberSupersessionsRepository) FindPendingPartNumbers(ctx context.Context, sourceID int64) (oldPending, newPending map[string]bool, err error) {
+	oldPending, err = r.queryPendingPartNumberSet(ctx, `
+		SELECT DISTINCT old_part_number FROM ecom_part_number_supersessions
+		WHERE source_id = ? AND old_product_id IS NULL AND deleted_at IS NULL
+	`, sourceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading pending old part numbers: %w", err)
+	}
+
+	newPending, err = r.queryPendingPartNumberSet(ctx, `
+		SELECT DISTINCT new_part_number FROM ecom_part_number_supersessions
+		WHERE source_id = ? AND new_product_id IS NULL AND deleted_at IS NULL
+	`, sourceID)
+	if err != nil {
+		return nil, nil, fmt.Errorf("loading pending new part numbers: %w", err)
+	}
+
+	return oldPending, newPending, nil
+}
+
+func (r *PartNumberSupersessionsRepository) queryPendingPartNumberSet(ctx context.Context, query string, sourceID int64) (map[string]bool, error) {
+	rows, err := r.db.QueryContext(ctx, query, sourceID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	set := make(map[string]bool)
+	for rows.Next() {
+		var partNumber string
+		if err := rows.Scan(&partNumber); err != nil {
+			return nil, err
+		}
+		set[partNumber] = true
+	}
+
+	return set, rows.Err()
 }
 
 func scanPartNumberSupersession(rows *sql.Rows) (PartNumberSupersessionDTO, error) {

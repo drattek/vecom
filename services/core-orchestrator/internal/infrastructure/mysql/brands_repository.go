@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -38,16 +39,16 @@ type UpdateBrandInput struct {
 }
 
 type BrandsRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewBrandsRepository(db *sql.DB) *BrandsRepository {
+func NewBrandsRepository(db Querier) *BrandsRepository {
 	return &BrandsRepository{db: db}
 }
 
-func (r *BrandsRepository) FindPaginated(offset, pageSize int) (*PaginatedBrands, error) {
+func (r *BrandsRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedBrands, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_brands WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_brands WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting brands: %w", err)
 	}
@@ -60,7 +61,7 @@ func (r *BrandsRepository) FindPaginated(offset, pageSize int) (*PaginatedBrands
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying brands: %w", err)
 	}
@@ -88,7 +89,7 @@ func (r *BrandsRepository) FindPaginated(offset, pageSize int) (*PaginatedBrands
 	}, nil
 }
 
-func (r *BrandsRepository) FindByID(id int64) (*BrandDTO, error) {
+func (r *BrandsRepository) FindByID(ctx context.Context, id int64) (*BrandDTO, error) {
 	query := `
 		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_brands
@@ -96,11 +97,11 @@ func (r *BrandsRepository) FindByID(id int64) (*BrandDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanBrandRow(row)
 }
 
-func (r *BrandsRepository) FindByName(name string) (*BrandDTO, error) {
+func (r *BrandsRepository) FindByName(ctx context.Context, name string) (*BrandDTO, error) {
 	query := `
 		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_brands
@@ -108,17 +109,17 @@ func (r *BrandsRepository) FindByName(name string) (*BrandDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, name)
+	row := r.db.QueryRowContext(ctx, query, name)
 	return scanBrandRow(row)
 }
 
-func (r *BrandsRepository) Create(input CreateBrandInput) (*BrandDTO, error) {
+func (r *BrandsRepository) Create(ctx context.Context, input CreateBrandInput) (*BrandDTO, error) {
 	query := `
 		INSERT INTO ecom_brands (name, created_by, created_at, updated_at)
 		VALUES (?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.CreatedBy)
 	if err != nil {
 		return nil, fmt.Errorf("error creating brand: %w", err)
 	}
@@ -128,17 +129,17 @@ func (r *BrandsRepository) Create(input CreateBrandInput) (*BrandDTO, error) {
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *BrandsRepository) Update(id int64, input UpdateBrandInput) (*BrandDTO, error) {
+func (r *BrandsRepository) Update(ctx context.Context, id int64, input UpdateBrandInput) (*BrandDTO, error) {
 	query := `
 		UPDATE ecom_brands
 		SET name = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating brand: %w", err)
 	}
@@ -152,17 +153,17 @@ func (r *BrandsRepository) Update(id int64, input UpdateBrandInput) (*BrandDTO, 
 		return nil, ErrBrandNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *BrandsRepository) SoftDelete(id int64) error {
+func (r *BrandsRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_brands
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting brand: %w", err)
 	}

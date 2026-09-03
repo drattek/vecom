@@ -58,8 +58,15 @@ func (h *ProductHandler) GetProducts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	// sortBy/sortDir are optional; an unrecognized sortBy falls back to the
+	// default order (see ProductRepository.FindPaginated). search filters by
+	// sku / part_number / name; empty means no filter.
+	sortBy := r.URL.Query().Get("sortBy")
+	sortDir := r.URL.Query().Get("sortDir")
+	search := r.URL.Query().Get("search")
+
 	// Get products from service
-	result, err := h.service.GetPaginatedProducts(offset, pageSize)
+	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -78,7 +85,7 @@ func (h *ProductHandler) GetProductByID(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	product, err := h.service.GetProductByID(id)
+	product, err := h.service.GetProductByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 			writeJSONError(w, http.StatusNotFound, "product not found")
@@ -122,7 +129,7 @@ func (h *ProductHandler) CreateProduct(w http.ResponseWriter, r *http.Request) {
 		CreatedBy:        user.ID,
 	}
 
-	product, err := h.service.CreateProduct(input)
+	product, err := h.service.CreateProduct(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, products.ErrInvalidProductPayload) {
 			writeJSONError(w, http.StatusBadRequest, "sku, partNumber, name and sourceId are required; productType/status must be valid")
@@ -172,7 +179,7 @@ func (h *ProductHandler) UpdateProduct(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy:        user.ID,
 	}
 
-	product, err := h.service.UpdateProduct(id, input)
+	product, err := h.service.UpdateProduct(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, products.ErrInvalidProductPayload) {
 			writeJSONError(w, http.StatusBadRequest, "sku, partNumber, name and sourceId are required; productType/status must be valid")
@@ -198,7 +205,7 @@ func (h *ProductHandler) DeleteProduct(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteProduct(id)
+	err = h.service.DeleteProduct(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 			writeJSONError(w, http.StatusNotFound, "product not found")

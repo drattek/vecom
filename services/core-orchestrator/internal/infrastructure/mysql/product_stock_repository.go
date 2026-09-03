@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -46,9 +47,9 @@ func NewProductStockRepository(db Querier) *ProductStockRepository {
 	return &ProductStockRepository{db: db}
 }
 
-func (r *ProductStockRepository) FindPaginated(offset, pageSize int) (*PaginatedProductStock, error) {
+func (r *ProductStockRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedProductStock, error) {
 	var total int64
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_product_stock").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_product_stock").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting product stock: %w", err)
 	}
@@ -60,7 +61,7 @@ func (r *ProductStockRepository) FindPaginated(offset, pageSize int) (*Paginated
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying product stock: %w", err)
 	}
@@ -88,7 +89,7 @@ func (r *ProductStockRepository) FindPaginated(offset, pageSize int) (*Paginated
 	}, nil
 }
 
-func (r *ProductStockRepository) FindByID(id int64) (*ProductStockDTO, error) {
+func (r *ProductStockRepository) FindByID(ctx context.Context, id int64) (*ProductStockDTO, error) {
 	query := `
 		SELECT id, product_id, branch_id, warehouse_id, available_qty, last_sync_at, updated_by
 		FROM ecom_product_stock
@@ -96,11 +97,11 @@ func (r *ProductStockRepository) FindByID(id int64) (*ProductStockDTO, error) {
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanProductStockRow(row)
 }
 
-func (r *ProductStockRepository) FindByProductBranchWarehouse(productID, branchID, warehouseID int64) (*ProductStockDTO, error) {
+func (r *ProductStockRepository) FindByProductBranchWarehouse(ctx context.Context, productID, branchID, warehouseID int64) (*ProductStockDTO, error) {
 	query := `
 		SELECT id, product_id, branch_id, warehouse_id, available_qty, last_sync_at, updated_by
 		FROM ecom_product_stock
@@ -108,11 +109,11 @@ func (r *ProductStockRepository) FindByProductBranchWarehouse(productID, branchI
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, productID, branchID, warehouseID)
+	row := r.db.QueryRowContext(ctx, query, productID, branchID, warehouseID)
 	return scanProductStockRow(row)
 }
 
-func (r *ProductStockRepository) FindByProductID(productID int64) ([]ProductStockDTO, error) {
+func (r *ProductStockRepository) FindByProductID(ctx context.Context, productID int64) ([]ProductStockDTO, error) {
 	query := `
 		SELECT id, product_id, branch_id, warehouse_id, available_qty, last_sync_at, updated_by
 		FROM ecom_product_stock
@@ -120,7 +121,7 @@ func (r *ProductStockRepository) FindByProductID(productID int64) ([]ProductStoc
 		ORDER BY branch_id ASC, warehouse_id ASC
 	`
 
-	rows, err := r.db.Query(query, productID)
+	rows, err := r.db.QueryContext(ctx, query, productID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying product stock by product: %w", err)
 	}
@@ -138,13 +139,13 @@ func (r *ProductStockRepository) FindByProductID(productID int64) ([]ProductStoc
 	return stock, rows.Err()
 }
 
-func (r *ProductStockRepository) Create(input CreateProductStockInput) (*ProductStockDTO, error) {
+func (r *ProductStockRepository) Create(ctx context.Context, input CreateProductStockInput) (*ProductStockDTO, error) {
 	query := `
 		INSERT INTO ecom_product_stock (product_id, branch_id, warehouse_id, available_qty)
 		VALUES (?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ProductID, input.BranchID, input.WarehouseID, input.AvailableQty)
+	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.BranchID, input.WarehouseID, input.AvailableQty)
 	if err != nil {
 		return nil, fmt.Errorf("error creating product stock: %w", err)
 	}
@@ -154,17 +155,17 @@ func (r *ProductStockRepository) Create(input CreateProductStockInput) (*Product
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ProductStockRepository) Update(id int64, input UpdateProductStockInput) (*ProductStockDTO, error) {
+func (r *ProductStockRepository) Update(ctx context.Context, id int64, input UpdateProductStockInput) (*ProductStockDTO, error) {
 	query := `
 		UPDATE ecom_product_stock
 		SET available_qty = ?, updated_by = ?, last_sync_at = NOW()
 		WHERE id = ?
 	`
 
-	result, err := r.db.Exec(query, input.AvailableQty, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.AvailableQty, input.UpdatedBy, id)
 	if err != nil {
 		return nil, fmt.Errorf("error updating product stock: %w", err)
 	}
@@ -178,7 +179,7 @@ func (r *ProductStockRepository) Update(id int64, input UpdateProductStockInput)
 		return nil, ErrProductStockNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
 func scanProductStock(rows *sql.Rows) (ProductStockDTO, error) {

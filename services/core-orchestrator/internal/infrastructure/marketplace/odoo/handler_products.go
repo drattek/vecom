@@ -49,6 +49,11 @@ type Product struct {
 	ShowAvailability bool            `json:"show_availability"`
 	TaxesID          []int64         `json:"taxes_id"`
 	TaxString        FalseableString `json:"tax_string"`
+	// PublicCategIDs are the product.public.category (ecommerce category) ids
+	// assigned to this product.template. Read by the vecom_sync_product
+	// migration to resolve a legacy Odoo listing's category into the local
+	// ecom_categories hierarchy.
+	PublicCategIDs []int64 `json:"public_categ_ids"`
 }
 
 var productSearchReadFields = []string{
@@ -61,6 +66,7 @@ var productSearchReadFields = []string{
 	"show_availability",
 	"taxes_id",
 	"tax_string",
+	"public_categ_ids",
 }
 
 const defaultProductSearchReadLimit = 20
@@ -108,6 +114,29 @@ func (h *ProductsHandler) SearchReadProducts(ctx context.Context, req SearchRead
 	}
 
 	return products, nil
+}
+
+// GetProductByID reads a single product.template by id with no sale_ok /
+// website_published filter — unlike SearchReadProducts, which only returns
+// sellable, published products. Used by the vecom_sync_product migration,
+// where a legacy listing may point at a product.template that is no longer
+// published. Returns nil when Odoo has no product.template with that id.
+func (h *ProductsHandler) GetProductByID(ctx context.Context, credentials Credentials, id int64) (*Product, error) {
+	params := map[string]any{
+		"domain": []any{[]any{"id", "=", id}},
+		"fields": productSearchReadFields,
+		"limit":  1,
+	}
+
+	var products []Product
+	if err := h.client.Call(ctx, credentials, "product.template", "search_read", params, &products); err != nil {
+		return nil, err
+	}
+	if len(products) == 0 {
+		return nil, nil
+	}
+
+	return &products[0], nil
 }
 
 // X2ManyReplace builds Odoo's "replace all" command for an x2many field
@@ -192,6 +221,35 @@ type UpdateProductRequest struct {
 // UpdateProduct calls product.template/write to refresh an already-synced
 // product's qty_available/list_price.
 func (h *ProductsHandler) UpdateProduct(ctx context.Context, req UpdateProductRequest) error {
+	params := map[string]any{
+		"ids":  []int64{req.ExternalID},
+		"vals": req.Vals,
+	}
+
+	return h.client.Call(ctx, req.Credentials, "product.template", "write", params, nil)
+}
+
+// UpdateProductPriceStockVals is the payload for a price/stock-only refresh
+// (see UpdateProductPriceStock) — deliberately just these two fields, unlike
+// UpdateProductVals, so a routine refresh never touches name/weight/volume/
+// category already curated in Odoo.
+type UpdateProductPriceStockVals struct {
+	QtyAvailable float64 `json:"qty_available"`
+	ListPrice    float64 `json:"list_price"`
+}
+
+type UpdateProductPriceStockRequest struct {
+	Credentials Credentials
+	ExternalID  int64
+	Vals        UpdateProductPriceStockVals
+}
+
+// UpdateProductPriceStock calls product.template/write with only
+// qty_available/list_price — used by OdooProductSyncService.Refresh
+// (channel_listings.RefreshListings), which must never send anything else.
+// UpdateProduct above remains the one used by Sync/update for a full
+// refresh (name/weight/volume/category included).
+func (h *ProductsHandler) UpdateProductPriceStock(ctx context.Context, req UpdateProductPriceStockRequest) error {
 	params := map[string]any{
 		"ids":  []int64{req.ExternalID},
 		"vals": req.Vals,

@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -47,16 +48,16 @@ type UpdateEquipmentFitmentInput struct {
 }
 
 type EquipmentFitmentsRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewEquipmentFitmentsRepository(db *sql.DB) *EquipmentFitmentsRepository {
+func NewEquipmentFitmentsRepository(db Querier) *EquipmentFitmentsRepository {
 	return &EquipmentFitmentsRepository{db: db}
 }
 
-func (r *EquipmentFitmentsRepository) FindPaginated(offset, pageSize int) (*PaginatedEquipmentFitments, error) {
+func (r *EquipmentFitmentsRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedEquipmentFitments, error) {
 	var total int
-	err := r.db.QueryRow("SELECT COUNT(*) FROM ecom_equipment_fitments WHERE deleted_at IS NULL").Scan(&total)
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_equipment_fitments WHERE deleted_at IS NULL").Scan(&total)
 	if err != nil {
 		return nil, fmt.Errorf("error counting equipment fitments: %w", err)
 	}
@@ -69,7 +70,7 @@ func (r *EquipmentFitmentsRepository) FindPaginated(offset, pageSize int) (*Pagi
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying equipment fitments: %w", err)
 	}
@@ -97,7 +98,7 @@ func (r *EquipmentFitmentsRepository) FindPaginated(offset, pageSize int) (*Pagi
 	}, nil
 }
 
-func (r *EquipmentFitmentsRepository) FindByID(id int64) (*EquipmentFitmentDTO, error) {
+func (r *EquipmentFitmentsRepository) FindByID(ctx context.Context, id int64) (*EquipmentFitmentDTO, error) {
 	query := `
 		SELECT id, brand_id, equipment_type_id, model, serie, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_equipment_fitments
@@ -105,17 +106,17 @@ func (r *EquipmentFitmentsRepository) FindByID(id int64) (*EquipmentFitmentDTO, 
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanEquipmentFitmentRow(row)
 }
 
-func (r *EquipmentFitmentsRepository) Create(input CreateEquipmentFitmentInput) (*EquipmentFitmentDTO, error) {
+func (r *EquipmentFitmentsRepository) Create(ctx context.Context, input CreateEquipmentFitmentInput) (*EquipmentFitmentDTO, error) {
 	query := `
 		INSERT INTO ecom_equipment_fitments (brand_id, equipment_type_id, model, serie, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.BrandID, input.EquipmentTypeID, input.Model, input.Serie, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.BrandID, input.EquipmentTypeID, input.Model, input.Serie, input.CreatedBy)
 	if err != nil {
 		if isForeignKeyConstraintError(err) {
 			return nil, ErrEquipmentFitmentInvalidReference
@@ -128,17 +129,17 @@ func (r *EquipmentFitmentsRepository) Create(input CreateEquipmentFitmentInput) 
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *EquipmentFitmentsRepository) Update(id int64, input UpdateEquipmentFitmentInput) (*EquipmentFitmentDTO, error) {
+func (r *EquipmentFitmentsRepository) Update(ctx context.Context, id int64, input UpdateEquipmentFitmentInput) (*EquipmentFitmentDTO, error) {
 	query := `
 		UPDATE ecom_equipment_fitments
 		SET brand_id = ?, equipment_type_id = ?, model = ?, serie = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.BrandID, input.EquipmentTypeID, input.Model, input.Serie, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.BrandID, input.EquipmentTypeID, input.Model, input.Serie, input.UpdatedBy, id)
 	if err != nil {
 		if isForeignKeyConstraintError(err) {
 			return nil, ErrEquipmentFitmentInvalidReference
@@ -155,17 +156,17 @@ func (r *EquipmentFitmentsRepository) Update(id int64, input UpdateEquipmentFitm
 		return nil, ErrEquipmentFitmentNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *EquipmentFitmentsRepository) SoftDelete(id int64) error {
+func (r *EquipmentFitmentsRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_equipment_fitments
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting equipment fitment: %w", err)
 	}

@@ -5,14 +5,14 @@ export const fileSchema = z.object({
   diskId: z.number(),
   path: z.string(),
   filename: z.string(),
-  originalFilename: z.string().optional(),
+  originalFilename: z.string().nullish(),
   mimeType: z.string(),
   fileType: z.string(),
   extension: z.string(),
   size: z.number(),
-  checksum: z.string().optional(),
-  width: z.number().optional(),
-  height: z.number().optional(),
+  checksum: z.string().nullish(),
+  width: z.number().nullish(),
+  height: z.number().nullish(),
   isPublic: z.boolean(),
 })
 

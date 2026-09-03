@@ -1,6 +1,8 @@
 package storage_disks
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strings"
 
@@ -12,6 +14,7 @@ var ErrStorageDiskCodeAlreadyExists = errors.New("storage disk code already exis
 var ErrInvalidStorageDiskPayload = errors.New("invalid storage disk payload")
 
 type StorageDiskService struct {
+	db         *sql.DB
 	repository *mysqlInfra.StorageDiskRepository
 }
 
@@ -24,11 +27,11 @@ type UpsertStorageDiskInput struct {
 	IsPublic bool
 }
 
-func NewStorageDiskService(repository *mysqlInfra.StorageDiskRepository) *StorageDiskService {
-	return &StorageDiskService{repository: repository}
+func NewStorageDiskService(db *sql.DB, repository *mysqlInfra.StorageDiskRepository) *StorageDiskService {
+	return &StorageDiskService{db: db, repository: repository}
 }
 
-func (s *StorageDiskService) GetPaginatedStorageDisks(offset, pageSize int) (*mysqlInfra.PaginatedStorageDisks, error) {
+func (s *StorageDiskService) GetPaginatedStorageDisks(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedStorageDisks, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -41,15 +44,15 @@ func (s *StorageDiskService) GetPaginatedStorageDisks(offset, pageSize int) (*my
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *StorageDiskService) GetStorageDiskByID(id int64) (*mysqlInfra.StorageDiskDTO, error) {
+func (s *StorageDiskService) GetStorageDiskByID(ctx context.Context, id int64) (*mysqlInfra.StorageDiskDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidStorageDiskPayload
 	}
 
-	storageDisk, err := s.repository.FindByID(id)
+	storageDisk, err := s.repository.FindByID(ctx, id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrStorageDiskNotFound) {
 			return nil, ErrStorageDiskNotFound
@@ -60,13 +63,13 @@ func (s *StorageDiskService) GetStorageDiskByID(id int64) (*mysqlInfra.StorageDi
 	return storageDisk, nil
 }
 
-func (s *StorageDiskService) CreateStorageDisk(input UpsertStorageDiskInput, actorID int64) (*mysqlInfra.StorageDiskDTO, error) {
+func (s *StorageDiskService) CreateStorageDisk(ctx context.Context, input UpsertStorageDiskInput, actorID int64) (*mysqlInfra.StorageDiskDTO, error) {
 	normalized, err := normalizeAndValidate(input)
 	if err != nil {
 		return nil, err
 	}
 
-	storageDisk, err := s.repository.Create(mysqlInfra.CreateStorageDiskInput{
+	storageDisk, err := s.repository.Create(ctx, mysqlInfra.CreateStorageDiskInput{
 		Name:      normalized.Name,
 		Code:      normalized.Code,
 		BaseURL:   normalized.BaseURL,
@@ -85,7 +88,7 @@ func (s *StorageDiskService) CreateStorageDisk(input UpsertStorageDiskInput, act
 	return storageDisk, nil
 }
 
-func (s *StorageDiskService) UpdateStorageDisk(id int64, input UpsertStorageDiskInput, actorID int64) (*mysqlInfra.StorageDiskDTO, error) {
+func (s *StorageDiskService) UpdateStorageDisk(ctx context.Context, id int64, input UpsertStorageDiskInput, actorID int64) (*mysqlInfra.StorageDiskDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidStorageDiskPayload
 	}
@@ -95,7 +98,7 @@ func (s *StorageDiskService) UpdateStorageDisk(id int64, input UpsertStorageDisk
 		return nil, err
 	}
 
-	storageDisk, err := s.repository.Update(id, mysqlInfra.UpdateStorageDiskInput{
+	storageDisk, err := s.repository.Update(ctx, id, mysqlInfra.UpdateStorageDiskInput{
 		Name:      normalized.Name,
 		Code:      normalized.Code,
 		BaseURL:   normalized.BaseURL,
@@ -117,12 +120,12 @@ func (s *StorageDiskService) UpdateStorageDisk(id int64, input UpsertStorageDisk
 	return storageDisk, nil
 }
 
-func (s *StorageDiskService) SoftDeleteStorageDisk(id int64, actorID int64) error {
+func (s *StorageDiskService) SoftDeleteStorageDisk(ctx context.Context, id int64, actorID int64) error {
 	if id <= 0 {
 		return ErrInvalidStorageDiskPayload
 	}
 
-	err := s.repository.SoftDelete(id, actorID)
+	err := s.repository.SoftDelete(ctx, id, actorID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrStorageDiskNotFound) {
 			return ErrStorageDiskNotFound

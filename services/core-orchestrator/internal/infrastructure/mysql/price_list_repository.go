@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -81,7 +82,7 @@ func scanPriceList(s interface{ Scan(dest ...any) error }) (PriceListDTO, error)
 	return p, nil
 }
 
-func (r *PriceListRepository) FindPaginated(offset, pageSize int) (*PaginatedPriceLists, error) {
+func (r *PriceListRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedPriceLists, error) {
 	query := `
 		SELECT id, name, currency, priority, status, valid_from, valid_to, 
 		       created_by, updated_by, created_at, updated_at
@@ -90,7 +91,7 @@ func (r *PriceListRepository) FindPaginated(offset, pageSize int) (*PaginatedPri
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -107,14 +108,14 @@ func (r *PriceListRepository) FindPaginated(offset, pageSize int) (*PaginatedPri
 
 	countQuery := "SELECT COUNT(*) FROM ecom_price_list WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedPriceLists{Data: priceLists, Total: total}, nil
 }
 
-func (r *PriceListRepository) FindByID(id int64) (*PriceListDTO, error) {
+func (r *PriceListRepository) FindByID(ctx context.Context, id int64) (*PriceListDTO, error) {
 	query := `
 		SELECT id, name, currency, priority, status, valid_from, valid_to, 
 		       created_by, updated_by, created_at, updated_at
@@ -122,7 +123,7 @@ func (r *PriceListRepository) FindByID(id int64) (*PriceListDTO, error) {
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	p, err := scanPriceList(r.db.QueryRow(query, id))
+	p, err := scanPriceList(r.db.QueryRowContext(ctx, query, id))
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrPriceListNotFound
@@ -133,7 +134,7 @@ func (r *PriceListRepository) FindByID(id int64) (*PriceListDTO, error) {
 	return &p, nil
 }
 
-func (r *PriceListRepository) FindByName(name string) (*PriceListDTO, error) {
+func (r *PriceListRepository) FindByName(ctx context.Context, name string) (*PriceListDTO, error) {
 	query := `
 		SELECT id, name, currency, priority, status, valid_from, valid_to,
 		       created_by, updated_by, created_at, updated_at
@@ -142,7 +143,7 @@ func (r *PriceListRepository) FindByName(name string) (*PriceListDTO, error) {
 		LIMIT 1
 	`
 
-	p, err := scanPriceList(r.db.QueryRow(query, name))
+	p, err := scanPriceList(r.db.QueryRowContext(ctx, query, name))
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrPriceListNotFound
@@ -153,13 +154,13 @@ func (r *PriceListRepository) FindByName(name string) (*PriceListDTO, error) {
 	return &p, nil
 }
 
-func (r *PriceListRepository) Create(input CreatePriceListInput) (*PriceListDTO, error) {
+func (r *PriceListRepository) Create(ctx context.Context, input CreatePriceListInput) (*PriceListDTO, error) {
 	query := `
 		INSERT INTO ecom_price_list (name, currency, priority, status, valid_from, valid_to, created_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.Currency, input.Priority, input.Status,
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.Currency, input.Priority, input.Status,
 		input.ValidFrom, input.ValidTo, input.CreatedBy)
 	if err != nil {
 		return nil, err
@@ -170,10 +171,10 @@ func (r *PriceListRepository) Create(input CreatePriceListInput) (*PriceListDTO,
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *PriceListRepository) Update(id int64, input UpdatePriceListInput) (*PriceListDTO, error) {
+func (r *PriceListRepository) Update(ctx context.Context, id int64, input UpdatePriceListInput) (*PriceListDTO, error) {
 	query := `
 		UPDATE ecom_price_list
 		SET name = ?, currency = ?, priority = ?, status = ?, 
@@ -181,7 +182,7 @@ func (r *PriceListRepository) Update(id int64, input UpdatePriceListInput) (*Pri
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Name, input.Currency, input.Priority, input.Status,
+	result, err := r.db.ExecContext(ctx, query, input.Name, input.Currency, input.Priority, input.Status,
 		input.ValidFrom, input.ValidTo, input.UpdatedBy, id)
 	if err != nil {
 		return nil, err
@@ -196,13 +197,13 @@ func (r *PriceListRepository) Update(id int64, input UpdatePriceListInput) (*Pri
 		return nil, ErrPriceListNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *PriceListRepository) SoftDelete(id int64) error {
+func (r *PriceListRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := "UPDATE ecom_price_list SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

@@ -17,7 +17,10 @@ public class ItemInventLocationRepository {
     }
 
     public List<ItemInventLocationDTO> getAllItemInventory(){
-        return jdbcTemplate.query("SELECT TOP 10 * FROM dyn.ItemInventLocation", (rs, rowNum) -> new ItemInventLocationDTO(
+        return jdbcTemplate.query("""
+                SELECT TOP 10 * FROM dyn.ItemInventLocation
+                WHERE Disponible IS NOT NULL AND Disponible > 0
+                """, (rs, rowNum) -> new ItemInventLocationDTO(
                 SourceSystem.ERP,
                 rs.getString("Articulo"),
                 rs.getString("Descripción"),
@@ -41,6 +44,7 @@ public class ItemInventLocationRepository {
     public List<ItemInventLocationDTO> getLocations(int offset, int pageSize){
         return jdbcTemplate.query("""
                 SELECT * FROM dyn.ItemInventLocation
+                WHERE Disponible IS NOT NULL AND Disponible > 0
                 ORDER BY Articulo
                 OFFSET ? ROWS
                 FETCH NEXT ? ROWS ONLY

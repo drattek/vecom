@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -42,14 +43,14 @@ type UpsertProductAttributeInput struct {
 }
 
 type ProductAttributesRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewProductAttributesRepository(db *sql.DB) *ProductAttributesRepository {
+func NewProductAttributesRepository(db Querier) *ProductAttributesRepository {
 	return &ProductAttributesRepository{db: db}
 }
 
-func (r *ProductAttributesRepository) FindByProductID(productID int64) ([]ProductAttributeDTO, error) {
+func (r *ProductAttributesRepository) FindByProductID(ctx context.Context, productID int64) ([]ProductAttributeDTO, error) {
 	query := `
 		SELECT id, product_id, attribute_id, value_text, value_number, value_boolean, value_date, option_id,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -58,7 +59,7 @@ func (r *ProductAttributesRepository) FindByProductID(productID int64) ([]Produc
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query, productID)
+	rows, err := r.db.QueryContext(ctx, query, productID)
 	if err != nil {
 		return nil, fmt.Errorf("error querying product attributes: %w", err)
 	}
@@ -79,7 +80,7 @@ func (r *ProductAttributesRepository) FindByProductID(productID int64) ([]Produc
 	return attributes, nil
 }
 
-func (r *ProductAttributesRepository) FindByProductAndAttribute(productID, attributeID int64) (*ProductAttributeDTO, error) {
+func (r *ProductAttributesRepository) FindByProductAndAttribute(ctx context.Context, productID, attributeID int64) (*ProductAttributeDTO, error) {
 	query := `
 		SELECT id, product_id, attribute_id, value_text, value_number, value_boolean, value_date, option_id,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -88,10 +89,10 @@ func (r *ProductAttributesRepository) FindByProductAndAttribute(productID, attri
 		LIMIT 1
 	`
 
-	return scanProductAttributeRow(r.db.QueryRow(query, productID, attributeID))
+	return scanProductAttributeRow(r.db.QueryRowContext(ctx, query, productID, attributeID))
 }
 
-func (r *ProductAttributesRepository) findByID(id int64) (*ProductAttributeDTO, error) {
+func (r *ProductAttributesRepository) findByID(ctx context.Context, id int64) (*ProductAttributeDTO, error) {
 	query := `
 		SELECT id, product_id, attribute_id, value_text, value_number, value_boolean, value_date, option_id,
 		       created_by, updated_by, created_at, updated_at, deleted_at
@@ -100,14 +101,14 @@ func (r *ProductAttributesRepository) findByID(id int64) (*ProductAttributeDTO, 
 		LIMIT 1
 	`
 
-	return scanProductAttributeRow(r.db.QueryRow(query, id))
+	return scanProductAttributeRow(r.db.QueryRowContext(ctx, query, id))
 }
 
 // Upsert creates the (product, attribute) value row on first write, or
 // replaces its value on subsequent writes — mirrors
 // ChannelCategoryMapRepository.Upsert.
-func (r *ProductAttributesRepository) Upsert(input UpsertProductAttributeInput) (*ProductAttributeDTO, error) {
-	existing, err := r.FindByProductAndAttribute(input.ProductID, input.AttributeID)
+func (r *ProductAttributesRepository) Upsert(ctx context.Context, input UpsertProductAttributeInput) (*ProductAttributeDTO, error) {
+	existing, err := r.FindByProductAndAttribute(ctx, input.ProductID, input.AttributeID)
 	if err != nil && !errors.Is(err, ErrProductAttributeNotFound) {
 		return nil, fmt.Errorf("error loading product attribute: %w", err)
 	}
@@ -119,7 +120,7 @@ func (r *ProductAttributesRepository) Upsert(input UpsertProductAttributeInput) 
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`
 
-		result, err := r.db.Exec(query, input.ProductID, input.AttributeID, input.ValueText, input.ValueNumber, input.ValueBool, input.ValueDate, input.OptionID, input.ActorID)
+		result, err := r.db.ExecContext(ctx, query, input.ProductID, input.AttributeID, input.ValueText, input.ValueNumber, input.ValueBool, input.ValueDate, input.OptionID, input.ActorID)
 		if err != nil {
 			return nil, fmt.Errorf("error creating product attribute: %w", err)
 		}
@@ -129,7 +130,7 @@ func (r *ProductAttributesRepository) Upsert(input UpsertProductAttributeInput) 
 			return nil, fmt.Errorf("error getting last insert id: %w", err)
 		}
 
-		return r.findByID(id)
+		return r.findByID(ctx, id)
 	}
 
 	query := `
@@ -139,17 +140,17 @@ func (r *ProductAttributesRepository) Upsert(input UpsertProductAttributeInput) 
 		WHERE id = ?
 	`
 
-	if _, err := r.db.Exec(query, input.ValueText, input.ValueNumber, input.ValueBool, input.ValueDate, input.OptionID, input.ActorID, existing.ID); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, input.ValueText, input.ValueNumber, input.ValueBool, input.ValueDate, input.OptionID, input.ActorID, existing.ID); err != nil {
 		return nil, fmt.Errorf("error updating product attribute: %w", err)
 	}
 
-	return r.findByID(existing.ID)
+	return r.findByID(ctx, existing.ID)
 }
 
-func (r *ProductAttributesRepository) SoftDelete(id int64) error {
+func (r *ProductAttributesRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `UPDATE ecom_product_attributes SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting product attribute: %w", err)
 	}

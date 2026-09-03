@@ -51,7 +51,7 @@ func NewEquipmentTypeHandler(service *compatibilityApp.EquipmentTypeService) *Eq
 func (h *EquipmentTypeHandler) GetEquipmentTypes(w http.ResponseWriter, r *http.Request) {
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetPaginatedEquipmentTypes(offset, pageSize)
+	result, err := h.service.GetPaginatedEquipmentTypes(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -69,7 +69,7 @@ func (h *EquipmentTypeHandler) GetEquipmentTypeByID(w http.ResponseWriter, r *ht
 		return
 	}
 
-	equipmentType, err := h.service.GetEquipmentTypeByID(id)
+	equipmentType, err := h.service.GetEquipmentTypeByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrEquipmentTypeNotFound) {
 			writeJSONError(w, http.StatusNotFound, "equipment type not found")
@@ -97,7 +97,7 @@ func (h *EquipmentTypeHandler) CreateEquipmentType(w http.ResponseWriter, r *htt
 		return
 	}
 
-	equipmentType, err := h.service.CreateEquipmentType(mysqlInfra.CreateEquipmentTypeInput{
+	equipmentType, err := h.service.CreateEquipmentType(r.Context(), mysqlInfra.CreateEquipmentTypeInput{
 		Name:      req.Name,
 		CreatedBy: user.ID,
 	})
@@ -134,7 +134,7 @@ func (h *EquipmentTypeHandler) UpdateEquipmentType(w http.ResponseWriter, r *htt
 		return
 	}
 
-	equipmentType, err := h.service.UpdateEquipmentType(id, mysqlInfra.UpdateEquipmentTypeInput{
+	equipmentType, err := h.service.UpdateEquipmentType(r.Context(), id, mysqlInfra.UpdateEquipmentTypeInput{
 		Name:      req.Name,
 		UpdatedBy: user.ID,
 	})
@@ -163,7 +163,7 @@ func (h *EquipmentTypeHandler) DeleteEquipmentType(w http.ResponseWriter, r *htt
 		return
 	}
 
-	if err := h.service.DeleteEquipmentType(id); err != nil {
+	if err := h.service.DeleteEquipmentType(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrEquipmentTypeNotFound) {
 			writeJSONError(w, http.StatusNotFound, "equipment type not found")
 			return
@@ -195,7 +195,7 @@ func NewVehicleFitmentHandler(service *compatibilityApp.VehicleFitmentService) *
 func (h *VehicleFitmentHandler) GetVehicleFitments(w http.ResponseWriter, r *http.Request) {
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetPaginatedFitments(offset, pageSize)
+	result, err := h.service.GetPaginatedFitments(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -213,7 +213,7 @@ func (h *VehicleFitmentHandler) GetVehicleFitmentByID(w http.ResponseWriter, r *
 		return
 	}
 
-	fitment, err := h.service.GetFitmentByID(id)
+	fitment, err := h.service.GetFitmentByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrVehicleFitmentNotFound) {
 			writeJSONError(w, http.StatusNotFound, "vehicle fitment not found")
@@ -241,7 +241,7 @@ func (h *VehicleFitmentHandler) CreateVehicleFitment(w http.ResponseWriter, r *h
 		return
 	}
 
-	fitment, err := h.service.CreateFitment(mysqlInfra.CreateVehicleFitmentInput{
+	fitment, err := h.service.CreateFitment(r.Context(), mysqlInfra.CreateVehicleFitmentInput{
 		BrandID:   req.BrandID,
 		Model:     req.Model,
 		YearStart: req.YearStart,
@@ -289,7 +289,7 @@ func (h *VehicleFitmentHandler) UpdateVehicleFitment(w http.ResponseWriter, r *h
 		return
 	}
 
-	fitment, err := h.service.UpdateFitment(id, mysqlInfra.UpdateVehicleFitmentInput{
+	fitment, err := h.service.UpdateFitment(r.Context(), id, mysqlInfra.UpdateVehicleFitmentInput{
 		BrandID:   req.BrandID,
 		Model:     req.Model,
 		YearStart: req.YearStart,
@@ -364,7 +364,7 @@ func (h *VehicleFitmentHandler) BulkImportVehicleFitments(w http.ResponseWriter,
 		}
 	}
 
-	results, err := h.service.BulkImportFitments(items, user.ID)
+	results, err := h.service.BulkImportFitments(r.Context(), items, user.ID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -382,7 +382,7 @@ func (h *VehicleFitmentHandler) ResolvePendingFitments(w http.ResponseWriter, r 
 		return
 	}
 
-	results, err := h.service.ResolvePendingFitments(user.ID)
+	results, err := h.service.ResolvePendingFitments(r.Context(), user.ID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -400,7 +400,7 @@ func (h *VehicleFitmentHandler) DeleteVehicleFitment(w http.ResponseWriter, r *h
 		return
 	}
 
-	if err := h.service.DeleteFitment(id); err != nil {
+	if err := h.service.DeleteFitment(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrVehicleFitmentNotFound) {
 			writeJSONError(w, http.StatusNotFound, "vehicle fitment not found")
 			return
@@ -432,7 +432,7 @@ func NewEquipmentFitmentHandler(service *compatibilityApp.EquipmentFitmentServic
 func (h *EquipmentFitmentHandler) GetEquipmentFitments(w http.ResponseWriter, r *http.Request) {
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetPaginatedFitments(offset, pageSize)
+	result, err := h.service.GetPaginatedFitments(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -450,7 +450,7 @@ func (h *EquipmentFitmentHandler) GetEquipmentFitmentByID(w http.ResponseWriter,
 		return
 	}
 
-	fitment, err := h.service.GetFitmentByID(id)
+	fitment, err := h.service.GetFitmentByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrEquipmentFitmentNotFound) {
 			writeJSONError(w, http.StatusNotFound, "equipment fitment not found")
@@ -478,7 +478,7 @@ func (h *EquipmentFitmentHandler) CreateEquipmentFitment(w http.ResponseWriter, 
 		return
 	}
 
-	fitment, err := h.service.CreateFitment(mysqlInfra.CreateEquipmentFitmentInput{
+	fitment, err := h.service.CreateFitment(r.Context(), mysqlInfra.CreateEquipmentFitmentInput{
 		BrandID:         req.BrandID,
 		EquipmentTypeID: req.EquipmentTypeID,
 		Model:           req.Model,
@@ -522,7 +522,7 @@ func (h *EquipmentFitmentHandler) UpdateEquipmentFitment(w http.ResponseWriter, 
 		return
 	}
 
-	fitment, err := h.service.UpdateFitment(id, mysqlInfra.UpdateEquipmentFitmentInput{
+	fitment, err := h.service.UpdateFitment(r.Context(), id, mysqlInfra.UpdateEquipmentFitmentInput{
 		BrandID:         req.BrandID,
 		EquipmentTypeID: req.EquipmentTypeID,
 		Model:           req.Model,
@@ -558,7 +558,7 @@ func (h *EquipmentFitmentHandler) DeleteEquipmentFitment(w http.ResponseWriter, 
 		return
 	}
 
-	if err := h.service.DeleteFitment(id); err != nil {
+	if err := h.service.DeleteFitment(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrEquipmentFitmentNotFound) {
 			writeJSONError(w, http.StatusNotFound, "equipment fitment not found")
 			return
@@ -597,7 +597,7 @@ func (h *ProductVehicleCompatibilityHandler) GetByProduct(w http.ResponseWriter,
 
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetByProduct(productID, offset, pageSize)
+	result, err := h.service.GetByProduct(r.Context(), productID, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -621,7 +621,7 @@ func (h *ProductVehicleCompatibilityHandler) Create(w http.ResponseWriter, r *ht
 		return
 	}
 
-	compat, err := h.service.Create(mysqlInfra.CreateProductVehicleCompatibilityInput{
+	compat, err := h.service.Create(r.Context(), mysqlInfra.CreateProductVehicleCompatibilityInput{
 		ProductID:        req.ProductID,
 		VehicleFitmentID: req.VehicleFitmentID,
 		Motor:            strings.TrimSpace(req.Motor),
@@ -658,7 +658,7 @@ func (h *ProductVehicleCompatibilityHandler) Delete(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if err := h.service.Delete(id); err != nil {
+	if err := h.service.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductVehicleCompatibilityNotFound) {
 			writeJSONError(w, http.StatusNotFound, "product vehicle compatibility not found")
 			return
@@ -694,7 +694,7 @@ func (h *ProductEquipmentCompatibilityHandler) GetByProduct(w http.ResponseWrite
 
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetByProduct(productID, offset, pageSize)
+	result, err := h.service.GetByProduct(r.Context(), productID, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -718,7 +718,7 @@ func (h *ProductEquipmentCompatibilityHandler) Create(w http.ResponseWriter, r *
 		return
 	}
 
-	compat, err := h.service.Create(mysqlInfra.CreateProductEquipmentCompatibilityInput{
+	compat, err := h.service.Create(r.Context(), mysqlInfra.CreateProductEquipmentCompatibilityInput{
 		ProductID:          req.ProductID,
 		EquipmentFitmentID: req.EquipmentFitmentID,
 		CreatedBy:          user.ID,
@@ -752,7 +752,7 @@ func (h *ProductEquipmentCompatibilityHandler) Delete(w http.ResponseWriter, r *
 		return
 	}
 
-	if err := h.service.Delete(id); err != nil {
+	if err := h.service.Delete(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductEquipmentCompatibilityNotFound) {
 			writeJSONError(w, http.StatusNotFound, "product equipment compatibility not found")
 			return

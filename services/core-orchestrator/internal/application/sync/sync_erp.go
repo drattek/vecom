@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -33,10 +34,10 @@ type erpSyncCache struct {
 	sourceID int64
 }
 
-func prepareErpSyncCache(db *sql.DB) (*erpSyncCache, error) {
+func prepareErpSyncCache(ctx context.Context, db *sql.DB) (*erpSyncCache, error) {
 	sourcesRepo := mysqlRepo.NewSourcesRepository(db)
 
-	source, err := findOrCreateDynamicsSource(sourcesRepo)
+	source, err := findOrCreateDynamicsSource(ctx, sourcesRepo)
 	if err != nil {
 		return nil, fmt.Errorf("resolving Dynamics source: %w", err)
 	}
@@ -44,8 +45,8 @@ func prepareErpSyncCache(db *sql.DB) (*erpSyncCache, error) {
 	return &erpSyncCache{sourceID: source.ID}, nil
 }
 
-func findOrCreateDynamicsSource(repo *mysqlRepo.SourcesRepository) (*mysqlRepo.SourceDTO, error) {
-	source, err := repo.FindByCode(dynamicsSourceCode)
+func findOrCreateDynamicsSource(ctx context.Context, repo *mysqlRepo.SourcesRepository) (*mysqlRepo.SourceDTO, error) {
+	source, err := repo.FindByCode(ctx, dynamicsSourceCode)
 	if err == nil {
 		return source, nil
 	}
@@ -53,7 +54,7 @@ func findOrCreateDynamicsSource(repo *mysqlRepo.SourcesRepository) (*mysqlRepo.S
 		return nil, err
 	}
 
-	return repo.Create(mysqlRepo.CreateSourceInput{
+	return repo.Create(ctx, mysqlRepo.CreateSourceInput{
 		Code:      dynamicsSourceCode,
 		Name:      dynamicsSourceName,
 		CreatedBy: systemUserID,
@@ -63,15 +64,15 @@ func findOrCreateDynamicsSource(repo *mysqlRepo.SourcesRepository) (*mysqlRepo.S
 // ProcessERPProduct crea o actualiza el producto en ecom_products a partir de un
 // EcomProductDTO leído de Redis. A diferencia del sync de Nissan, este evento no trae
 // sucursal/almacén: no hay stock ni precio que sincronizar, solo el producto.
-func (s *SyncService) ProcessERPProduct(product *domain.Product, cache *erpSyncCache) error {
+func (s *SyncService) ProcessERPProduct(ctx context.Context, product *domain.Product, cache *erpSyncCache) error {
 	productRepo := mysqlRepo.NewProductRepository(s.db)
 	productType := erpProductType(product.Group)
 
-	existing, err := productRepo.FindBySKU(product.Code)
+	existing, err := productRepo.FindBySKU(ctx, product.Code)
 	if errors.Is(err, mysqlRepo.ErrProductNotFound) {
 		log.Printf("Creating product %s in MySQL (partNumber=%s, name=%q, type=%s, source=%s)", product.Code, product.PartNumber, product.Description, productType, dynamicsSourceCode)
 
-		created, err := productRepo.Create(mysqlRepo.CreateProductInput{
+		created, err := productRepo.Create(ctx, mysqlRepo.CreateProductInput{
 			SKU:         product.Code,
 			PartNumber:  product.PartNumber,
 			Name:        product.Description,
@@ -96,7 +97,7 @@ func (s *SyncService) ProcessERPProduct(product *domain.Product, cache *erpSyncC
 
 	// Preserva campos que no pertenecen a este sync (marca, categoría, status, descripción
 	// larga) para no pisar curación manual hecha desde el admin-dashboard.
-	_, err = productRepo.Update(existing.ID, mysqlRepo.UpdateProductInput{
+	_, err = productRepo.Update(ctx, existing.ID, mysqlRepo.UpdateProductInput{
 		SKU:              product.Code,
 		PartNumber:       product.PartNumber,
 		Name:             product.Description,
@@ -119,12 +120,12 @@ func (s *SyncService) ProcessERPProduct(product *domain.Product, cache *erpSyncC
 	return nil
 }
 
-func (s *SyncService) ProcessERPPageProcessed(event domain.PageProcessedEvent) error {
+func (s *SyncService) ProcessERPPageProcessed(ctx context.Context, event domain.PageProcessedEvent) error {
 	log.Printf("ERP page processed (source=%s): page %d, offset %d, records %d", event.Source, event.Page, event.Offset, event.Records)
 	return nil
 }
 
-func (s *SyncService) ProcessERPSyncFailed(event domain.SyncFailedEvent) error {
+func (s *SyncService) ProcessERPSyncFailed(ctx context.Context, event domain.SyncFailedEvent) error {
 	log.Printf("ERP sync failed (source=%s) at offset %d (pageSize %d): %s (%s)", event.Source, event.Offset, event.PageSize, event.Error, event.Timestamp)
 	return nil
 }

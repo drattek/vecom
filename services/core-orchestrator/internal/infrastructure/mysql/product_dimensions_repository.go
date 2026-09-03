@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -46,14 +47,14 @@ type UpdateProductDimensionsInput struct {
 }
 
 type ProductDimensionsRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewProductDimensionsRepository(db *sql.DB) *ProductDimensionsRepository {
+func NewProductDimensionsRepository(db Querier) *ProductDimensionsRepository {
 	return &ProductDimensionsRepository{db: db}
 }
 
-func (r *ProductDimensionsRepository) FindByProductID(productID int64) (*ProductDimensionsDTO, error) {
+func (r *ProductDimensionsRepository) FindByProductID(ctx context.Context, productID int64) (*ProductDimensionsDTO, error) {
 	query := `
 		SELECT product_id, weight, length, width, height, diameter, volume, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_dimensions
@@ -61,7 +62,7 @@ func (r *ProductDimensionsRepository) FindByProductID(productID int64) (*Product
 	`
 
 	var p ProductDimensionsDTO
-	if err := r.db.QueryRow(query, productID).Scan(&p.ProductID, &p.Weight, &p.Length, &p.Width, &p.Height, &p.Diameter, &p.Volume, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, productID).Scan(&p.ProductID, &p.Weight, &p.Length, &p.Width, &p.Height, &p.Diameter, &p.Volume, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProductDimensionsNotFound
 		}
@@ -71,28 +72,28 @@ func (r *ProductDimensionsRepository) FindByProductID(productID int64) (*Product
 	return &p, nil
 }
 
-func (r *ProductDimensionsRepository) Create(input CreateProductDimensionsInput) (*ProductDimensionsDTO, error) {
+func (r *ProductDimensionsRepository) Create(ctx context.Context, input CreateProductDimensionsInput) (*ProductDimensionsDTO, error) {
 	query := `
 		INSERT INTO ecom_product_dimensions (product_id, weight, length, width, height, diameter, volume, created_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	_, err := r.db.Exec(query, input.ProductID, input.Weight, input.Length, input.Width, input.Height, input.Diameter, input.Volume, input.CreatedBy)
+	_, err := r.db.ExecContext(ctx, query, input.ProductID, input.Weight, input.Length, input.Width, input.Height, input.Diameter, input.Volume, input.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
 
-	return r.FindByProductID(input.ProductID)
+	return r.FindByProductID(ctx, input.ProductID)
 }
 
-func (r *ProductDimensionsRepository) Update(productID int64, input UpdateProductDimensionsInput) (*ProductDimensionsDTO, error) {
+func (r *ProductDimensionsRepository) Update(ctx context.Context, productID int64, input UpdateProductDimensionsInput) (*ProductDimensionsDTO, error) {
 	query := `
 		UPDATE ecom_product_dimensions
 		SET weight = ?, length = ?, width = ?, height = ?, diameter = ?, volume = ?, updated_by = ?, updated_at = NOW()
 		WHERE product_id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.Weight, input.Length, input.Width, input.Height, input.Diameter, input.Volume, input.UpdatedBy, productID)
+	result, err := r.db.ExecContext(ctx, query, input.Weight, input.Length, input.Width, input.Height, input.Diameter, input.Volume, input.UpdatedBy, productID)
 	if err != nil {
 		return nil, err
 	}
@@ -106,13 +107,13 @@ func (r *ProductDimensionsRepository) Update(productID int64, input UpdateProduc
 		return nil, ErrProductDimensionsNotFound
 	}
 
-	return r.FindByProductID(productID)
+	return r.FindByProductID(ctx, productID)
 }
 
-func (r *ProductDimensionsRepository) SoftDelete(productID int64) error {
+func (r *ProductDimensionsRepository) SoftDelete(ctx context.Context, productID int64) error {
 	query := "UPDATE ecom_product_dimensions SET deleted_at = NOW() WHERE product_id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, productID)
+	result, err := r.db.ExecContext(ctx, query, productID)
 	if err != nil {
 		return err
 	}

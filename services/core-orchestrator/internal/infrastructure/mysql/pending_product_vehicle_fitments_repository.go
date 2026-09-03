@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -36,20 +37,20 @@ type CreatePendingProductVehicleFitmentInput struct {
 }
 
 type PendingProductVehicleFitmentsRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewPendingProductVehicleFitmentsRepository(db *sql.DB) *PendingProductVehicleFitmentsRepository {
+func NewPendingProductVehicleFitmentsRepository(db Querier) *PendingProductVehicleFitmentsRepository {
 	return &PendingProductVehicleFitmentsRepository{db: db}
 }
 
-func (r *PendingProductVehicleFitmentsRepository) Create(input CreatePendingProductVehicleFitmentInput) (*PendingProductVehicleFitmentDTO, error) {
+func (r *PendingProductVehicleFitmentsRepository) Create(ctx context.Context, input CreatePendingProductVehicleFitmentInput) (*PendingProductVehicleFitmentDTO, error) {
 	query := `
 		INSERT INTO ecom_pending_product_vehicle_fitments (sku, vehicle_fitment_id, motor, position, side, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, ?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.SKU, input.VehicleFitmentID, input.Motor, input.Position, input.Side, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.SKU, input.VehicleFitmentID, input.Motor, input.Position, input.Side, input.CreatedBy)
 	if err != nil {
 		if isDuplicateKeyError(err) {
 			return nil, ErrPendingProductVehicleFitmentAlreadyExists
@@ -65,10 +66,10 @@ func (r *PendingProductVehicleFitmentsRepository) Create(input CreatePendingProd
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *PendingProductVehicleFitmentsRepository) FindByID(id int64) (*PendingProductVehicleFitmentDTO, error) {
+func (r *PendingProductVehicleFitmentsRepository) FindByID(ctx context.Context, id int64) (*PendingProductVehicleFitmentDTO, error) {
 	query := `
 		SELECT id, sku, vehicle_fitment_id, motor, position, side, resolved_at, resolved_product_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_pending_product_vehicle_fitments
@@ -76,13 +77,13 @@ func (r *PendingProductVehicleFitmentsRepository) FindByID(id int64) (*PendingPr
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanPendingProductVehicleFitmentRow(row)
 }
 
 // FindUnresolvedBySKU returns pending fitments awaiting a product with this
 // SKU, so it only matches rows that haven't been resolved or soft-deleted yet.
-func (r *PendingProductVehicleFitmentsRepository) FindUnresolvedBySKU(sku string) ([]PendingProductVehicleFitmentDTO, error) {
+func (r *PendingProductVehicleFitmentsRepository) FindUnresolvedBySKU(ctx context.Context, sku string) ([]PendingProductVehicleFitmentDTO, error) {
 	query := `
 		SELECT id, sku, vehicle_fitment_id, motor, position, side, resolved_at, resolved_product_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_pending_product_vehicle_fitments
@@ -90,7 +91,7 @@ func (r *PendingProductVehicleFitmentsRepository) FindUnresolvedBySKU(sku string
 		ORDER BY id ASC
 	`
 
-	rows, err := r.db.Query(query, sku)
+	rows, err := r.db.QueryContext(ctx, query, sku)
 	if err != nil {
 		return nil, fmt.Errorf("error querying pending product vehicle fitments: %w", err)
 	}
@@ -115,7 +116,7 @@ func (r *PendingProductVehicleFitmentsRepository) FindUnresolvedBySKU(sku string
 // FindAllUnresolved returns every pending fitment across all SKUs that
 // hasn't been resolved or soft-deleted yet, for batch-resolving against
 // products that may have been created since the pending rows were staged.
-func (r *PendingProductVehicleFitmentsRepository) FindAllUnresolved() ([]PendingProductVehicleFitmentDTO, error) {
+func (r *PendingProductVehicleFitmentsRepository) FindAllUnresolved(ctx context.Context) ([]PendingProductVehicleFitmentDTO, error) {
 	query := `
 		SELECT id, sku, vehicle_fitment_id, motor, position, side, resolved_at, resolved_product_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_pending_product_vehicle_fitments
@@ -123,7 +124,7 @@ func (r *PendingProductVehicleFitmentsRepository) FindAllUnresolved() ([]Pending
 		ORDER BY sku ASC, id ASC
 	`
 
-	rows, err := r.db.Query(query)
+	rows, err := r.db.QueryContext(ctx, query)
 	if err != nil {
 		return nil, fmt.Errorf("error querying pending product vehicle fitments: %w", err)
 	}
@@ -148,14 +149,14 @@ func (r *PendingProductVehicleFitmentsRepository) FindAllUnresolved() ([]Pending
 // MarkResolved stamps the pending row with the product that satisfied it,
 // keeping it around (rather than deleting it) as an audit trail of when and
 // by which product the compatibility ended up being created automatically.
-func (r *PendingProductVehicleFitmentsRepository) MarkResolved(id, productID, actorID int64) error {
+func (r *PendingProductVehicleFitmentsRepository) MarkResolved(ctx context.Context, id, productID, actorID int64) error {
 	query := `
 		UPDATE ecom_pending_product_vehicle_fitments
 		SET resolved_at = NOW(), resolved_product_id = ?, updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	_, err := r.db.Exec(query, productID, actorID, id)
+	_, err := r.db.ExecContext(ctx, query, productID, actorID, id)
 	if err != nil {
 		return fmt.Errorf("error marking pending product vehicle fitment resolved: %w", err)
 	}

@@ -48,7 +48,7 @@ func (h *ProductImageImportHandler) Import(w http.ResponseWriter, r *http.Reques
 		})
 	}
 
-	result, err := h.service.Import(importApp.ImportProductImagesInput{
+	result, err := h.service.Import(r.Context(), importApp.ImportProductImagesInput{
 		StorageDiskID: req.StorageDiskID,
 		Products:      products,
 	})

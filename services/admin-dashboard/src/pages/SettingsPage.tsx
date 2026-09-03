@@ -34,6 +34,8 @@ const settingsMenuGroups: SettingsMenuGroup[] = [
         items: [
             { label: 'Canales', to: '/settings/marketplace-channels' },
             { label: 'Conexiones', to: '/settings/marketplace-connections' },
+            { label: 'Marcas', to: '/settings/marketplace-brands' },
+            { label: 'Categorías', to: '/settings/marketplace-categories' },
         ],
     },
 ]
@@ -42,7 +44,7 @@ export function SettingsPage() {
     const location = useLocation()
 
     return (
-        <main className="p-2">
+        <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
             <PageHeader>
                 <NavigationMenu>
                     <NavigationMenuList>
@@ -75,7 +77,7 @@ export function SettingsPage() {
                 </NavigationMenu>
             </PageHeader>
 
-            <section className="p-4">
+            <section className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
                 <Outlet />
             </section>
         </main>

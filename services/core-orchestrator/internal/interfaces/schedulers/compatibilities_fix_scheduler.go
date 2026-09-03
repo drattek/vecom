@@ -2,11 +2,13 @@ package schedulers
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"time"
 
 	syncApp "core-orchestrator/internal/application/sync"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
+	"core-orchestrator/internal/shared/safe"
 )
 
 // compatibilitiesFixChannelCode is the only channel this scheduler ever
@@ -39,7 +41,9 @@ type CompatibilitiesFixSchedulerConfig struct {
 // by hand. It reuses FixUnderReviewListings exactly as-is: that method
 // already re-checks each item's real incomplete_compatibilities tag against
 // MercadoLibre before pushing anything, so a run that finds nothing to fix
-// costs reads, not writes.
+// costs reads, not writes. FixUnderReviewListings processes every eligible
+// row in one call (no per-call cap), so a single daily run works through the
+// full backlog for a connection rather than only its first few rows.
 type CompatibilitiesFixScheduler struct {
 	connectionRepository *mysqlInfra.ChannelConnectionRepository
 	fixer                CompatibilitiesFixer
@@ -75,7 +79,10 @@ func (s *CompatibilitiesFixScheduler) Start(ctx context.Context) {
 			timer.Stop()
 			return
 		case <-timer.C:
-			s.runOnce(ctx)
+			// Barrera de panic por corrida: un panic fuera del loop por
+			// conexión (p. ej. listando conexiones activas) saltea la corrida de
+			// hoy en vez de que safe.Supervise reinicie todo el loop.
+			safe.Do("compatibilities fix scheduler run", func() { s.runOnce(ctx) })
 		}
 	}
 }
@@ -91,7 +98,7 @@ func nextRunTime(now time.Time, hour, minute int) time.Time {
 }
 
 func (s *CompatibilitiesFixScheduler) runOnce(ctx context.Context) {
-	connections, err := s.connectionRepository.FindActiveByChannelCode(compatibilitiesFixChannelCode)
+	connections, err := s.connectionRepository.FindActiveByChannelCode(ctx, compatibilitiesFixChannelCode)
 	if err != nil {
 		log.Printf("compatibilities fix scheduler: error listing active %s connections: %v", compatibilitiesFixChannelCode, err)
 		return
@@ -104,30 +111,36 @@ func (s *CompatibilitiesFixScheduler) runOnce(ctx context.Context) {
 	log.Printf("compatibilities fix scheduler: poll found %d active %s connection(s)", len(connections), compatibilitiesFixChannelCode)
 
 	for _, connection := range connections {
-		result, err := s.fixer.FixUnderReviewListings(ctx, syncApp.FixCompatibilitiesInput{
-			ConnectionID: connection.ID,
-		})
-		if err != nil {
-			log.Printf("compatibilities fix scheduler: connection %d — error: %v", connection.ID, err)
-			continue
-		}
+		connection := connection
 
-		if len(result.Results) == 0 {
-			continue
-		}
-
-		fixed, skipped, failed := 0, 0, 0
-		for _, outcome := range result.Results {
-			switch {
-			case outcome.Success:
-				fixed++
-			case outcome.Skipped:
-				skipped++
-			default:
-				failed++
+		// Barrera de panic por conexión: un panic procesando una no debe
+		// abortar las demás ni tumbar el scheduler.
+		safe.Do(fmt.Sprintf("compatibilities fix scheduler: connection %d", connection.ID), func() {
+			result, err := s.fixer.FixUnderReviewListings(ctx, syncApp.FixCompatibilitiesInput{
+				ConnectionID: connection.ID,
+			})
+			if err != nil {
+				log.Printf("compatibilities fix scheduler: connection %d — error: %v", connection.ID, err)
+				return
 			}
-		}
 
-		log.Printf("compatibilities fix scheduler: connection %d — processed %d listing(s): %d fixed, %d skipped, %d failed", connection.ID, len(result.Results), fixed, skipped, failed)
+			if len(result.Results) == 0 {
+				return
+			}
+
+			fixed, skipped, failed := 0, 0, 0
+			for _, outcome := range result.Results {
+				switch {
+				case outcome.Success:
+					fixed++
+				case outcome.Skipped:
+					skipped++
+				default:
+					failed++
+				}
+			}
+
+			log.Printf("compatibilities fix scheduler: connection %d — processed %d listing(s): %d fixed, %d skipped, %d failed", connection.ID, len(result.Results), fixed, skipped, failed)
+		})
 	}
 }

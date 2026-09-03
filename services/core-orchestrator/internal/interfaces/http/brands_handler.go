@@ -43,7 +43,7 @@ func (h *BrandHandler) GetBrands(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	result, err := h.service.GetPaginatedBrands(offset, pageSize)
+	result, err := h.service.GetPaginatedBrands(r.Context(), offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -61,7 +61,7 @@ func (h *BrandHandler) GetBrandByID(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	brand, err := h.service.GetBrandByID(id)
+	brand, err := h.service.GetBrandByID(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrBrandNotFound) {
 			writeJSONError(w, http.StatusNotFound, "brand not found")
@@ -94,7 +94,7 @@ func (h *BrandHandler) CreateBrand(w http.ResponseWriter, r *http.Request) {
 		CreatedBy: user.ID,
 	}
 
-	brand, err := h.service.CreateBrand(input)
+	brand, err := h.service.CreateBrand(r.Context(), input)
 	if err != nil {
 		if errors.Is(err, brandsApp.ErrInvalidBrandPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
@@ -133,7 +133,7 @@ func (h *BrandHandler) UpdateBrand(w http.ResponseWriter, r *http.Request) {
 		UpdatedBy: user.ID,
 	}
 
-	brand, err := h.service.UpdateBrand(id, input)
+	brand, err := h.service.UpdateBrand(r.Context(), id, input)
 	if err != nil {
 		if errors.Is(err, brandsApp.ErrInvalidBrandPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
@@ -152,6 +152,47 @@ func (h *BrandHandler) UpdateBrand(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(brand)
 }
 
+type bulkAssignBrandsItem struct {
+	SKU   string `json:"sku"`
+	Brand string `json:"brand"`
+}
+
+func (h *BrandHandler) BulkAssignBrands(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req []bulkAssignBrandsItem
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "request body must be a non-empty array")
+		return
+	}
+
+	items := make([]brandsApp.BulkBrandAssignmentItem, len(req))
+	for i, item := range req {
+		items[i] = brandsApp.BulkBrandAssignmentItem{
+			SKU:   item.SKU,
+			Brand: item.Brand,
+		}
+	}
+
+	results, err := h.service.BulkAssignBrands(r.Context(), items, user.ID)
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(results)
+}
+
 func (h *BrandHandler) DeleteBrand(w http.ResponseWriter, r *http.Request) {
 	id, err := parseBrandID(r)
 	if err != nil {
@@ -159,7 +200,7 @@ func (h *BrandHandler) DeleteBrand(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	err = h.service.DeleteBrand(id)
+	err = h.service.DeleteBrand(r.Context(), id)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrBrandNotFound) {
 			writeJSONError(w, http.StatusNotFound, "brand not found")

@@ -1,6 +1,7 @@
 package consumers
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 
@@ -8,8 +9,8 @@ import (
 	"core-orchestrator/internal/domain"
 )
 
-func ERPCompletedConsumer(service *sync.SyncService) func([]byte) error {
-	return func(body []byte) error {
+func ERPCompletedConsumer(service *sync.SyncService) func(context.Context, []byte) error {
+	return func(ctx context.Context, body []byte) error {
 		var event domain.SyncCompletedEvent
 
 		err := json.Unmarshal(body, &event)
@@ -20,6 +21,6 @@ func ERPCompletedConsumer(service *sync.SyncService) func([]byte) error {
 
 		log.Printf("[item.sync.completed] received: %+v", event)
 
-		return service.ProcessERPCompleted(event)
+		return service.ProcessERPCompleted(ctx, event)
 	}
 }

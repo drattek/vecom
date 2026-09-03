@@ -73,7 +73,7 @@ func (s *OdooCategoryMigrationService) MigrateCategories(ctx context.Context, co
 		return nil, ErrMissingOdooCategoryActor
 	}
 
-	values, err := syncApp.LoadOdooConnectionValues(s.credentialsRepository, s.settingsRepository, connectionID)
+	values, err := syncApp.LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
 	if err != nil {
 		return nil, err
 	}
@@ -100,7 +100,7 @@ func (s *OdooCategoryMigrationService) MigrateCategories(ctx context.Context, co
 		return nil, fmt.Errorf("error fetching odoo categories: %w", err)
 	}
 
-	result, err := s.upsertHierarchy(odooCategories, connectionID, requestedBy)
+	result, err := s.upsertHierarchy(ctx, odooCategories, connectionID, requestedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ type categoryResolution struct {
 // upserted, so the local category stays traceable to the Odoo
 // product.public.category it came from even after this migration endpoint
 // is retired.
-func (s *OdooCategoryMigrationService) upsertHierarchy(odooCategories []odooInfra.PublicCategory, connectionID int64, requestedBy int64) (*OdooCategoryMigrationResult, error) {
+func (s *OdooCategoryMigrationService) upsertHierarchy(ctx context.Context, odooCategories []odooInfra.PublicCategory, connectionID int64, requestedBy int64) (*OdooCategoryMigrationResult, error) {
 	byOdooID := make(map[int64]odooInfra.PublicCategory, len(odooCategories))
 	for _, category := range odooCategories {
 		byOdooID[category.ID] = category
@@ -160,7 +160,7 @@ func (s *OdooCategoryMigrationService) upsertHierarchy(odooCategories []odooInfr
 			parentLocalID = &parentRes.localID
 		}
 
-		existing, err := s.categoriesRepository.FindByNameAndParentID(name, parentLocalID)
+		existing, err := s.categoriesRepository.FindByNameAndParentID(ctx, name, parentLocalID)
 		if err != nil && !errors.Is(err, mysqlInfra.ErrCategoryNotFound) {
 			return categoryResolution{}, fmt.Errorf("error looking up category %q: %w", name, err)
 		}
@@ -169,7 +169,7 @@ func (s *OdooCategoryMigrationService) upsertHierarchy(odooCategories []odooInfr
 		if existing != nil {
 			res = categoryResolution{localID: existing.ID}
 		} else {
-			created, err := s.categoriesRepository.Create(mysqlInfra.CreateCategoryInput{
+			created, err := s.categoriesRepository.Create(ctx, mysqlInfra.CreateCategoryInput{
 				Name:      name,
 				ParentID:  parentLocalID,
 				CreatedBy: requestedBy,
@@ -201,7 +201,7 @@ func (s *OdooCategoryMigrationService) upsertHierarchy(odooCategories []odooInfr
 		}
 
 		name := strings.TrimSpace(odooCategory.Name)
-		if _, err := s.categoryMapRepository.Upsert(mysqlInfra.UpsertChannelCategoryMapInput{
+		if _, err := s.categoryMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelCategoryMapInput{
 			CategoryID:           res.localID,
 			ConnectionID:         connectionID,
 			ExternalCategoryID:   strconv.FormatInt(odooCategory.ID, 10),

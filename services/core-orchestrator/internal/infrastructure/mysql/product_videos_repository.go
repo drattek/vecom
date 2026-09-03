@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -36,14 +37,14 @@ type UpdateProductVideoInput struct {
 }
 
 type ProductVideosRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewProductVideosRepository(db *sql.DB) *ProductVideosRepository {
+func NewProductVideosRepository(db Querier) *ProductVideosRepository {
 	return &ProductVideosRepository{db: db}
 }
 
-func (r *ProductVideosRepository) FindPaginated(offset, pageSize int) (*PaginatedProductVideos, error) {
+func (r *ProductVideosRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedProductVideos, error) {
 	query := `
 		SELECT id, product_id, file_id, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_videos
@@ -51,7 +52,7 @@ func (r *ProductVideosRepository) FindPaginated(offset, pageSize int) (*Paginate
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -68,14 +69,14 @@ func (r *ProductVideosRepository) FindPaginated(offset, pageSize int) (*Paginate
 
 	countQuery := "SELECT COUNT(*) FROM ecom_product_videos WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedProductVideos{Data: videos, Total: total}, nil
 }
 
-func (r *ProductVideosRepository) FindByID(id int64) (*ProductVideoDTO, error) {
+func (r *ProductVideosRepository) FindByID(ctx context.Context, id int64) (*ProductVideoDTO, error) {
 	query := `
 		SELECT id, product_id, file_id, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_videos
@@ -83,7 +84,7 @@ func (r *ProductVideosRepository) FindByID(id int64) (*ProductVideoDTO, error) {
 	`
 
 	var p ProductVideoDTO
-	if err := r.db.QueryRow(query, id).Scan(&p.ID, &p.ProductID, &p.FileID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&p.ID, &p.ProductID, &p.FileID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrProductVideoNotFound
 		}
@@ -93,7 +94,7 @@ func (r *ProductVideosRepository) FindByID(id int64) (*ProductVideoDTO, error) {
 	return &p, nil
 }
 
-func (r *ProductVideosRepository) FindByProductID(productID int64, offset, pageSize int) (*PaginatedProductVideos, error) {
+func (r *ProductVideosRepository) FindByProductID(ctx context.Context, productID int64, offset, pageSize int) (*PaginatedProductVideos, error) {
 	query := `
 		SELECT id, product_id, file_id, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_videos
@@ -101,7 +102,7 @@ func (r *ProductVideosRepository) FindByProductID(productID int64, offset, pageS
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, productID, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, productID, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -118,20 +119,20 @@ func (r *ProductVideosRepository) FindByProductID(productID int64, offset, pageS
 
 	countQuery := "SELECT COUNT(*) FROM ecom_product_videos WHERE product_id = ? AND deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery, productID).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, productID).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedProductVideos{Data: videos, Total: total}, nil
 }
 
-func (r *ProductVideosRepository) Create(input CreateProductVideoInput) (*ProductVideoDTO, error) {
+func (r *ProductVideosRepository) Create(ctx context.Context, input CreateProductVideoInput) (*ProductVideoDTO, error) {
 	query := `
 		INSERT INTO ecom_product_videos (product_id, file_id, created_by)
 		VALUES (?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ProductID, input.FileID, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.FileID, input.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -141,17 +142,17 @@ func (r *ProductVideosRepository) Create(input CreateProductVideoInput) (*Produc
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ProductVideosRepository) Update(id int64, input UpdateProductVideoInput) (*ProductVideoDTO, error) {
+func (r *ProductVideosRepository) Update(ctx context.Context, id int64, input UpdateProductVideoInput) (*ProductVideoDTO, error) {
 	query := `
 		UPDATE ecom_product_videos
 		SET updated_by = ?, updated_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.UpdatedBy, id)
+	result, err := r.db.ExecContext(ctx, query, input.UpdatedBy, id)
 	if err != nil {
 		return nil, err
 	}
@@ -165,13 +166,13 @@ func (r *ProductVideosRepository) Update(id int64, input UpdateProductVideoInput
 		return nil, ErrProductVideoNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ProductVideosRepository) SoftDelete(id int64) error {
+func (r *ProductVideosRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := "UPDATE ecom_product_videos SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

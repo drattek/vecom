@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 
 	httpHandler "core-orchestrator/internal/interfaces/http"
 )
@@ -24,6 +25,7 @@ func NewRouter(
 	warehouseHandler *httpHandler.WarehouseHandler,
 	productStockHandler *httpHandler.ProductStockHandler,
 	priceListHandler *httpHandler.PriceListHandler,
+	pricingFormulaHandler *httpHandler.PricingFormulaHandler,
 	productPricesHandler *httpHandler.ProductPricesHandler,
 	exchangeRatesHandler *httpHandler.ExchangeRatesHandler,
 	stockMovementsHandler *httpHandler.StockMovementsHandler,
@@ -51,6 +53,8 @@ func NewRouter(
 	channelListingsHandler *httpHandler.ChannelListingsHandler,
 	mercadoLibreItemLookupHandler *httpHandler.MercadoLibreItemLookupHandler,
 	mercadoLibrePauseUnmappedListingsHandler *httpHandler.MercadoLibrePauseUnmappedListingsHandler,
+	mercadoLibreCloseUnmappedListingsHandler *httpHandler.MercadoLibreCloseUnmappedListingsHandler,
+	mercadoLibreCloseItemHandler *httpHandler.MercadoLibreCloseItemHandler,
 	attributeHandler *httpHandler.AttributeHandler,
 	attributeOptionHandler *httpHandler.AttributeOptionHandler,
 	productAttributeHandler *httpHandler.ProductAttributeHandler,
@@ -60,9 +64,18 @@ func NewRouter(
 	mercadoLibreCompatibilitiesHandler *httpHandler.MercadoLibreCompatibilitiesHandler,
 	mercadoLibreListingsAuditHandler *httpHandler.MercadoLibreListingsAuditHandler,
 	mercadoLibreCategoryAttributesDebugHandler *httpHandler.MercadoLibreCategoryAttributesDebugHandler,
+	mercadoLibreCategoriesDebugHandler *httpHandler.MercadoLibreCategoriesDebugHandler,
+	mercadoLibreMigrateSyncItemMeliHandler *httpHandler.MercadoLibreMigrateSyncItemMeliHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
+
+	// middleware.Recoverer del proyecto: contiene un panic de handler en su
+	// request (net/http ya lo hace por conexión; esto unifica log + respuesta
+	// JSON). RequestID/RealIP alimentan el log del recover y el de acceso.
+	r.Use(middleware.RequestID)
+	r.Use(middleware.RealIP)
+	r.Use(recoverJSON)
 
 	r.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -95,6 +108,7 @@ func NewRouter(
 
 	r.Group(func(protected chi.Router) {
 		protected.Use(authMiddleware.RequireAuth)
+		protected.Post("/api/logout", authHandler.Logout)
 		protected.Get("/api/products", productHandler.GetProducts)
 		protected.Get("/api/products/{id}", productHandler.GetProductByID)
 		protected.Post("/api/products", productHandler.CreateProduct)
@@ -127,6 +141,9 @@ func NewRouter(
 		protected.Post("/api/brands", brandHandler.CreateBrand)
 		protected.Put("/api/brands/{id}", brandHandler.UpdateBrand)
 		protected.Delete("/api/brands/{id}", brandHandler.DeleteBrand)
+		// Bulk brand assignment by SKU (creates missing brands, name always
+		// uppercased) — see brands.BrandService.BulkAssignBrands.
+		protected.Post("/api/brands/bulk-assign", brandHandler.BulkAssignBrands)
 
 		// Categories endpoints
 		protected.Get("/api/categories", categoryHandler.GetCategories)
@@ -170,12 +187,20 @@ func NewRouter(
 		protected.Put("/api/price-lists/{id}", priceListHandler.UpdatePriceList)
 		protected.Delete("/api/price-lists/{id}", priceListHandler.DeletePriceList)
 
+		// Pricing Formulas endpoints
+		protected.Get("/api/pricing-formulas", pricingFormulaHandler.GetPricingFormulas)
+		protected.Get("/api/pricing-formulas/{id}", pricingFormulaHandler.GetPricingFormulaByID)
+		protected.Post("/api/pricing-formulas", pricingFormulaHandler.CreatePricingFormula)
+		protected.Put("/api/pricing-formulas/{id}", pricingFormulaHandler.UpdatePricingFormula)
+		protected.Delete("/api/pricing-formulas/{id}", pricingFormulaHandler.DeletePricingFormula)
+
 		// Product Prices endpoints
 		protected.Get("/api/product-prices", productPricesHandler.GetProductPrices)
 		protected.Get("/api/product-prices/{id}", productPricesHandler.GetProductPriceByID)
 		protected.Post("/api/product-prices", productPricesHandler.CreateProductPrice)
 		protected.Put("/api/product-prices/{id}", productPricesHandler.UpdateProductPrice)
 		protected.Delete("/api/product-prices/{id}", productPricesHandler.DeleteProductPrice)
+		protected.Post("/api/price-lists/{id}/prices/bulk-import", productPricesHandler.BulkUpsertPrices)
 
 		// Exchange Rates endpoints
 		protected.Get("/api/exchange-rates", exchangeRatesHandler.GetExchangeRates)
@@ -266,6 +291,15 @@ func NewRouter(
 		// side when available) to MercadoLibre for under_review listings that
 		// need it — see MercadoLibreCompatibilitiesHandler.
 		protected.Post("/api/marketplaces/mercadolibre/compatibilities/fix-under-review", mercadoLibreCompatibilitiesHandler.FixUnderReview)
+		// Downloads every compatibility MercadoLibre reports for sourceItemId
+		// and links it to the local product resolved by sku — see
+		// MercadoLibreCompatibilitiesHandler.
+		protected.Post("/api/marketplaces/mercadolibre/compatibilities/copy", mercadoLibreCompatibilitiesHandler.CopyCompatibilities)
+		// Read-only diagnosis for one item (connectionId + itemId): catalog/
+		// user-product linkage, category compatibility support, and the raw
+		// item + user-product compatibility payloads — to see why copy found
+		// nothing. See MercadoLibreCompatibilitiesHandler.Diagnose.
+		protected.Post("/api/marketplaces/mercadolibre/compatibilities/diagnose", mercadoLibreCompatibilitiesHandler.Diagnose)
 		// Sets a MercadoLibre custom attribute value on a product by sku +
 		// external_key, resolving/creating the ecom_attributes/
 		// ecom_channel_attributes/ecom_channel_attribute_map chain behind it —
@@ -276,15 +310,21 @@ func NewRouter(
 		// channel_attribute_values.Service.ProvisionCategoryAttributes.
 		protected.Post("/api/marketplaces/mercadolibre/product-attributes/provision", channelAttributeValueHandler.ProvisionMercadoLibreCategoryAttributes)
 		// Scans every listing in the account (connectionId only) for the
-		// flagged price=999999/stock=0 sentinel, downloading images for each
-		// match and — when its SKU matches a local product — mirroring its
-		// attributes/category/name too — see
+		// flagged price=999999/stock=0 sentinel and, per match, resolves the
+		// local product (creating it from the listing when absent) and copies
+		// the listing's vehicle compatibilities into MySQL — the account-wide
+		// equivalent of .../compatibilities/copy. See
 		// MercadoLibreListingsAuditHandler / sync.MercadoLibreListingsAuditService.
 		protected.Post("/api/marketplaces/mercadolibre/listings/sync-flagged", mercadoLibreListingsAuditHandler.SyncFlaggedListings)
 		// TEMPORARY debug endpoint — remove once the attribute-provisioning
 		// investigation it's for is done. See
 		// MercadoLibreCategoryAttributesDebugHandler.
 		protected.Get("/api/marketplaces/mercadolibre/debug/category-attributes", mercadoLibreCategoryAttributesDebugHandler.GetCategoryAttributes)
+		// TEMPORARY debug endpoint — remove once the category lookup it's
+		// for is done. Requires connectionId (query param) to resolve which
+		// connection's access token to use. See
+		// MercadoLibreCategoriesDebugHandler.
+		protected.Get("/api/marketplaces/mercadolibre/debug/categories", mercadoLibreCategoriesDebugHandler.GetCategories)
 		// oauth/authorize is registered as a public route above (not here),
 		// since it needs to be reachable without a JWT — see the comment there.
 
@@ -301,6 +341,10 @@ func NewRouter(
 		// Migration endpoints (temporary data-completion helpers, not
 		// part of the long-lived marketplace integrations)
 		protected.Post("/api/migration/odoo/categories", migrationHandler.SyncOdooCategories)
+		// TEMPORARY one-off migration endpoint — migra vecom_sync_product /
+		// vecom_products (sistema anterior) a ecom_products /
+		// ecom_channel_product_map. Eliminar junto con esta ruta al terminar.
+		protected.Post("/api/migration/vecom-sync-products", migrationHandler.MigrateVecomSyncProducts)
 
 		// Equipment Types endpoints (machinery compatibility taxonomy)
 		protected.Get("/api/equipment-types", equipmentTypeHandler.GetEquipmentTypes)
@@ -354,6 +398,22 @@ func NewRouter(
 		// MercadoLibrePauseUnmappedListingsHandler. Meant to be run once, then
 		// removed along with this route.
 		protected.Post("/api/marketplaces/mercadolibre/temp-pause-unmapped-listings", mercadoLibrePauseUnmappedListingsHandler.Run)
+
+		// TEMPORARY one-off migration endpoint — see
+		// MercadoLibreCloseUnmappedListingsHandler. Meant to be run once, then
+		// removed along with this route.
+		protected.Post("/api/marketplaces/mercadolibre/temp-close-unmapped-listings", mercadoLibreCloseUnmappedListingsHandler.Run)
+
+		// TEMPORARY one-off endpoint — see MercadoLibreCloseItemHandler. Remove
+		// once no longer needed.
+		protected.Post("/api/marketplaces/mercadolibre/temp-close-item", mercadoLibreCloseItemHandler.Run)
+
+		// TEMPORARY one-off migration endpoint — see
+		// MercadoLibreMigrateSyncItemMeliHandler. Migrates the previous
+		// version's syncitemmeli table into ecom_channel_product_map /
+		// ecom_products. Meant to be run once, then removed along with this
+		// route. Requires connectionId (query param).
+		protected.Post("/api/marketplaces/mercadolibre/temp-migrate-syncitemmeli", mercadoLibreMigrateSyncItemMeliHandler.Run)
 
 		// Attributes endpoints (ecom_attributes catalog + ecom_attribute_options
 		// enum values + ecom_product_attributes per-product values). CRUD only:

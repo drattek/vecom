@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -36,16 +37,16 @@ type CreateProductEquipmentCompatibilityInput struct {
 }
 
 type ProductEquipmentCompatibilityRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewProductEquipmentCompatibilityRepository(db *sql.DB) *ProductEquipmentCompatibilityRepository {
+func NewProductEquipmentCompatibilityRepository(db Querier) *ProductEquipmentCompatibilityRepository {
 	return &ProductEquipmentCompatibilityRepository{db: db}
 }
 
-func (r *ProductEquipmentCompatibilityRepository) FindByProductID(productID int64, offset, pageSize int) (*PaginatedProductEquipmentCompatibilities, error) {
+func (r *ProductEquipmentCompatibilityRepository) FindByProductID(ctx context.Context, productID int64, offset, pageSize int) (*PaginatedProductEquipmentCompatibilities, error) {
 	var total int64
-	err := r.db.QueryRow(
+	err := r.db.QueryRowContext(ctx,
 		"SELECT COUNT(*) FROM ecom_product_equipment_compatibility WHERE product_id = ? AND deleted_at IS NULL",
 		productID,
 	).Scan(&total)
@@ -61,7 +62,7 @@ func (r *ProductEquipmentCompatibilityRepository) FindByProductID(productID int6
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, productID, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, productID, pageSize, offset)
 	if err != nil {
 		return nil, fmt.Errorf("error querying product equipment compatibilities: %w", err)
 	}
@@ -89,7 +90,7 @@ func (r *ProductEquipmentCompatibilityRepository) FindByProductID(productID int6
 	}, nil
 }
 
-func (r *ProductEquipmentCompatibilityRepository) FindByID(id int64) (*ProductEquipmentCompatibilityDTO, error) {
+func (r *ProductEquipmentCompatibilityRepository) FindByID(ctx context.Context, id int64) (*ProductEquipmentCompatibilityDTO, error) {
 	query := `
 		SELECT id, product_id, equipment_fitment_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_product_equipment_compatibility
@@ -97,17 +98,17 @@ func (r *ProductEquipmentCompatibilityRepository) FindByID(id int64) (*ProductEq
 		LIMIT 1
 	`
 
-	row := r.db.QueryRow(query, id)
+	row := r.db.QueryRowContext(ctx, query, id)
 	return scanProductEquipmentCompatibilityRow(row)
 }
 
-func (r *ProductEquipmentCompatibilityRepository) Create(input CreateProductEquipmentCompatibilityInput) (*ProductEquipmentCompatibilityDTO, error) {
+func (r *ProductEquipmentCompatibilityRepository) Create(ctx context.Context, input CreateProductEquipmentCompatibilityInput) (*ProductEquipmentCompatibilityDTO, error) {
 	query := `
 		INSERT INTO ecom_product_equipment_compatibility (product_id, equipment_fitment_id, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, NOW(), NOW())
 	`
 
-	result, err := r.db.Exec(query, input.ProductID, input.EquipmentFitmentID, input.CreatedBy)
+	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.EquipmentFitmentID, input.CreatedBy)
 	if err != nil {
 		if isDuplicateKeyError(err) {
 			return nil, ErrProductEquipmentCompatibilityAlreadyExists
@@ -123,17 +124,17 @@ func (r *ProductEquipmentCompatibilityRepository) Create(input CreateProductEqui
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ProductEquipmentCompatibilityRepository) SoftDelete(id int64) error {
+func (r *ProductEquipmentCompatibilityRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := `
 		UPDATE ecom_product_equipment_compatibility
 		SET deleted_at = NOW()
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return fmt.Errorf("error deleting product equipment compatibility: %w", err)
 	}

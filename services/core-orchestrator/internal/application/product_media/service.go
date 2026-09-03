@@ -1,6 +1,8 @@
 package product_media
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 	"strconv"
 	"strings"
@@ -12,137 +14,146 @@ var (
 	ErrInvalidProductMedia = errors.New("invalid product media")
 )
 
+// Todos los servicios de este paquete reciben *sql.DB por consistencia con el
+// resto de la aplicación (ver ADR 0001). Hoy ninguna operación es
+// multi-sentencia, así que ninguno abre transacción; el campo queda listo para
+// cuando alguna la necesite (p. ej. reordenar imágenes = borrar + insertar).
+
 type ProductImagesService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ProductImagesRepository
 }
 
-func NewProductImagesService(repository *mysqlInfra.ProductImagesRepository) *ProductImagesService {
-	return &ProductImagesService{repository: repository}
+func NewProductImagesService(db *sql.DB, repository *mysqlInfra.ProductImagesRepository) *ProductImagesService {
+	return &ProductImagesService{db: db, repository: repository}
 }
 
-func (s *ProductImagesService) GetPaginatedImages(offset, pageSize int) (*mysqlInfra.PaginatedProductImages, error) {
-	return s.repository.FindPaginated(offset, pageSize)
+func (s *ProductImagesService) GetPaginatedImages(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedProductImages, error) {
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *ProductImagesService) GetImageByID(id int64) (*mysqlInfra.ProductImageDTO, error) {
-	return s.repository.FindByID(id)
+func (s *ProductImagesService) GetImageByID(ctx context.Context, id int64) (*mysqlInfra.ProductImageDTO, error) {
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *ProductImagesService) GetImagesByProduct(productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductImages, error) {
-	return s.repository.FindByProductID(productID, offset, pageSize)
+func (s *ProductImagesService) GetImagesByProduct(ctx context.Context, productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductImages, error) {
+	return s.repository.FindByProductID(ctx, productID, offset, pageSize)
 }
 
-func (s *ProductImagesService) CreateImage(input mysqlInfra.CreateProductImageInput) (*mysqlInfra.ProductImageDTO, error) {
+func (s *ProductImagesService) CreateImage(ctx context.Context, input mysqlInfra.CreateProductImageInput) (*mysqlInfra.ProductImageDTO, error) {
 	if input.ProductID == 0 || input.FileID == 0 {
 		return nil, ErrInvalidProductMedia
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ProductImagesService) UpdateImage(id int64, input mysqlInfra.UpdateProductImageInput) (*mysqlInfra.ProductImageDTO, error) {
-	return s.repository.Update(id, input)
+func (s *ProductImagesService) UpdateImage(ctx context.Context, id int64, input mysqlInfra.UpdateProductImageInput) (*mysqlInfra.ProductImageDTO, error) {
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *ProductImagesService) DeleteImage(id int64) error {
-	return s.repository.SoftDelete(id)
+func (s *ProductImagesService) DeleteImage(ctx context.Context, id int64) error {
+	return s.repository.SoftDelete(ctx, id)
 }
 
 type ProductVideosService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ProductVideosRepository
 }
 
-func NewProductVideosService(repository *mysqlInfra.ProductVideosRepository) *ProductVideosService {
-	return &ProductVideosService{repository: repository}
+func NewProductVideosService(db *sql.DB, repository *mysqlInfra.ProductVideosRepository) *ProductVideosService {
+	return &ProductVideosService{db: db, repository: repository}
 }
 
-func (s *ProductVideosService) GetPaginatedVideos(offset, pageSize int) (*mysqlInfra.PaginatedProductVideos, error) {
-	return s.repository.FindPaginated(offset, pageSize)
+func (s *ProductVideosService) GetPaginatedVideos(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedProductVideos, error) {
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *ProductVideosService) GetVideoByID(id int64) (*mysqlInfra.ProductVideoDTO, error) {
-	return s.repository.FindByID(id)
+func (s *ProductVideosService) GetVideoByID(ctx context.Context, id int64) (*mysqlInfra.ProductVideoDTO, error) {
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *ProductVideosService) GetVideosByProduct(productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductVideos, error) {
-	return s.repository.FindByProductID(productID, offset, pageSize)
+func (s *ProductVideosService) GetVideosByProduct(ctx context.Context, productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductVideos, error) {
+	return s.repository.FindByProductID(ctx, productID, offset, pageSize)
 }
 
-func (s *ProductVideosService) CreateVideo(input mysqlInfra.CreateProductVideoInput) (*mysqlInfra.ProductVideoDTO, error) {
+func (s *ProductVideosService) CreateVideo(ctx context.Context, input mysqlInfra.CreateProductVideoInput) (*mysqlInfra.ProductVideoDTO, error) {
 	if input.ProductID == 0 || input.FileID == 0 {
 		return nil, ErrInvalidProductMedia
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ProductVideosService) UpdateVideo(id int64, input mysqlInfra.UpdateProductVideoInput) (*mysqlInfra.ProductVideoDTO, error) {
-	return s.repository.Update(id, input)
+func (s *ProductVideosService) UpdateVideo(ctx context.Context, id int64, input mysqlInfra.UpdateProductVideoInput) (*mysqlInfra.ProductVideoDTO, error) {
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *ProductVideosService) DeleteVideo(id int64) error {
-	return s.repository.SoftDelete(id)
+func (s *ProductVideosService) DeleteVideo(ctx context.Context, id int64) error {
+	return s.repository.SoftDelete(ctx, id)
 }
 
 type ProductPartNumbersService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ProductPartNumbersRepository
 }
 
-func NewProductPartNumbersService(repository *mysqlInfra.ProductPartNumbersRepository) *ProductPartNumbersService {
-	return &ProductPartNumbersService{repository: repository}
+func NewProductPartNumbersService(db *sql.DB, repository *mysqlInfra.ProductPartNumbersRepository) *ProductPartNumbersService {
+	return &ProductPartNumbersService{db: db, repository: repository}
 }
 
-func (s *ProductPartNumbersService) GetPaginatedPartNumbers(offset, pageSize int) (*mysqlInfra.PaginatedProductPartNumbers, error) {
-	return s.repository.FindPaginated(offset, pageSize)
+func (s *ProductPartNumbersService) GetPaginatedPartNumbers(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedProductPartNumbers, error) {
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *ProductPartNumbersService) GetPartNumbersByProduct(productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductPartNumbers, error) {
-	return s.repository.FindByProductID(productID, offset, pageSize)
+func (s *ProductPartNumbersService) GetPartNumbersByProduct(ctx context.Context, productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductPartNumbers, error) {
+	return s.repository.FindByProductID(ctx, productID, offset, pageSize)
 }
 
-func (s *ProductPartNumbersService) CreatePartNumber(input mysqlInfra.CreateProductPartNumberInput) (*mysqlInfra.ProductPartNumberDTO, error) {
+func (s *ProductPartNumbersService) CreatePartNumber(ctx context.Context, input mysqlInfra.CreateProductPartNumberInput) (*mysqlInfra.ProductPartNumberDTO, error) {
 	if input.ProductID == 0 || input.PartNumber == "" {
 		return nil, ErrInvalidProductMedia
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ProductPartNumbersService) UpdatePartNumber(productID int64, partNumber string, input mysqlInfra.UpdateProductPartNumberInput) (*mysqlInfra.ProductPartNumberDTO, error) {
-	return s.repository.Update(productID, partNumber, input)
+func (s *ProductPartNumbersService) UpdatePartNumber(ctx context.Context, productID int64, partNumber string, input mysqlInfra.UpdateProductPartNumberInput) (*mysqlInfra.ProductPartNumberDTO, error) {
+	return s.repository.Update(ctx, productID, partNumber, input)
 }
 
-func (s *ProductPartNumbersService) DeletePartNumber(productID int64, partNumber string) error {
-	return s.repository.SoftDelete(productID, partNumber)
+func (s *ProductPartNumbersService) DeletePartNumber(ctx context.Context, productID int64, partNumber string) error {
+	return s.repository.SoftDelete(ctx, productID, partNumber)
 }
 
 type ProductDimensionsService struct {
+	db                *sql.DB
 	repository        *mysqlInfra.ProductDimensionsRepository
 	productRepository *mysqlInfra.ProductRepository
 }
 
-func NewProductDimensionsService(repository *mysqlInfra.ProductDimensionsRepository, productRepository *mysqlInfra.ProductRepository) *ProductDimensionsService {
-	return &ProductDimensionsService{repository: repository, productRepository: productRepository}
+func NewProductDimensionsService(db *sql.DB, repository *mysqlInfra.ProductDimensionsRepository, productRepository *mysqlInfra.ProductRepository) *ProductDimensionsService {
+	return &ProductDimensionsService{db: db, repository: repository, productRepository: productRepository}
 }
 
-func (s *ProductDimensionsService) GetDimensionsByProduct(productID int64) (*mysqlInfra.ProductDimensionsDTO, error) {
-	return s.repository.FindByProductID(productID)
+func (s *ProductDimensionsService) GetDimensionsByProduct(ctx context.Context, productID int64) (*mysqlInfra.ProductDimensionsDTO, error) {
+	return s.repository.FindByProductID(ctx, productID)
 }
 
-func (s *ProductDimensionsService) CreateDimensions(input mysqlInfra.CreateProductDimensionsInput) (*mysqlInfra.ProductDimensionsDTO, error) {
+func (s *ProductDimensionsService) CreateDimensions(ctx context.Context, input mysqlInfra.CreateProductDimensionsInput) (*mysqlInfra.ProductDimensionsDTO, error) {
 	if input.ProductID == 0 {
 		return nil, ErrInvalidProductMedia
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ProductDimensionsService) UpdateDimensions(productID int64, input mysqlInfra.UpdateProductDimensionsInput) (*mysqlInfra.ProductDimensionsDTO, error) {
-	return s.repository.Update(productID, input)
+func (s *ProductDimensionsService) UpdateDimensions(ctx context.Context, productID int64, input mysqlInfra.UpdateProductDimensionsInput) (*mysqlInfra.ProductDimensionsDTO, error) {
+	return s.repository.Update(ctx, productID, input)
 }
 
-func (s *ProductDimensionsService) DeleteDimensions(productID int64) error {
-	return s.repository.SoftDelete(productID)
+func (s *ProductDimensionsService) DeleteDimensions(ctx context.Context, productID int64) error {
+	return s.repository.SoftDelete(ctx, productID)
 }
 
 type BulkDimensionItem struct {
@@ -178,7 +189,11 @@ type BulkDimensionResult struct {
 // products. Volume is never accepted from the caller — it's always
 // recalculated from length/width/height (measurements are assumed to always
 // be uploaded in cm/kg).
-func (s *ProductDimensionsService) BulkUpsertDimensions(items []BulkDimensionItem, actorID int64) ([]BulkDimensionResult, error) {
+//
+// Cada ítem hace dos lecturas (producto por SKU, dimensiones por producto) y
+// UNA sola escritura (create o update): una escritura es atómica por sí sola,
+// así que no se abre transacción. Mantiene la semántica de éxito parcial.
+func (s *ProductDimensionsService) BulkUpsertDimensions(ctx context.Context, items []BulkDimensionItem, actorID int64) ([]BulkDimensionResult, error) {
 	results := make([]BulkDimensionResult, 0, len(items))
 
 	for i, item := range items {
@@ -188,7 +203,7 @@ func (s *ProductDimensionsService) BulkUpsertDimensions(items []BulkDimensionIte
 			continue
 		}
 
-		product, err := s.productRepository.FindBySKU(sku)
+		product, err := s.productRepository.FindBySKU(ctx, sku)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 				results = append(results, BulkDimensionResult{Index: i, SKU: sku, Status: BulkDimensionNotFound, Error: "product not found for sku"})
@@ -208,14 +223,14 @@ func (s *ProductDimensionsService) BulkUpsertDimensions(items []BulkDimensionIte
 		}
 		volume := length * width * height
 
-		_, err = s.repository.FindByProductID(product.ID)
+		_, err = s.repository.FindByProductID(ctx, product.ID)
 		if err != nil {
 			if !errors.Is(err, mysqlInfra.ErrProductDimensionsNotFound) {
 				results = append(results, BulkDimensionResult{Index: i, SKU: sku, ProductID: product.ID, Status: BulkDimensionError, Error: err.Error()})
 				continue
 			}
 
-			created, createErr := s.repository.Create(mysqlInfra.CreateProductDimensionsInput{
+			created, createErr := s.repository.Create(ctx, mysqlInfra.CreateProductDimensionsInput{
 				ProductID: product.ID,
 				Weight:    formatDimension(weight),
 				Length:    formatDimension(length),
@@ -233,7 +248,7 @@ func (s *ProductDimensionsService) BulkUpsertDimensions(items []BulkDimensionIte
 			continue
 		}
 
-		updated, updateErr := s.repository.Update(product.ID, mysqlInfra.UpdateProductDimensionsInput{
+		updated, updateErr := s.repository.Update(ctx, product.ID, mysqlInfra.UpdateProductDimensionsInput{
 			Weight:    formatDimension(weight),
 			Length:    formatDimension(length),
 			Width:     formatDimension(width),
@@ -264,29 +279,30 @@ func formatDimension(v float64) string {
 }
 
 type ProductSEOService struct {
+	db         *sql.DB
 	repository *mysqlInfra.ProductSEORepository
 }
 
-func NewProductSEOService(repository *mysqlInfra.ProductSEORepository) *ProductSEOService {
-	return &ProductSEOService{repository: repository}
+func NewProductSEOService(db *sql.DB, repository *mysqlInfra.ProductSEORepository) *ProductSEOService {
+	return &ProductSEOService{db: db, repository: repository}
 }
 
-func (s *ProductSEOService) GetSEOByProduct(productID int64) (*mysqlInfra.ProductSEODTO, error) {
-	return s.repository.FindByProductID(productID)
+func (s *ProductSEOService) GetSEOByProduct(ctx context.Context, productID int64) (*mysqlInfra.ProductSEODTO, error) {
+	return s.repository.FindByProductID(ctx, productID)
 }
 
-func (s *ProductSEOService) CreateSEO(input mysqlInfra.CreateProductSEOInput) (*mysqlInfra.ProductSEODTO, error) {
+func (s *ProductSEOService) CreateSEO(ctx context.Context, input mysqlInfra.CreateProductSEOInput) (*mysqlInfra.ProductSEODTO, error) {
 	if input.ProductID == 0 {
 		return nil, ErrInvalidProductMedia
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *ProductSEOService) UpdateSEO(productID int64, input mysqlInfra.UpdateProductSEOInput) (*mysqlInfra.ProductSEODTO, error) {
-	return s.repository.Update(productID, input)
+func (s *ProductSEOService) UpdateSEO(ctx context.Context, productID int64, input mysqlInfra.UpdateProductSEOInput) (*mysqlInfra.ProductSEODTO, error) {
+	return s.repository.Update(ctx, productID, input)
 }
 
-func (s *ProductSEOService) DeleteSEO(productID int64) error {
-	return s.repository.SoftDelete(productID)
+func (s *ProductSEOService) DeleteSEO(ctx context.Context, productID int64) error {
+	return s.repository.SoftDelete(ctx, productID)
 }

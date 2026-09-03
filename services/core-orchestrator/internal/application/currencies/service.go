@@ -1,6 +1,8 @@
 package currencies
 
 import (
+	"context"
+	"database/sql"
 	"errors"
 
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
@@ -9,14 +11,15 @@ import (
 var ErrInvalidCurrencyPayload = errors.New("invalid currency payload")
 
 type CurrencyService struct {
+	db         *sql.DB
 	repository *mysqlInfra.CurrenciesRepository
 }
 
-func NewCurrencyService(repository *mysqlInfra.CurrenciesRepository) *CurrencyService {
-	return &CurrencyService{repository: repository}
+func NewCurrencyService(db *sql.DB, repository *mysqlInfra.CurrenciesRepository) *CurrencyService {
+	return &CurrencyService{db: db, repository: repository}
 }
 
-func (s *CurrencyService) GetPaginatedCurrencies(offset, pageSize int) (*mysqlInfra.PaginatedCurrencies, error) {
+func (s *CurrencyService) GetPaginatedCurrencies(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedCurrencies, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -27,24 +30,24 @@ func (s *CurrencyService) GetPaginatedCurrencies(offset, pageSize int) (*mysqlIn
 		pageSize = 100
 	}
 
-	return s.repository.FindPaginated(offset, pageSize)
+	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
-func (s *CurrencyService) GetCurrencyByID(id int64) (*mysqlInfra.CurrencyDTO, error) {
+func (s *CurrencyService) GetCurrencyByID(ctx context.Context, id int64) (*mysqlInfra.CurrencyDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidCurrencyPayload
 	}
-	return s.repository.FindByID(id)
+	return s.repository.FindByID(ctx, id)
 }
 
-func (s *CurrencyService) GetCurrencyByCode(code string) (*mysqlInfra.CurrencyDTO, error) {
+func (s *CurrencyService) GetCurrencyByCode(ctx context.Context, code string) (*mysqlInfra.CurrencyDTO, error) {
 	if code == "" {
 		return nil, ErrInvalidCurrencyPayload
 	}
-	return s.repository.FindByCode(code)
+	return s.repository.FindByCode(ctx, code)
 }
 
-func (s *CurrencyService) CreateCurrency(input mysqlInfra.CreateCurrencyInput) (*mysqlInfra.CurrencyDTO, error) {
+func (s *CurrencyService) CreateCurrency(ctx context.Context, input mysqlInfra.CreateCurrencyInput) (*mysqlInfra.CurrencyDTO, error) {
 	if input.Name == "" || input.Code == "" || input.Symbol == "" {
 		return nil, ErrInvalidCurrencyPayload
 	}
@@ -55,10 +58,10 @@ func (s *CurrencyService) CreateCurrency(input mysqlInfra.CreateCurrencyInput) (
 		return nil, ErrInvalidCurrencyPayload
 	}
 
-	return s.repository.Create(input)
+	return s.repository.Create(ctx, input)
 }
 
-func (s *CurrencyService) UpdateCurrency(id int64, input mysqlInfra.UpdateCurrencyInput) (*mysqlInfra.CurrencyDTO, error) {
+func (s *CurrencyService) UpdateCurrency(ctx context.Context, id int64, input mysqlInfra.UpdateCurrencyInput) (*mysqlInfra.CurrencyDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidCurrencyPayload
 	}
@@ -72,12 +75,12 @@ func (s *CurrencyService) UpdateCurrency(id int64, input mysqlInfra.UpdateCurren
 		return nil, ErrInvalidCurrencyPayload
 	}
 
-	return s.repository.Update(id, input)
+	return s.repository.Update(ctx, id, input)
 }
 
-func (s *CurrencyService) DeleteCurrency(id int64) error {
+func (s *CurrencyService) DeleteCurrency(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidCurrencyPayload
 	}
-	return s.repository.SoftDelete(id)
+	return s.repository.SoftDelete(ctx, id)
 }

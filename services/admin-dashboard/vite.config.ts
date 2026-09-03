@@ -16,9 +16,14 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       proxy: {
+        // core-orchestrator sirve HTTPS en el puerto 443 (SERVER_PORT en .env,
+        // mismo mapeo en docker-compose). El certificado es para vecom.odo.mx,
+        // así que `secure: false` evita el fallo de verificación contra localhost.
+        // Sobrescribe el destino con VITE_API_PROXY_TARGET si lo corres en otro puerto/host.
         '/api': {
-          target: env.VITE_API_PROXY_TARGET || 'http://localhost:8081',
+          target: env.VITE_API_PROXY_TARGET || 'https://localhost:443',
           changeOrigin: true,
+          secure: false,
         },
       },
     },

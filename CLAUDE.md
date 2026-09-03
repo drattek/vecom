@@ -2,6 +2,10 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Idioma
+
+Responde siempre en español, en todas las conversaciones sobre este repositorio.
+
 ## Project
 
 Middleware ecommerce (Vegusa): synchronizes product/inventory data from Azure Synapse/ERP into an owned system and distributes it to marketplaces (MercadoLibre, Amazon, Odoo). Three independent services:
@@ -40,7 +44,7 @@ When docs conflict, this is the order of truth (highest first):
 ## Database (MySQL, `core-orchestrator`)
 
 Schema detail lives in `infrastructure/mysql/database.md` and `relationships.md` — read those before touching persistence. Key points:
-- Domain tables use prefix `ecom_`; infra/API-access tables use `vecom_`.
+- All tables use prefix `ecom_`, including domain tables and API-access/auth tables (`ecom_api_user`, `ecom_api_token`).
 - `ecom_products` is the central catalog table (join point for brand/category/stock/price/media).
 - Current-state vs. history split: `ecom_product_stock` (current) vs `ecom_stock_movements` (history); `ecom_product_prices` (current) vs `ecom_price_history` (history).
 - Channel integrations: `ecom_channels` → `ecom_channel_connections` → `ecom_connection_credentials` / `ecom_connection_settings` / `ecom_connection_status`. Credentials/settings are sensitive — see `ConnectionCredentialsRepository`'s encrypt/decrypt handling.
@@ -61,7 +65,9 @@ internal/application/<module>/          use cases (brands, categories, channels,
                                          pricing, product_media, products, stock_movements,
                                          storage_disks, sync)
 internal/domain/                        entities and business rules
-internal/infrastructure/mysql/          repositories (generic Create/Update/FindByID/FindPaginated/SoftDelete pattern)
+internal/infrastructure/mysql/          repositories (generic Create/Update/FindByID/FindPaginated/SoftDelete pattern);
+                                         every repo takes mysql.Querier (*sql.DB or *sql.Tx) — see persistence rules below
+internal/shared/safe/                   panic barrier for background goroutines (Do / Supervise / Guard)
 internal/infrastructure/redis/          Redis client + product repo (cache)
 internal/infrastructure/rabbitmq/       broker client
 internal/infrastructure/marketplace/mercadolibre/  MercadoLibre API client, split per topic (handler_auth.go,
@@ -72,15 +78,22 @@ internal/infrastructure/servertls/      TLS keystore loading (PKCS12)
 internal/config/                        env-based config loader (config.Load())
 ```
 
-`main.go` wires everything by hand (no DI framework): build MySQL repos → application services → HTTP handlers → start RabbitMQ consumers in a goroutine → build chi router (`api.NewRouter(...)`) → serve HTTPS (falls back to plain HTTP if no TLS config) using `crypto/tls` and a PKCS12 keystore (`SERVER_TLS_KEYSTORE_PATH`).
+`main.go` wires everything by hand (no DI framework): `config.Load()` is called **once** in `main` and injected into every infra constructor (`mysql.NewConnection(cfg)`, `redis.NewClient(cfg)`, …) → build MySQL repos → application services → HTTP handlers → start RabbitMQ consumers in a goroutine → build chi router (`api.NewRouter(...)`) → serve HTTPS (falls back to plain HTTP if no TLS config) using `crypto/tls` and a PKCS12 keystore (`SERVER_TLS_KEYSTORE_PATH`). Background loops (marketplace worker, schedulers, consumers) run under a cancelable `bgCtx` and a `safe.Supervise` panic barrier; on `SIGTERM`/`SIGINT` the process does a graceful shutdown (`server.Shutdown` → cancel `bgCtx` → wait for consumers).
+
+**Persistence & transactions** (see `infrastructure/decisions/0001-persistencia-transacciones-y-context.md`):
+- Every `NewXxxRepository` takes `mysql.Querier` (satisfied by `*sql.DB` and `*sql.Tx`).
+- Every repo/service I/O method takes `ctx context.Context` as first param, threaded from `r.Context()` in the handler (or the RabbitMQ consumer's lifetime ctx), and uses the `...Context` driver methods. `mysql.Querier` is `ExecContext`/`QueryContext`/`QueryRowContext` only — never introduce a non-`context` DB call or `context.TODO()`.
+- Multi-statement operations run inside `mysql.WithinTx(ctx, db, func(tx *sql.Tx) error { ... })`, building tx-scoped repos. Single-statement writes call the pool repo directly (no transaction). The transaction boundary lives in the **service** layer, so every service constructor also takes `*sql.DB`.
 
 Notable hotspots (high fan-in, touched by most modules): `writeJSONError`, `UserFromContext` (both in `internal/interfaces/http`), and the generic MySQL repo methods `Create`/`Update`/`FindByID`/`FindPaginated`/`SoftDelete`.
 
 **Rules for this service:**
-- Every I/O method takes `context.Context`.
+- Every I/O method takes `context.Context` (first param), propagated to the DB driver via `...Context` methods.
 - Handlers stay thin — no business logic in router/handlers/repositories.
 - Wrap errors with `fmt.Errorf("...: %w", err)`.
 - No package-level mutable global state.
+- Multi-statement DB work → `mysql.WithinTx`; single-statement writes → pool repo directly (no `BEGIN`/`COMMIT`).
+- Background goroutines (`go ...`) must run under `safe.Supervise` / `safe.Do`; never leave a bare `go fn()` that can panic the process.
 - New modules follow the existing `internal/application/<module>` + handler pattern rather than introducing a parallel structure.
 
 ## Architecture: synapse-bridge (Java / Spring Boot)

@@ -1,6 +1,7 @@
 package mysql
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"time"
@@ -51,14 +52,14 @@ type UpdateChannelParameterInput struct {
 }
 
 type ChannelParametersRepository struct {
-	db *sql.DB
+	db Querier
 }
 
-func NewChannelParametersRepository(db *sql.DB) *ChannelParametersRepository {
+func NewChannelParametersRepository(db Querier) *ChannelParametersRepository {
 	return &ChannelParametersRepository{db: db}
 }
 
-func (r *ChannelParametersRepository) FindPaginated(offset, pageSize int) (*PaginatedChannelParameters, error) {
+func (r *ChannelParametersRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedChannelParameters, error) {
 	query := `
 		SELECT id, channel_id, parameter_name, display_name, parameter_type, required, 
 		       default_value, is_encrypted, created_by, updated_by, created_at, updated_at
@@ -67,7 +68,7 @@ func (r *ChannelParametersRepository) FindPaginated(offset, pageSize int) (*Pagi
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -85,14 +86,14 @@ func (r *ChannelParametersRepository) FindPaginated(offset, pageSize int) (*Pagi
 
 	countQuery := "SELECT COUNT(*) FROM ecom_channel_parameters WHERE deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedChannelParameters{Data: parameters, Total: total}, nil
 }
 
-func (r *ChannelParametersRepository) FindByID(id int64) (*ChannelParameterDTO, error) {
+func (r *ChannelParametersRepository) FindByID(ctx context.Context, id int64) (*ChannelParameterDTO, error) {
 	query := `
 		SELECT id, channel_id, parameter_name, display_name, parameter_type, required, 
 		       default_value, is_encrypted, created_by, updated_by, created_at, updated_at
@@ -101,7 +102,7 @@ func (r *ChannelParametersRepository) FindByID(id int64) (*ChannelParameterDTO, 
 	`
 
 	var c ChannelParameterDTO
-	if err := r.db.QueryRow(query, id).Scan(&c.ID, &c.ChannelID, &c.ParameterName, &c.DisplayName, &c.ParameterType, &c.Required,
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&c.ID, &c.ChannelID, &c.ParameterName, &c.DisplayName, &c.ParameterType, &c.Required,
 		&c.DefaultValue, &c.IsEncrypted, &c.CreatedBy, &c.UpdatedBy, &c.CreatedAt, &c.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrChannelParameterNotFound
@@ -112,7 +113,7 @@ func (r *ChannelParametersRepository) FindByID(id int64) (*ChannelParameterDTO, 
 	return &c, nil
 }
 
-func (r *ChannelParametersRepository) FindByChannelID(channelID int64, offset, pageSize int) (*PaginatedChannelParameters, error) {
+func (r *ChannelParametersRepository) FindByChannelID(ctx context.Context, channelID int64, offset, pageSize int) (*PaginatedChannelParameters, error) {
 	query := `
 		SELECT id, channel_id, parameter_name, display_name, parameter_type, required, 
 		       default_value, is_encrypted, created_by, updated_by, created_at, updated_at
@@ -121,7 +122,7 @@ func (r *ChannelParametersRepository) FindByChannelID(channelID int64, offset, p
 		LIMIT ? OFFSET ?
 	`
 
-	rows, err := r.db.Query(query, channelID, pageSize, offset)
+	rows, err := r.db.QueryContext(ctx, query, channelID, pageSize, offset)
 	if err != nil {
 		return nil, err
 	}
@@ -139,21 +140,21 @@ func (r *ChannelParametersRepository) FindByChannelID(channelID int64, offset, p
 
 	countQuery := "SELECT COUNT(*) FROM ecom_channel_parameters WHERE channel_id = ? AND deleted_at IS NULL"
 	var total int
-	if err := r.db.QueryRow(countQuery, channelID).Scan(&total); err != nil {
+	if err := r.db.QueryRowContext(ctx, countQuery, channelID).Scan(&total); err != nil {
 		return nil, err
 	}
 
 	return &PaginatedChannelParameters{Data: parameters, Total: total}, nil
 }
 
-func (r *ChannelParametersRepository) Create(input CreateChannelParameterInput) (*ChannelParameterDTO, error) {
+func (r *ChannelParametersRepository) Create(ctx context.Context, input CreateChannelParameterInput) (*ChannelParameterDTO, error) {
 	query := `
 		INSERT INTO ecom_channel_parameters (channel_id, parameter_name, display_name, parameter_type, 
 		                                      required, default_value, is_encrypted, created_by)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 	`
 
-	result, err := r.db.Exec(query, input.ChannelID, input.ParameterName, input.DisplayName, input.ParameterType,
+	result, err := r.db.ExecContext(ctx, query, input.ChannelID, input.ParameterName, input.DisplayName, input.ParameterType,
 		input.Required, input.DefaultValue, input.IsEncrypted, input.CreatedBy)
 	if err != nil {
 		return nil, err
@@ -164,10 +165,10 @@ func (r *ChannelParametersRepository) Create(input CreateChannelParameterInput) 
 		return nil, err
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ChannelParametersRepository) Update(id int64, input UpdateChannelParameterInput) (*ChannelParameterDTO, error) {
+func (r *ChannelParametersRepository) Update(ctx context.Context, id int64, input UpdateChannelParameterInput) (*ChannelParameterDTO, error) {
 	query := `
 		UPDATE ecom_channel_parameters
 		SET display_name = ?, parameter_type = ?, required = ?, default_value = ?, 
@@ -175,7 +176,7 @@ func (r *ChannelParametersRepository) Update(id int64, input UpdateChannelParame
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.Exec(query, input.DisplayName, input.ParameterType, input.Required, input.DefaultValue,
+	result, err := r.db.ExecContext(ctx, query, input.DisplayName, input.ParameterType, input.Required, input.DefaultValue,
 		input.IsEncrypted, input.UpdatedBy, id)
 	if err != nil {
 		return nil, err
@@ -190,13 +191,13 @@ func (r *ChannelParametersRepository) Update(id int64, input UpdateChannelParame
 		return nil, ErrChannelParameterNotFound
 	}
 
-	return r.FindByID(id)
+	return r.FindByID(ctx, id)
 }
 
-func (r *ChannelParametersRepository) SoftDelete(id int64) error {
+func (r *ChannelParametersRepository) SoftDelete(ctx context.Context, id int64) error {
 	query := "UPDATE ecom_channel_parameters SET deleted_at = NOW() WHERE id = ? AND deleted_at IS NULL"
 
-	result, err := r.db.Exec(query, id)
+	result, err := r.db.ExecContext(ctx, query, id)
 	if err != nil {
 		return err
 	}

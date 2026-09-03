@@ -9,10 +9,8 @@ export function ProtectedLayout() {
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset>
-        <section>
-          <Outlet />
-        </section>
+      <SidebarInset className="h-svh overflow-hidden">
+        <Outlet />
       </SidebarInset>
     </SidebarProvider>
   )

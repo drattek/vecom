@@ -250,3 +250,65 @@ func (h *CategoriesHandler) GetCategory(ctx context.Context, categoryID string) 
 
 	return &details, nil
 }
+
+// GetSiteCategoriesRaw calls MercadoLibre's GET /sites/{siteID}/categories
+// endpoint — the site's top-level (root) category list — and returns the
+// response body exactly as MercadoLibre sent it. Despite being documented as
+// public, it 403s ({"error":"...","message":"At least one policy returned
+// UNAUTHORIZED."}) without an Authorization header — confirmed against the
+// real API, same as GetDomainCompatibilities in handler_compatibilities.go —
+// so accessToken is required here too.
+func (h *CategoriesHandler) GetSiteCategoriesRaw(ctx context.Context, accessToken, siteID string) (json.RawMessage, error) {
+	requestURL := fmt.Sprintf("%s/sites/%s/categories", h.client.baseURL, url.PathEscape(siteID))
+	return h.getRaw(ctx, accessToken, requestURL, fmt.Sprintf("mercadolibre site %s categories", siteID))
+}
+
+// GetCategoryRaw calls MercadoLibre's GET /categories/{categoryID} endpoint
+// and returns the response body exactly as MercadoLibre sent it — unlike
+// GetCategory's narrower CategoryDetails, this keeps every field including
+// children_categories, attribute_types and settings. accessToken is sent the
+// same way GetSiteCategoriesRaw does, since MercadoLibre's public/no-token
+// documentation for these endpoints has already proven unreliable in
+// practice (see GetSiteCategoriesRaw).
+func (h *CategoriesHandler) GetCategoryRaw(ctx context.Context, accessToken, categoryID string) (json.RawMessage, error) {
+	requestURL := fmt.Sprintf("%s/categories/%s", h.client.baseURL, url.PathEscape(categoryID))
+	return h.getRaw(ctx, accessToken, requestURL, fmt.Sprintf("mercadolibre category %s", categoryID))
+}
+
+// getRaw issues a GET against requestURL and returns the raw JSON response
+// body — shared by GetSiteCategoriesRaw/GetCategoryRaw so both report errors
+// the same way GetCategory/GetCategoryAttributes above do.
+func (h *CategoriesHandler) getRaw(ctx context.Context, accessToken, requestURL, label string) (json.RawMessage, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, requestURL, nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating %s request: %w", label, err)
+	}
+	request.Header.Set("Accept", "application/json")
+	request.Header.Set("Authorization", "Bearer "+accessToken)
+
+	response, err := h.client.Do(request)
+	if err != nil {
+		return nil, fmt.Errorf("error calling %s endpoint: %w", label, err)
+	}
+	defer response.Body.Close()
+
+	responsePayload, err := io.ReadAll(response.Body)
+	if err != nil {
+		return nil, fmt.Errorf("error reading %s response: %w", label, err)
+	}
+
+	if response.StatusCode != http.StatusOK {
+		var errPayload apiError
+		if json.Unmarshal(responsePayload, &errPayload) == nil {
+			if errPayload.Message != "" {
+				return nil, fmt.Errorf("%s failed (%d): %s", label, response.StatusCode, errPayload.Message)
+			}
+			if errPayload.Error != "" {
+				return nil, fmt.Errorf("%s failed (%d): %s", label, response.StatusCode, errPayload.Error)
+			}
+		}
+		return nil, fmt.Errorf("%s failed with status %d", label, response.StatusCode)
+	}
+
+	return json.RawMessage(responsePayload), nil
+}
