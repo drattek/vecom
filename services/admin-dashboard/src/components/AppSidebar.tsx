@@ -1,6 +1,7 @@
 import { useState, type ComponentType } from 'react'
 import {
   BoxIcon,
+  ChevronRightIcon,
   ChevronsUpDownIcon,
   GalleryHorizontal,
   LayoutDashboardIcon,
@@ -10,6 +11,7 @@ import {
   UsersIcon,
 } from 'lucide-react'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Sidebar,
   SidebarContent,
@@ -21,7 +23,11 @@ import {
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
+  SidebarMenuSub,
+  SidebarMenuSubButton,
+  SidebarMenuSubItem,
 } from './ui/sidebar.tsx'
+import { Collapsible, CollapsibleContent, CollapsibleTrigger } from './ui/collapsible.tsx'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -43,7 +49,8 @@ import {
 import { Avatar, AvatarFallback } from './ui/avatar.tsx'
 import { Button } from './ui/button.tsx'
 import { useAuth } from '../auth/AuthContext.tsx'
-import { logoutRequest } from '../lib/api.ts'
+import { logoutRequest, apiClient } from '../lib/api.ts'
+import { paginatedChannelsResponseSchema } from '../lib/schemas/channels.ts'
 
 interface SidebarItem {
   title: string
@@ -97,6 +104,21 @@ export function AppSidebar() {
   const [confirmLogoutOpen, setConfirmLogoutOpen] = useState(false)
   const [loggingOut, setLoggingOut] = useState(false)
 
+  const { data: channelsData } = useQuery({
+    queryKey: ['sidebar-product-channels'],
+    queryFn: async () => {
+      const response = await apiClient.get('/api/channels', {
+        params: { offset: 0, pageSize: 100 },
+      })
+      return paginatedChannelsResponseSchema.parse(response.data)
+    },
+    staleTime: 60_000,
+  })
+
+  const productChannels = (channelsData?.channels ?? []).filter(
+    (channel) => channel.status === 'active' && channel.connectionCount > 0,
+  )
+
   async function handleConfirmLogout() {
     setLoggingOut(true)
     try {
@@ -137,6 +159,62 @@ export function AppSidebar() {
                 const isActive =
                   location.pathname === item.path ||
                   location.pathname.startsWith(`${item.path}/`)
+
+                if (item.path === '/products') {
+                  return (
+                    <Collapsible
+                      key={item.path}
+                      defaultOpen={isActive}
+                      className="group/collapsible"
+                      render={<SidebarMenuItem />}
+                    >
+                      <CollapsibleTrigger
+                        render={
+                          <SidebarMenuButton isActive={isActive} tooltip={item.title}>
+                            <Icon />
+                            <span>{item.title}</span>
+                            <ChevronRightIcon className="ml-auto transition-transform data-panel-open:rotate-90" />
+                          </SidebarMenuButton>
+                        }
+                      />
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              render={<Link to="/products" />}
+                              isActive={location.pathname === '/products'}
+                            >
+                              <span>Todos</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              render={<Link to="/products/pending" />}
+                              isActive={location.pathname === '/products/pending'}
+                            >
+                              <span>Pendientes</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                          {productChannels.map((channel) => {
+                            const channelPath = `/products/channels/${channel.id}`
+                            const isChannelActive = location.pathname === channelPath
+
+                            return (
+                              <SidebarMenuSubItem key={channel.id}>
+                                <SidebarMenuSubButton
+                                  render={<Link to={channelPath} />}
+                                  isActive={isChannelActive}
+                                >
+                                  <span>{channel.name}</span>
+                                </SidebarMenuSubButton>
+                              </SidebarMenuSubItem>
+                            )
+                          })}
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )
+                }
 
                 return (
                   <SidebarMenuItem key={item.path}>

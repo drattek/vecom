@@ -8,11 +8,14 @@ import { registerUnauthorizedHandler } from './lib/api.ts'
 import { DashboardPage } from './pages/DashboardPage.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
 import { ProductsPage } from './pages/ProductsPage.tsx'
+import { ProductsChannelPage } from './pages/ProductsChannelPage.tsx'
+import { ProductsChannelDashboard } from './pages/ProductsChannelDashboard.tsx'
+import { ProductsChannelConnectionPage } from './pages/ProductsChannelConnectionPage.tsx'
+import { ProductsPendingPage } from './pages/ProductsPendingPage.tsx'
 import { ProfilePage } from './pages/ProfilePage.tsx'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { ProtectedLayout } from './layouts/ProtectedLayout.tsx'
 import { TooltipProvider } from './components/ui/tooltip.tsx'
-import { SettingsSectionPage } from './pages/settings/SettingsSectionPage.tsx'
 import { ChannelsPage } from './pages/settings/ChannelsPage.tsx'
 import { StorageDiskPage } from './pages/settings/StorageDiskPage.tsx'
 import { FilesPage } from './pages/settings/FilesPage.tsx'
@@ -20,6 +23,8 @@ import { BranchesPage } from './pages/settings/BranchesPage.tsx'
 import { WarehousesPage } from './pages/settings/WarehousesPage.tsx'
 import { ConnectionsPage } from './pages/settings/ConnectionsPage.tsx'
 import { BrandsPage } from './pages/settings/BrandsPage.tsx'
+import { CurrenciesPage } from './pages/settings/CurrenciesPage.tsx'
+import { ExchangeRatesPage } from './pages/settings/ExchangeRatesPage.tsx'
 import { CategoriesPage } from './pages/settings/CategoriesPage.tsx'
 
 const queryClient = new QueryClient()
@@ -39,6 +44,11 @@ function AppRoutes() {
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/users" element={<UsersPage />} />
         <Route path="/products" element={<ProductsPage />} />
+        <Route path="/products/pending" element={<ProductsPendingPage />} />
+        <Route path="/products/channels/:channelId" element={<ProductsChannelPage />}>
+          <Route index element={<ProductsChannelDashboard />} />
+          <Route path="connections/:connectionId" element={<ProductsChannelConnectionPage />} />
+        </Route>
         <Route path="/settings" element={<SettingsPage />}>
           <Route
             index
@@ -62,21 +72,11 @@ function AppRoutes() {
           />
           <Route
             path="company-currencies"
-            element={
-              <SettingsSectionPage
-                title="Divisas"
-                description="Mantiene las divisas disponibles para precios, compras y reportes."
-              />
-            }
+            element={<CurrenciesPage />}
           />
           <Route
             path="company-exchange-rates"
-            element={
-              <SettingsSectionPage
-                title="Tipo de cambio"
-                description="Actualiza y consulta tipos de cambio para conversiones monetarias."
-              />
-            }
+            element={<ExchangeRatesPage />}
           />
           <Route
             path="marketplace-channels"
