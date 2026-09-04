@@ -143,6 +143,124 @@ func (r *ChannelProductMapRepository) FindAllByConnectionID(ctx context.Context,
 	return scanChannelProductMapRows(rows)
 }
 
+// ChannelSyncSummaryDTO is the dashboard summary shown on a channel's main
+// page (before a specific connection is picked) — aggregated across every
+// one of the channel's connections, not just one.
+type ChannelSyncSummaryDTO struct {
+	// Total is the count of distinct products with an active mapping
+	// (status <> 'closed') to any connection of the channel.
+	Total int64 `json:"total"`
+	// WithoutIssues is the subset of Total whose mapping status is 'synced'.
+	WithoutIssues int64 `json:"withoutIssues"`
+	// UnderReview is the subset of Total whose mapping status is
+	// 'under_review'.
+	UnderReview   int64                       `json:"underReview"`
+	Brands        []ChannelSyncBrandDTO       `json:"brands"`
+	RecentlyAdded []ChannelSyncRecentAddedDTO `json:"recentlyAdded"`
+}
+
+type ChannelSyncBrandDTO struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// ChannelSyncRecentAddedDTO is one day (Date, "YYYY-MM-DD") in the recent
+// window that had at least one product newly mapped to the channel, with how
+// many.
+type ChannelSyncRecentAddedDTO struct {
+	Date  string `json:"date"`
+	Count int64  `json:"count"`
+}
+
+// channelSyncSummaryRecentDays bounds how far back GetChannelSyncSummary
+// looks for RecentlyAdded.
+const channelSyncSummaryRecentDays = 30
+
+// GetChannelSyncSummary aggregates ecom_channel_product_map across every
+// connection belonging to channelID (soft-deleted connections and mappings,
+// and mappings with status 'closed', are excluded throughout) for the
+// channel's dashboard: totals by status, the distinct brands represented,
+// and a day-by-day count of products newly mapped in the last
+// channelSyncSummaryRecentDays days.
+func (r *ChannelProductMapRepository) GetChannelSyncSummary(ctx context.Context, channelID int64) (*ChannelSyncSummaryDTO, error) {
+	summary := &ChannelSyncSummaryDTO{
+		Brands:        make([]ChannelSyncBrandDTO, 0),
+		RecentlyAdded: make([]ChannelSyncRecentAddedDTO, 0),
+	}
+
+	countsQuery := `
+		SELECT
+			COUNT(DISTINCT cpm.product_id) AS total,
+			COUNT(DISTINCT CASE WHEN cpm.status = 'synced' THEN cpm.product_id END) AS without_issues,
+			COUNT(DISTINCT CASE WHEN cpm.status = 'under_review' THEN cpm.product_id END) AS under_review
+		FROM ecom_channel_product_map cpm
+		JOIN ecom_channel_connections cc ON cc.id = cpm.connection_id AND cc.deleted_at IS NULL
+		WHERE cc.channel_id = ? AND cpm.deleted_at IS NULL AND cpm.status <> 'closed'
+	`
+	err := r.db.QueryRowContext(ctx, countsQuery, channelID).Scan(&summary.Total, &summary.WithoutIssues, &summary.UnderReview)
+	if err != nil {
+		return nil, fmt.Errorf("error counting channel sync summary for channel %d: %w", channelID, err)
+	}
+
+	brandsQuery := `
+		SELECT DISTINCT b.id, b.name
+		FROM ecom_channel_product_map cpm
+		JOIN ecom_channel_connections cc ON cc.id = cpm.connection_id AND cc.deleted_at IS NULL
+		JOIN ecom_products p ON p.id = cpm.product_id AND p.deleted_at IS NULL
+		JOIN ecom_brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+		WHERE cc.channel_id = ? AND cpm.deleted_at IS NULL AND cpm.status <> 'closed'
+		ORDER BY b.name ASC
+	`
+	brandRows, err := r.db.QueryContext(ctx, brandsQuery, channelID)
+	if err != nil {
+		return nil, fmt.Errorf("error listing synced brands for channel %d: %w", channelID, err)
+	}
+	defer brandRows.Close()
+
+	for brandRows.Next() {
+		var brand ChannelSyncBrandDTO
+		if err := brandRows.Scan(&brand.ID, &brand.Name); err != nil {
+			return nil, fmt.Errorf("error scanning synced brand for channel %d: %w", channelID, err)
+		}
+		summary.Brands = append(summary.Brands, brand)
+	}
+	if err := brandRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating synced brands for channel %d: %w", channelID, err)
+	}
+
+	recentQuery := `
+		SELECT DATE(cpm.created_at) AS added_on, COUNT(DISTINCT cpm.product_id) AS added_count
+		FROM ecom_channel_product_map cpm
+		JOIN ecom_channel_connections cc ON cc.id = cpm.connection_id AND cc.deleted_at IS NULL
+		WHERE cc.channel_id = ? AND cpm.deleted_at IS NULL AND cpm.status <> 'closed'
+		  AND cpm.created_at >= (CURDATE() - INTERVAL ? DAY)
+		GROUP BY DATE(cpm.created_at)
+		ORDER BY added_on DESC
+	`
+	recentRows, err := r.db.QueryContext(ctx, recentQuery, channelID, channelSyncSummaryRecentDays)
+	if err != nil {
+		return nil, fmt.Errorf("error listing recently added products for channel %d: %w", channelID, err)
+	}
+	defer recentRows.Close()
+
+	for recentRows.Next() {
+		var day time.Time
+		var count int64
+		if err := recentRows.Scan(&day, &count); err != nil {
+			return nil, fmt.Errorf("error scanning recently added products for channel %d: %w", channelID, err)
+		}
+		summary.RecentlyAdded = append(summary.RecentlyAdded, ChannelSyncRecentAddedDTO{
+			Date:  day.Format("2006-01-02"),
+			Count: count,
+		})
+	}
+	if err := recentRows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating recently added products for channel %d: %w", channelID, err)
+	}
+
+	return summary, nil
+}
+
 // FindByConnectionAndExternalID resolves the local product a marketplace
 // listing id maps to on a connection — used when a caller only has the
 // external item id (e.g. copying compatibilities between two MercadoLibre

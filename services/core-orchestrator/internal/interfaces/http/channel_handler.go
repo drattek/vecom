@@ -84,6 +84,33 @@ func (h *ChannelHandler) GetChannelByID(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(channel)
 }
 
+func (h *ChannelHandler) GetChannelSyncSummary(w http.ResponseWriter, r *http.Request) {
+	id, err := parseChannelID(r)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid channel id")
+		return
+	}
+
+	summary, err := h.service.GetChannelSyncSummary(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, channelsApp.ErrInvalidChannelPayload) {
+			writeJSONError(w, http.StatusBadRequest, "invalid channel id")
+			return
+		}
+		if errors.Is(err, channelsApp.ErrChannelNotFound) {
+			writeJSONError(w, http.StatusNotFound, "channel not found")
+			return
+		}
+
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(summary)
+}
+
 func (h *ChannelHandler) CreateChannel(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {

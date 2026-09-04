@@ -126,6 +126,7 @@ func NewRouter(
 		protected.Delete("/api/files/{id}", fileHandler.DeleteFile)
 		protected.Get("/api/channels", channelHandler.GetChannels)
 		protected.Get("/api/channels/{id}", channelHandler.GetChannelByID)
+		protected.Get("/api/channels/{id}/sync-summary", channelHandler.GetChannelSyncSummary)
 		protected.Post("/api/channels", channelHandler.CreateChannel)
 		protected.Put("/api/channels/{id}", channelHandler.UpdateChannel)
 		protected.Delete("/api/channels/{id}", channelHandler.DeleteChannel)
@@ -345,6 +346,10 @@ func NewRouter(
 		// vecom_products (sistema anterior) a ecom_products /
 		// ecom_channel_product_map. Eliminar junto con esta ruta al terminar.
 		protected.Post("/api/migration/vecom-sync-products", migrationHandler.MigrateVecomSyncProducts)
+		// TEMPORARY one-off migration endpoint — migra vecom_images (sistema
+		// anterior) a ecom_files / ecom_product_images. Eliminar junto con
+		// esta ruta al terminar.
+		protected.Post("/api/migration/vecom-images", migrationHandler.MigrateVecomImages)
 
 		// Equipment Types endpoints (machinery compatibility taxonomy)
 		protected.Get("/api/equipment-types", equipmentTypeHandler.GetEquipmentTypes)

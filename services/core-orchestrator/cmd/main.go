@@ -90,7 +90,7 @@ func main() {
 	productService := prodService.NewProductService(db, mysqlRepos.ProductRepository, mysqlRepos.PendingProductVehicleFitmentsRepository, mysqlRepos.ProductVehicleCompatibilityRepository, mysqlRepos.PartNumberSupersessionsRepository)
 	storageDiskService := storageDisksService.NewStorageDiskService(db, mysqlRepos.StorageDiskRepository)
 	fileService := filesService.NewFileService(db, mysqlRepos.FilesRepository)
-	channelService := channelsService.NewChannelService(db, mysqlRepos.ChannelRepository)
+	channelService := channelsService.NewChannelService(db, mysqlRepos.ChannelRepository, mysqlRepos.ChannelProductMapRepository)
 	channelConnectionService := channelConnectionsService.NewChannelConnectionService(db, mysqlRepos.ChannelConnectionRepository)
 	authService := credService.NewAuthService(
 		db,
@@ -254,6 +254,16 @@ func main() {
 		mercadoLibreRateLimiter,
 		odooRateLimiter,
 	)
+	// TEMPORARY one-off migration service — migra vecom_images (sistema
+	// anterior) a ecom_files / ecom_product_images, vinculando por
+	// vecom_products.code = ecom_products.sku. Eliminar junto con su handler
+	// y su ruta al terminar la migración.
+	vecomImagesMigrationService := migrationApp.NewVecomImagesMigrationService(
+		db,
+		mysqlRepos.ProductRepository,
+		mysqlRepos.FilesRepository,
+		mysqlRepos.ProductImagesRepository,
+	)
 	odooProductSyncService := syncApp.NewOdooProductSyncService(
 		mysqlRepos.ConnectionCredentialsRepository,
 		mysqlRepos.ConnectionSettingsRepository,
@@ -352,7 +362,7 @@ func main() {
 	mercadoLibreCategoriesDebugHandler := httpHandler.NewMercadoLibreCategoriesDebugHandler(mercadoLibreCategoryPredictorService)
 	meliNotificationHandler := httpHandler.NewMeliNotificationHandler(meliNotificationService)
 	odooHandler := httpHandler.NewOdooHandler(odooConnectionService)
-	migrationHandler := httpHandler.NewMigrationHandler(odooCategoryMigrationService, vecomSyncProductMigrationService)
+	migrationHandler := httpHandler.NewMigrationHandler(odooCategoryMigrationService, vecomSyncProductMigrationService, vecomImagesMigrationService)
 	equipmentTypeHandler := httpHandler.NewEquipmentTypeHandler(equipmentTypeService)
 	vehicleFitmentHandler := httpHandler.NewVehicleFitmentHandler(vehicleFitmentService)
 	equipmentFitmentHandler := httpHandler.NewEquipmentFitmentHandler(equipmentFitmentService)

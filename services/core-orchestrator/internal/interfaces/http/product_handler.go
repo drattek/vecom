@@ -65,8 +65,20 @@ func (h *ProductHandler) GetProducts(w http.ResponseWriter, r *http.Request) {
 	sortDir := r.URL.Query().Get("sortDir")
 	search := r.URL.Query().Get("search")
 
+	var connectionID *int64
+	if connectionIDStr := r.URL.Query().Get("connectionId"); connectionIDStr != "" {
+		if parsedConnectionID, err := strconv.ParseInt(connectionIDStr, 10, 64); err == nil {
+			connectionID = &parsedConnectionID
+		}
+	}
+
+	// pending selects products that are stocked and have at least one image
+	// but aren't necessarily mapped to a channel connection yet — the ones
+	// ready to be prepared for a marketplace sync.
+	pendingOnly := r.URL.Query().Get("pending") == "true"
+
 	// Get products from service
-	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search)
+	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return

@@ -47,7 +47,7 @@ func NewProductService(
 	}
 }
 
-func (s *ProductService) GetPaginatedProducts(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string) (*mysqlInfra.PaginatedProducts, error) {
+func (s *ProductService) GetPaginatedProducts(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool) (*mysqlInfra.PaginatedProducts, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -63,8 +63,11 @@ func (s *ProductService) GetPaginatedProducts(ctx context.Context, offset, pageS
 	// sortBy/sortDir/search are passed through as-is; FindPaginated
 	// whitelists sortBy against the columns it supports (sku, partNumber,
 	// name), falls back to the default id ASC order for anything else, and
-	// treats an empty search as no filter.
-	return s.repository.FindPaginated(ctx, offset, pageSize, sortBy, sortDir, search)
+	// treats an empty search as no filter. connectionID, when set, restricts
+	// the results to products mapped (ecom_channel_product_map) to that
+	// channel connection. pendingOnly restricts to products with stock and at
+	// least one image — the ones ready to be prepared for a channel sync.
+	return s.repository.FindPaginated(ctx, offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly)
 }
 
 func (s *ProductService) GetProductByID(ctx context.Context, id int64) (*mysqlInfra.ProductDTO, error) {

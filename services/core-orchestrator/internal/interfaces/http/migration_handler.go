@@ -19,15 +19,18 @@ import (
 type MigrationHandler struct {
 	odooCategoryMigrationService     *migrationApp.OdooCategoryMigrationService
 	vecomSyncProductMigrationService *migrationApp.VecomSyncProductMigrationService
+	vecomImagesMigrationService      *migrationApp.VecomImagesMigrationService
 }
 
 func NewMigrationHandler(
 	odooCategoryMigrationService *migrationApp.OdooCategoryMigrationService,
 	vecomSyncProductMigrationService *migrationApp.VecomSyncProductMigrationService,
+	vecomImagesMigrationService *migrationApp.VecomImagesMigrationService,
 ) *MigrationHandler {
 	return &MigrationHandler{
 		odooCategoryMigrationService:     odooCategoryMigrationService,
 		vecomSyncProductMigrationService: vecomSyncProductMigrationService,
+		vecomImagesMigrationService:      vecomImagesMigrationService,
 	}
 }
 
@@ -119,6 +122,56 @@ func (h *MigrationHandler) MigrateVecomSyncProducts(w http.ResponseWriter, r *ht
 	result, err := h.vecomSyncProductMigrationService.Migrate(r.Context(), input, user.ID)
 	if err != nil {
 		log.Printf("vecom sync product migration failed: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}
+
+// migrateVecomImagesRequest is the (optional) JSON body for
+// MigrateVecomImages. Every field is optional: an empty body — or no body at
+// all — migrates every vecom_images row in one call. limit/offset page
+// through the source products (not raw image rows, so a batch never splits a
+// product's images across two calls) — each request is one batch, call again
+// with offset += limit for the next.
+type migrateVecomImagesRequest struct {
+	Limit  int `json:"limit"`
+	Offset int `json:"offset"`
+}
+
+// MigrateVecomImages is a TEMPORARY one-off endpoint: it migrates the
+// previous system's vecom_images table (joined to vecom_products for the
+// code -> sku match) into ecom_files / ecom_product_images, HEAD-validating
+// each image URL before inserting it. Remove this handler and its route once
+// the migration is done.
+func (h *MigrationHandler) MigrateVecomImages(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var body migrateVecomImagesRequest
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil && !errors.Is(err, io.EOF) {
+		writeJSONError(w, http.StatusBadRequest, "invalid JSON body")
+		return
+	}
+	if body.Limit < 0 || body.Offset < 0 {
+		writeJSONError(w, http.StatusBadRequest, "limit and offset must be >= 0")
+		return
+	}
+
+	input := migrationApp.MigrateVecomImagesInput{
+		Limit:  body.Limit,
+		Offset: body.Offset,
+	}
+
+	result, err := h.vecomImagesMigrationService.Migrate(r.Context(), input, user.ID)
+	if err != nil {
+		log.Printf("vecom images migration failed: %v", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}

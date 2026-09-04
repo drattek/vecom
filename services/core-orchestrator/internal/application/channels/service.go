@@ -15,8 +15,9 @@ var ErrInvalidChannelPayload = errors.New("invalid channel payload")
 var ErrInvalidChannelReference = errors.New("invalid channel reference")
 
 type ChannelService struct {
-	db         *sql.DB
-	repository *mysqlInfra.ChannelRepository
+	db                          *sql.DB
+	repository                  *mysqlInfra.ChannelRepository
+	channelProductMapRepository *mysqlInfra.ChannelProductMapRepository
 }
 
 type UpsertChannelInput struct {
@@ -27,8 +28,8 @@ type UpsertChannelInput struct {
 	Description *string
 }
 
-func NewChannelService(db *sql.DB, repository *mysqlInfra.ChannelRepository) *ChannelService {
-	return &ChannelService{db: db, repository: repository}
+func NewChannelService(db *sql.DB, repository *mysqlInfra.ChannelRepository, channelProductMapRepository *mysqlInfra.ChannelProductMapRepository) *ChannelService {
+	return &ChannelService{db: db, repository: repository, channelProductMapRepository: channelProductMapRepository}
 }
 
 func (s *ChannelService) GetPaginatedChannels(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedChannels, error) {
@@ -61,6 +62,25 @@ func (s *ChannelService) GetChannelByID(ctx context.Context, id int64) (*mysqlIn
 	}
 
 	return channel, nil
+}
+
+// GetChannelSyncSummary returns the channel-wide sync dashboard (counts by
+// status, synced brands, recent activity) shown on the channel's main page,
+// aggregated across every one of its connections. Returns ErrChannelNotFound
+// if channelID doesn't exist.
+func (s *ChannelService) GetChannelSyncSummary(ctx context.Context, channelID int64) (*mysqlInfra.ChannelSyncSummaryDTO, error) {
+	if channelID <= 0 {
+		return nil, ErrInvalidChannelPayload
+	}
+
+	if _, err := s.repository.FindByID(ctx, channelID); err != nil {
+		if errors.Is(err, mysqlInfra.ErrChannelNotFound) {
+			return nil, ErrChannelNotFound
+		}
+		return nil, err
+	}
+
+	return s.channelProductMapRepository.GetChannelSyncSummary(ctx, channelID)
 }
 
 func (s *ChannelService) CreateChannel(ctx context.Context, input UpsertChannelInput, actorID int64) (*mysqlInfra.ChannelDTO, error) {

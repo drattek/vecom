@@ -135,7 +135,7 @@ var productSortColumns = map[string]string{
 	"price":      "price_amount",
 }
 
-func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string) (*PaginatedProducts, error) {
+func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool) (*PaginatedProducts, error) {
 	// search matches sku, part_number or name (case-insensitive via the
 	// column collation). % and _ in the term are escaped so they're treated
 	// as literals, not wildcards.
@@ -146,6 +146,29 @@ func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize 
 		like := "%" + escaped + "%"
 		filterClause += " AND (sku LIKE ? OR part_number LIKE ? OR name LIKE ?)"
 		filterArgs = append(filterArgs, like, like, like)
+	}
+	if connectionID != nil {
+		filterClause += ` AND EXISTS (
+			SELECT 1 FROM ecom_channel_product_map cpm2
+			WHERE cpm2.product_id = ecom_products.id
+			  AND cpm2.connection_id = ?
+			  AND cpm2.deleted_at IS NULL
+			  AND cpm2.status <> 'closed'
+		)`
+		filterArgs = append(filterArgs, *connectionID)
+	}
+	if pendingOnly {
+		// Pending = ready to be prepared for a channel sync: has stock and at
+		// least one image. Not tied to any particular connection or mapping
+		// status.
+		filterClause += ` AND COALESCE((
+			SELECT SUM(ps2.available_qty) FROM ecom_product_stock ps2
+			WHERE ps2.product_id = ecom_products.id
+		), 0) > 0
+		AND EXISTS (
+			SELECT 1 FROM ecom_product_images pi2
+			WHERE pi2.product_id = ecom_products.id AND pi2.deleted_at IS NULL
+		)`
 	}
 
 	var total int64
