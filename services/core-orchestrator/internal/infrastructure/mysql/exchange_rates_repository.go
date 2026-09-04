@@ -12,13 +12,17 @@ var (
 )
 
 type ExchangeRateDTO struct {
-	ID             int64     `json:"id"`
-	FromCurrencyID int64     `json:"fromCurrencyId"`
-	ToCurrencyID   int64     `json:"toCurrencyId"`
-	Rate           string    `json:"rate"`
-	UpdatedBy      int64     `json:"updatedBy"`
-	CreatedAt      time.Time `json:"createdAt"`
-	UpdatedAt      time.Time `json:"updatedAt"`
+	ID                 int64     `json:"id"`
+	FromCurrencyID     int64     `json:"fromCurrencyId"`
+	FromCurrencyCode   string    `json:"fromCurrencyCode,omitempty"`
+	FromCurrencySymbol string    `json:"fromCurrencySymbol,omitempty"`
+	ToCurrencyID       int64     `json:"toCurrencyId"`
+	ToCurrencyCode     string    `json:"toCurrencyCode,omitempty"`
+	ToCurrencySymbol   string    `json:"toCurrencySymbol,omitempty"`
+	Rate               string    `json:"rate"`
+	UpdatedBy          int64     `json:"updatedBy"`
+	CreatedAt          time.Time `json:"createdAt"`
+	UpdatedAt          time.Time `json:"updatedAt"`
 }
 
 type PaginatedExchangeRates struct {
@@ -48,9 +52,12 @@ func NewExchangeRatesRepository(db Querier) *ExchangeRatesRepository {
 
 func (r *ExchangeRatesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedExchangeRates, error) {
 	query := `
-		SELECT id, from_currency_id, to_currency_id, rate, updated_by, created_at, updated_at
-		FROM ecom_exchange_rates
-		WHERE deleted_at IS NULL
+		SELECT e.id, e.from_currency_id, fc.code, fc.symbol, e.to_currency_id, tc.code, tc.symbol, e.rate, e.updated_by, e.created_at, e.updated_at
+		FROM ecom_exchange_rates e
+		JOIN ecom_currencies fc ON fc.id = e.from_currency_id
+		JOIN ecom_currencies tc ON tc.id = e.to_currency_id
+		WHERE e.deleted_at IS NULL
+		ORDER BY e.id ASC
 		LIMIT ? OFFSET ?
 	`
 
@@ -60,10 +67,10 @@ func (r *ExchangeRatesRepository) FindPaginated(ctx context.Context, offset, pag
 	}
 	defer rows.Close()
 
-	var rates []ExchangeRateDTO
+	rates := make([]ExchangeRateDTO, 0)
 	for rows.Next() {
 		var e ExchangeRateDTO
-		if err := rows.Scan(&e.ID, &e.FromCurrencyID, &e.ToCurrencyID, &e.Rate, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.FromCurrencyID, &e.FromCurrencyCode, &e.FromCurrencySymbol, &e.ToCurrencyID, &e.ToCurrencyCode, &e.ToCurrencySymbol, &e.Rate, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		rates = append(rates, e)
@@ -80,13 +87,15 @@ func (r *ExchangeRatesRepository) FindPaginated(ctx context.Context, offset, pag
 
 func (r *ExchangeRatesRepository) FindByID(ctx context.Context, id int64) (*ExchangeRateDTO, error) {
 	query := `
-		SELECT id, from_currency_id, to_currency_id, rate, updated_by, created_at, updated_at
-		FROM ecom_exchange_rates
-		WHERE id = ? AND deleted_at IS NULL
+		SELECT e.id, e.from_currency_id, fc.code, fc.symbol, e.to_currency_id, tc.code, tc.symbol, e.rate, e.updated_by, e.created_at, e.updated_at
+		FROM ecom_exchange_rates e
+		JOIN ecom_currencies fc ON fc.id = e.from_currency_id
+		JOIN ecom_currencies tc ON tc.id = e.to_currency_id
+		WHERE e.id = ? AND e.deleted_at IS NULL
 	`
 
 	var e ExchangeRateDTO
-	if err := r.db.QueryRowContext(ctx, query, id).Scan(&e.ID, &e.FromCurrencyID, &e.ToCurrencyID, &e.Rate, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
+	if err := r.db.QueryRowContext(ctx, query, id).Scan(&e.ID, &e.FromCurrencyID, &e.FromCurrencyCode, &e.FromCurrencySymbol, &e.ToCurrencyID, &e.ToCurrencyCode, &e.ToCurrencySymbol, &e.Rate, &e.UpdatedBy, &e.CreatedAt, &e.UpdatedAt); err != nil {
 		if err == sql.ErrNoRows {
 			return nil, ErrExchangeRateNotFound
 		}
