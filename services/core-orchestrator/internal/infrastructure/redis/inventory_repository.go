@@ -44,6 +44,25 @@ func (r *InventoryRepository) ScanInventory(ctx context.Context) ([]string, erro
 	return keys, iter.Err()
 }
 
+// DeleteKeys borra en lotes las claves ya consumidas, mismo criterio que
+// NissanRepository.DeleteKeys: el sync de stock del ERP solo reescribe las claves
+// de los artículos con Disponible > 0, así que las que dejan de venir quedarían
+// como fantasmas con el último valor positivo. La baja real del stock la resuelve
+// la reconciliación por ausencia contra MySQL (ver sync_stock_reconcile.go).
+func (r *InventoryRepository) DeleteKeys(ctx context.Context, keys []string) error {
+	const batchSize = 500
+
+	for start := 0; start < len(keys); start += batchSize {
+		end := min(start+batchSize, len(keys))
+
+		if err := r.client.Del(ctx, keys[start:end]...).Err(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // FindByKeys lee muchas claves en lotes con MGET en vez de un GET por clave, mismo criterio
 // que NissanRepository.FindByKeys.
 func (r *InventoryRepository) FindByKeys(ctx context.Context, keys []string) ([]*domain.Inventory, error) {

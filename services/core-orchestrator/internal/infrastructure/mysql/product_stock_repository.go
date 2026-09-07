@@ -139,6 +139,47 @@ func (r *ProductStockRepository) FindByProductID(ctx context.Context, productID 
 	return stock, rows.Err()
 }
 
+// PositiveStockRow es una fila de ecom_product_stock con available_qty > 0 junto
+// con el dato mínimo que necesita la reconciliación por ausencia (sync_stock_reconcile.go)
+// para bajarla a 0 y dejar su movimiento en ecom_stock_movements.
+type PositiveStockRow struct {
+	ID           int64
+	ProductID    int64
+	BranchID     int64
+	WarehouseID  int64
+	AvailableQty int
+}
+
+// FindPositiveBySource devuelve todas las filas de stock con available_qty > 0
+// cuyos productos pertenecen a la fuente sourceID (ecom_products.source_id) y no
+// están soft-deleted. Es la lista de candidatos a "colgados en un valor positivo"
+// que la reconciliación cruza contra lo que realmente vino en la corrida de sync.
+func (r *ProductStockRepository) FindPositiveBySource(ctx context.Context, sourceID int64) ([]PositiveStockRow, error) {
+	query := `
+		SELECT ps.id, ps.product_id, ps.branch_id, ps.warehouse_id, ps.available_qty
+		FROM ecom_product_stock ps
+		JOIN ecom_products p ON p.id = ps.product_id
+		WHERE p.source_id = ? AND p.deleted_at IS NULL AND ps.available_qty > 0
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, sourceID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying positive stock by source: %w", err)
+	}
+	defer rows.Close()
+
+	result := make([]PositiveStockRow, 0)
+	for rows.Next() {
+		var row PositiveStockRow
+		if err := rows.Scan(&row.ID, &row.ProductID, &row.BranchID, &row.WarehouseID, &row.AvailableQty); err != nil {
+			return nil, fmt.Errorf("error scanning positive stock row: %w", err)
+		}
+		result = append(result, row)
+	}
+
+	return result, rows.Err()
+}
+
 func (r *ProductStockRepository) Create(ctx context.Context, input CreateProductStockInput) (*ProductStockDTO, error) {
 	query := `
 		INSERT INTO ecom_product_stock (product_id, branch_id, warehouse_id, available_qty)

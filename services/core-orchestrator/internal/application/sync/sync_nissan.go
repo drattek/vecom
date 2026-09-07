@@ -164,13 +164,13 @@ const nissanSyncBatchSize = 250
 // una única transacción compartida por el lote (ver nissanSyncBatchSize). Devuelve cuántos
 // registros se sincronizaron correctamente; los que fallan se saltan sin abortar el resto
 // del lote, igual que antes cuando cada registro tenía su propia transacción.
-func (s *SyncService) ProcessNissanExistenciaBatch(ctx context.Context, batch []*domain.Existencia, cache *nissanSyncCache) (synced, failed int, err error) {
+func (s *SyncService) ProcessNissanExistenciaBatch(ctx context.Context, batch []*domain.Existencia, cache *nissanSyncCache, seen *stockSeen) (synced, failed int, err error) {
 	// Un solo BEGIN/COMMIT por lote (ver nissanSyncBatchSize): con miles de SKUs,
 	// una transacción por registro hacía que el fsync del COMMIT dominara el sync.
 	// Un registro que falla se saltea sin abortar el lote (en MySQL un error de
 	// aplicación no inutiliza la transacción para las siguientes sentencias).
 	txErr := mysqlRepo.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
-		t := newNissanSyncTx(tx)
+		t := newNissanSyncTx(tx, seen)
 		for _, e := range batch {
 			if runErr := t.run(ctx, e, cache); runErr != nil {
 				failed++
@@ -201,9 +201,14 @@ type nissanSyncTx struct {
 	productPricesRepo           *mysqlRepo.ProductPricesRepository
 	priceHistoryRepo            *mysqlRepo.PriceHistoryRepository
 	partNumberSupersessionsRepo *mysqlRepo.PartNumberSupersessionsRepository
+
+	// seen acumula qué (producto, sucursal, almacén) vino en la corrida, para la
+	// reconciliación por ausencia que corre al final (ver sync_stock_reconcile.go).
+	// Es compartido por todos los lotes de la corrida.
+	seen *stockSeen
 }
 
-func newNissanSyncTx(tx *sql.Tx) *nissanSyncTx {
+func newNissanSyncTx(tx *sql.Tx, seen *stockSeen) *nissanSyncTx {
 	return &nissanSyncTx{
 		productRepo:                 mysqlRepo.NewProductRepository(tx),
 		branchesRepo:                mysqlRepo.NewBranchesRepository(tx),
@@ -213,6 +218,7 @@ func newNissanSyncTx(tx *sql.Tx) *nissanSyncTx {
 		productPricesRepo:           mysqlRepo.NewProductPricesRepository(tx),
 		priceHistoryRepo:            mysqlRepo.NewPriceHistoryRepository(tx),
 		partNumberSupersessionsRepo: mysqlRepo.NewPartNumberSupersessionsRepository(tx),
+		seen:                        seen,
 	}
 }
 
@@ -264,6 +270,10 @@ func (t *nissanSyncTx) run(ctx context.Context, e *domain.Existencia, cache *nis
 			return fmt.Errorf("resolving part number supersessions for product %s: %w", e.Code, err)
 		}
 	}
+
+	// Se marca antes de escribir: la fuente reportó este SKU@almacén con stock > 0,
+	// así que la reconciliación por ausencia no debe bajarlo a 0 aunque el write falle.
+	t.seen.mark(productID, branchID, warehouseID)
 
 	if err := t.syncProductStock(ctx, productID, branchID, warehouseID, e.Stock); err != nil {
 		return fmt.Errorf("syncing stock for product %s: %w", e.Code, err)

@@ -44,6 +44,26 @@ func (r *NissanRepository) ScanExistencias(ctx context.Context) ([]string, error
 	return keys, iter.Err()
 }
 
+// DeleteKeys borra en lotes las claves ya consumidas. El sync de existencias las
+// vuelve a escribir en cada corrida solo para los SKU con stock > 0, así que si
+// no se borran las que dejaron de venir quedan como "fantasmas" con el último
+// valor positivo y ScanExistencias las seguiría re-sincronizando para siempre.
+// Un error acá no debe abortar el sync: la baja real del stock ya la resuelve la
+// reconciliación por ausencia contra MySQL (ver sync_stock_reconcile.go).
+func (r *NissanRepository) DeleteKeys(ctx context.Context, keys []string) error {
+	const batchSize = 500
+
+	for start := 0; start < len(keys); start += batchSize {
+		end := min(start+batchSize, len(keys))
+
+		if err := r.client.Del(ctx, keys[start:end]...).Err(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // FindByKeys lee muchas claves en lotes con MGET en vez de un GET por clave: para
 // decenas de miles de SKUs esto reduce los round-trips a Redis de N a N/batchSize.
 func (r *NissanRepository) FindByKeys(ctx context.Context, keys []string) ([]*domain.Existencia, error) {

@@ -42,6 +42,33 @@ ERP -> Synapse Bridge -> Redis/RabbitMQ -> Core -> Marketplace
   sin error visible. Si se agrega o renombra un campo en un record Java, el tag `json`
   correspondiente en Go se actualiza en el mismo cambio.
 
+## Stock: reconciliación por ausencia y limpieza de Redis
+
+`synapse-bridge` lee las fuentes de stock filtrando `stock > 0`
+(`RE_VEXISTENCIAS.RELA_EXISTENCIAACTUAL > 0`, `dyn.ItemInventLocation.Disponible > 0`)
+para no arrastrar decenas de miles de filas en cero. Consecuencia: cuando un
+almacén pasa de 1 a 0, su fila deja de venir en el feed — la ausencia no se
+distingue de "no cambió".
+
+Por eso los consumers `stock.sync.completed` y `nissan.existencias.sync.completed`,
+después de escribir todo el feed en MySQL y **antes** del refresh de listings en
+los marketplaces:
+
+1. **Reconcilian por ausencia** (`reconcileZeroedStock`, `sync_stock_reconcile.go`):
+   bajan a 0 las filas de `ecom_product_stock` de esa fuente (`ecom_products.source_id`)
+   que quedaron en un valor > 0 y no vinieron en la corrida. Salvaguardas: solo se
+   tocan filas cuyo almacén apareció al menos una vez en la corrida; y si en un
+   almacén > 50% de sus posiciones con stock > 0 intentaran bajar a 0
+   (`stockReconcileMaxZeroRatio`), ese almacén se omite entero (feed probablemente
+   truncado). Cada baja deja su movimiento en `ecom_stock_movements`. Es
+   idempotente (las filas ya en 0 no vuelven a salir).
+2. **Borran de Redis las claves ya consumidas** (`DeleteKeys`): las que dejaron de
+   venir no vuelven a escribirse y quedarían como "fantasmas" re-sincronizándose
+   para siempre. Se borra la lista exacta de claves escaneadas, no un `SCAN`+`DEL`
+   por patrón, para no pisar una corrida del bridge que esté en curso.
+
+Ver ADR `infrastructure/decisions/0002-reconciliacion-stock-por-ausencia.md`.
+
 ## Naming recomendado
 
 - `<entidad>.<accion>`

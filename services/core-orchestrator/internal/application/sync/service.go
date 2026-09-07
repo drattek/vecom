@@ -129,8 +129,12 @@ func (s *SyncService) ProcessStockSyncCompleted(ctx context.Context, event domai
 
 	synced, skipped, failed := 0, 0, 0
 
+	// seen acumula qué (producto, sucursal, almacén) trajo el feed, para la
+	// reconciliación por ausencia de más abajo.
+	seen := newStockSeen()
+
 	for i, inventory := range inventories {
-		skip, err := s.ProcessERPStock(ctx, inventory, cache)
+		skip, err := s.ProcessERPStock(ctx, inventory, cache, seen)
 		if err != nil {
 			log.Printf("Error syncing stock for product %s: %v", inventory.Code, err)
 			failed++
@@ -148,6 +152,17 @@ func (s *SyncService) ProcessStockSyncCompleted(ctx context.Context, event domai
 	}
 
 	log.Printf("Stock sync finished (source=%s): %d ok, %d skipped (SKU not found), %d failed, %d total", event.Source, synced, skipped, failed, len(inventories))
+
+	// Baja a 0 el stock del ERP que quedó colgado en un valor > 0 porque su fila
+	// dejó de venir en el feed (que la fuente filtra a Disponible > 0). Antes del
+	// refresh de listings, para que los marketplaces vean también las bajas a 0.
+	s.reconcileZeroedStock(ctx, cache.sourceID, seen)
+
+	// Borra las claves ya consumidas para que las que dejaron de venir no queden
+	// como fantasmas (ver InventoryRepository.DeleteKeys).
+	if err := s.inventory.DeleteKeys(ctx, keys); err != nil {
+		log.Printf("Stock sync: no se pudieron borrar %d claves de Redis: %v", len(keys), err)
+	}
 
 	s.refreshListingsAfterErpStockSync(ctx)
 
@@ -213,6 +228,10 @@ func (s *SyncService) ProcessNissanExistenciasSyncCompleted(ctx context.Context,
 
 	synced, failed := 0, 0
 
+	// seen acumula qué (producto, sucursal, almacén) trajo el feed, para la
+	// reconciliación por ausencia de más abajo. Compartido por todos los lotes.
+	seen := newStockSeen()
+
 	// Se procesa en lotes de nissanSyncBatchSize, compartiendo una única transacción por
 	// lote en vez de una por SKU (ver ProcessNissanExistenciaBatch en sync_nissan.go): con
 	// miles de SKUs, una transacción por registro hacía que el COMMIT (con su fsync)
@@ -220,12 +239,9 @@ func (s *SyncService) ProcessNissanExistenciasSyncCompleted(ctx context.Context,
 	// su propio chequeo de "no escribir si no cambió") vive dentro de nissanSyncTx.run, en
 	// la misma transacción que producto/stock/precio.
 	for start := 0; start < len(existencias); start += nissanSyncBatchSize {
-		end := start + nissanSyncBatchSize
-		if end > len(existencias) {
-			end = len(existencias)
-		}
+		end := min(start+nissanSyncBatchSize, len(existencias))
 
-		batchSynced, batchFailed, err := s.ProcessNissanExistenciaBatch(ctx, existencias[start:end], cache)
+		batchSynced, batchFailed, err := s.ProcessNissanExistenciaBatch(ctx, existencias[start:end], cache, seen)
 		if err != nil {
 			log.Printf("Error syncing Nissan existencias batch [%d:%d]: %v", start, end, err)
 			failed += end - start
@@ -239,6 +255,19 @@ func (s *SyncService) ProcessNissanExistenciasSyncCompleted(ctx context.Context,
 	}
 
 	log.Printf("Nissan existencias sync finished (source=%s): %d ok, %d failed, %d total", event.Source, synced, failed, len(existencias))
+
+	// Baja a 0 el stock de Nissan que quedó colgado en un valor > 0 porque su fila
+	// dejó de venir en el feed (que la fuente filtra a stock > 0). Va después de
+	// escribir todo el feed y antes del refresh de listings, para que los
+	// marketplaces vean también las bajas a 0.
+	s.reconcileZeroedStock(ctx, cache.sourceID, seen)
+
+	// Borra las claves ya consumidas para que las que dejaron de venir no queden
+	// como fantasmas re-sincronizándose para siempre (ver NissanRepository.DeleteKeys).
+	// Un error acá solo se loguea: la baja de stock ya la resolvió reconcileZeroedStock.
+	if err := s.existencias.DeleteKeys(ctx, keys); err != nil {
+		log.Printf("Nissan existencias sync: no se pudieron borrar %d claves de Redis: %v", len(keys), err)
+	}
 
 	s.refreshListingsAfterNissanSync(ctx)
 

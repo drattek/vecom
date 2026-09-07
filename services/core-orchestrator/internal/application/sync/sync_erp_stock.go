@@ -19,6 +19,9 @@ const machineryPriceList = "precios_maquinaria"
 // misma sucursal puede tener varios almacenes distintos, por lo que warehouseIDs se indexa
 // por sucursal+almacén y no solo por sucursal.
 type erpStockSyncCache struct {
+	// sourceID es la fuente DYNAMICS: acota la reconciliación por ausencia
+	// (reconcileZeroedStock) al stock de este ERP y no al de Nissan.
+	sourceID      int64
 	mxnCurrencyID int64
 	priceListID   int64
 	branchIDs     map[string]int64
@@ -26,8 +29,14 @@ type erpStockSyncCache struct {
 }
 
 func prepareErpStockSyncCache(ctx context.Context, db *sql.DB) (*erpStockSyncCache, error) {
+	sourcesRepo := mysqlRepo.NewSourcesRepository(db)
 	currenciesRepo := mysqlRepo.NewCurrenciesRepository(db)
 	priceListRepo := mysqlRepo.NewPriceListRepository(db)
+
+	source, err := findOrCreateDynamicsSource(ctx, sourcesRepo)
+	if err != nil {
+		return nil, fmt.Errorf("resolving Dynamics source: %w", err)
+	}
 
 	mxn, err := currenciesRepo.FindByCode(ctx, mxnCurrencyCode)
 	if err != nil {
@@ -40,6 +49,7 @@ func prepareErpStockSyncCache(ctx context.Context, db *sql.DB) (*erpStockSyncCac
 	}
 
 	return &erpStockSyncCache{
+		sourceID:      source.ID,
 		mxnCurrencyID: mxn.ID,
 		priceListID:   priceList.ID,
 		branchIDs:     make(map[string]int64),
@@ -95,7 +105,7 @@ func findOrCreateMachineryPriceList(ctx context.Context, repo *mysqlRepo.PriceLi
 // descarta (skipped=true) en vez de crear el producto. Por eso la búsqueda del producto se hace
 // antes de abrir transacción: evita abrir/cerrar una transacción vacía por cada SKU que se
 // termina saltando.
-func (s *SyncService) ProcessERPStock(ctx context.Context, inv *domain.Inventory, cache *erpStockSyncCache) (skipped bool, err error) {
+func (s *SyncService) ProcessERPStock(ctx context.Context, inv *domain.Inventory, cache *erpStockSyncCache, seen *stockSeen) (skipped bool, err error) {
 	productRepo := mysqlRepo.NewProductRepository(s.db)
 
 	product, err := productRepo.FindBySKU(ctx, inv.Code)
@@ -107,7 +117,7 @@ func (s *SyncService) ProcessERPStock(ctx context.Context, inv *domain.Inventory
 	}
 
 	if err := mysqlRepo.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
-		return newErpStockSyncTx(tx).run(ctx, product.ID, inv, cache)
+		return newErpStockSyncTx(tx, seen).run(ctx, product.ID, inv, cache)
 	}); err != nil {
 		return false, err
 	}
@@ -124,9 +134,12 @@ type erpStockSyncTx struct {
 	stockMovementsRepo *mysqlRepo.StockMovementsRepository
 	productPricesRepo  *mysqlRepo.ProductPricesRepository
 	priceHistoryRepo   *mysqlRepo.PriceHistoryRepository
+
+	// seen: ver el campo homónimo en nissanSyncTx.
+	seen *stockSeen
 }
 
-func newErpStockSyncTx(tx *sql.Tx) *erpStockSyncTx {
+func newErpStockSyncTx(tx *sql.Tx, seen *stockSeen) *erpStockSyncTx {
 	return &erpStockSyncTx{
 		branchesRepo:       mysqlRepo.NewBranchesRepository(tx),
 		warehousesRepo:     mysqlRepo.NewWarehousesRepository(tx),
@@ -134,6 +147,7 @@ func newErpStockSyncTx(tx *sql.Tx) *erpStockSyncTx {
 		stockMovementsRepo: mysqlRepo.NewStockMovementsRepository(tx),
 		productPricesRepo:  mysqlRepo.NewProductPricesRepository(tx),
 		priceHistoryRepo:   mysqlRepo.NewPriceHistoryRepository(tx),
+		seen:               seen,
 	}
 }
 
@@ -147,6 +161,10 @@ func (t *erpStockSyncTx) run(ctx context.Context, productID int64, inv *domain.I
 	if err != nil {
 		return fmt.Errorf("resolving warehouse %q: %w", inv.Warehouse, err)
 	}
+
+	// Se marca antes de escribir: la fuente reportó este artículo@almacén con
+	// stock > 0, así que la reconciliación por ausencia no debe bajarlo a 0.
+	t.seen.mark(productID, branchID, warehouseID)
 
 	if err := t.syncProductStock(ctx, productID, branchID, warehouseID, int(inv.Stock)); err != nil {
 		return fmt.Errorf("syncing stock for product %s: %w", inv.Code, err)
