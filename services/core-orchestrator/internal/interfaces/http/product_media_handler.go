@@ -182,14 +182,59 @@ func (h *ProductImagesHandler) UpdateImage(w http.ResponseWriter, r *http.Reques
 	json.NewEncoder(w).Encode(image)
 }
 
-func (h *ProductImagesHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
+// SetCover marks an existing image as the product cover (is_first), clearing
+// the previous one in the same transaction.
+func (h *ProductImagesHandler) SetCover(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	productID, err := strconv.ParseInt(chi.URLParam(r, "productId"), 10, 64)
+	if err != nil || productID == 0 {
+		writeJSONError(w, http.StatusBadRequest, "invalid product id")
+		return
+	}
+
 	id := parseProductImageID(r)
 	if id == 0 {
 		writeJSONError(w, http.StatusBadRequest, "invalid image id")
 		return
 	}
 
-	err := h.service.DeleteImage(r.Context(), id)
+	image, err := h.service.SetCover(r.Context(), productID, id, user.ID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrProductImageNotFound) {
+			writeJSONError(w, http.StatusNotFound, "image not found")
+			return
+		}
+		if errors.Is(err, mediaApp.ErrInvalidProductMedia) {
+			writeJSONError(w, http.StatusBadRequest, "invalid product or image id")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(image)
+}
+
+func (h *ProductImagesHandler) DeleteImage(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	id := parseProductImageID(r)
+	if id == 0 {
+		writeJSONError(w, http.StatusBadRequest, "invalid image id")
+		return
+	}
+
+	err := h.service.DeleteImage(r.Context(), id, user.ID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductImageNotFound) {
 			writeJSONError(w, http.StatusNotFound, "image not found")
@@ -581,13 +626,14 @@ func (h *ProductPartNumbersHandler) DeletePartNumber(w http.ResponseWriter, r *h
 }
 
 // ProductDimensionsHandler
+// volume no se recibe del cliente: el repositorio lo calcula como
+// largo*ancho*alto (cm³) en cada escritura.
 type upsertProductDimensionsRequest struct {
 	Weight   string `json:"weight"`
 	Length   string `json:"length"`
 	Width    string `json:"width"`
 	Height   string `json:"height"`
 	Diameter string `json:"diameter"`
-	Volume   string `json:"volume"`
 }
 
 type ProductDimensionsHandler struct {
@@ -647,7 +693,6 @@ func (h *ProductDimensionsHandler) CreateDimensions(w http.ResponseWriter, r *ht
 		Width:     req.Width,
 		Height:    req.Height,
 		Diameter:  req.Diameter,
-		Volume:    req.Volume,
 		CreatedBy: user.ID,
 	}
 
@@ -692,7 +737,6 @@ func (h *ProductDimensionsHandler) UpdateDimensions(w http.ResponseWriter, r *ht
 		Width:     req.Width,
 		Height:    req.Height,
 		Diameter:  req.Diameter,
-		Volume:    req.Volume,
 		UpdatedBy: user.ID,
 	}
 

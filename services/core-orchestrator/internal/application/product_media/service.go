@@ -52,8 +52,70 @@ func (s *ProductImagesService) UpdateImage(ctx context.Context, id int64, input 
 	return s.repository.Update(ctx, id, input)
 }
 
-func (s *ProductImagesService) DeleteImage(ctx context.Context, id int64) error {
-	return s.repository.SoftDelete(ctx, id)
+// SetCover marks one existing image as the product cover. It clears the
+// previous cover and flags the chosen one in a single transaction, so the
+// "exactly one is_first" invariant never breaks mid-update (there is no DB
+// constraint enforcing it).
+func (s *ProductImagesService) SetCover(ctx context.Context, productID, imageID, actorID int64) (*mysqlInfra.ProductImageDTO, error) {
+	if productID == 0 || imageID == 0 {
+		return nil, ErrInvalidProductMedia
+	}
+
+	var updated *mysqlInfra.ProductImageDTO
+	err := mysqlInfra.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
+		images := mysqlInfra.NewProductImagesRepository(tx)
+
+		if err := images.ClearCover(ctx, productID, actorID); err != nil {
+			return err
+		}
+		if err := images.SetCover(ctx, imageID, productID, actorID); err != nil {
+			return err
+		}
+
+		image, err := images.FindByID(ctx, imageID)
+		if err != nil {
+			return err
+		}
+		updated = image
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return updated, nil
+}
+
+// DeleteImage soft-deletes an image. When the removed image was the cover
+// (is_first) and the product still has other images, the oldest remaining one
+// (by created_at) is promoted to cover in the same transaction, so a product
+// with images always has a cover.
+func (s *ProductImagesService) DeleteImage(ctx context.Context, id, actorID int64) error {
+	return mysqlInfra.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
+		images := mysqlInfra.NewProductImagesRepository(tx)
+
+		image, err := images.FindByID(ctx, id)
+		if err != nil {
+			return err
+		}
+
+		if err := images.SoftDelete(ctx, id); err != nil {
+			return err
+		}
+
+		if !image.IsFirst {
+			return nil
+		}
+
+		next, err := images.FindOldestByProductID(ctx, image.ProductID)
+		if err != nil {
+			if errors.Is(err, mysqlInfra.ErrProductImageNotFound) {
+				return nil // no images left, nothing to promote
+			}
+			return err
+		}
+
+		return images.SetCover(ctx, next.ID, image.ProductID, actorID)
+	})
 }
 
 type ProductVideosService struct {
@@ -110,8 +172,26 @@ func (s *ProductPartNumbersService) GetPartNumbersByProduct(ctx context.Context,
 	return s.repository.FindByProductID(ctx, productID, offset, pageSize)
 }
 
+var validPartNumberTypes = map[string]bool{
+	"aftermarket":     true,
+	"cross_reference": true,
+	"supplier":        true,
+	"internal":        true,
+}
+
 func (s *ProductPartNumbersService) CreatePartNumber(ctx context.Context, input mysqlInfra.CreateProductPartNumberInput) (*mysqlInfra.ProductPartNumberDTO, error) {
 	if input.ProductID == 0 || input.PartNumber == "" {
+		return nil, ErrInvalidProductMedia
+	}
+	// brand_id es NOT NULL con FK a ecom_brands: sin marca válida el INSERT
+	// reventaría con un 500.
+	if input.BrandID <= 0 {
+		return nil, ErrInvalidProductMedia
+	}
+	if input.Type == "" {
+		input.Type = "cross_reference"
+	}
+	if !validPartNumberTypes[input.Type] {
 		return nil, ErrInvalidProductMedia
 	}
 
@@ -186,8 +266,8 @@ type BulkDimensionResult struct {
 // BulkUpsertDimensions resolves each item's product by SKU and creates or
 // updates its dimensions row. Weight/length/width/height default to 1 when
 // missing or null; diameter defaults to width since it doesn't apply to all
-// products. Volume is never accepted from the caller — it's always
-// recalculated from length/width/height (measurements are assumed to always
+// products. Volume is never accepted from the caller — the repository always
+// recalculates it as length*width*height (measurements are assumed to always
 // be uploaded in cm/kg).
 //
 // Cada ítem hace dos lecturas (producto por SKU, dimensiones por producto) y
@@ -221,7 +301,6 @@ func (s *ProductDimensionsService) BulkUpsertDimensions(ctx context.Context, ite
 		if item.Diameter != nil {
 			diameter = *item.Diameter
 		}
-		volume := length * width * height
 
 		_, err = s.repository.FindByProductID(ctx, product.ID)
 		if err != nil {
@@ -237,7 +316,6 @@ func (s *ProductDimensionsService) BulkUpsertDimensions(ctx context.Context, ite
 				Width:     formatDimension(width),
 				Height:    formatDimension(height),
 				Diameter:  formatDimension(diameter),
-				Volume:    formatDimension(volume),
 				CreatedBy: actorID,
 			})
 			if createErr != nil {
@@ -254,7 +332,6 @@ func (s *ProductDimensionsService) BulkUpsertDimensions(ctx context.Context, ite
 			Width:     formatDimension(width),
 			Height:    formatDimension(height),
 			Diameter:  formatDimension(diameter),
-			Volume:    formatDimension(volume),
 			UpdatedBy: actorID,
 		})
 		if updateErr != nil {

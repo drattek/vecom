@@ -550,14 +550,17 @@ func (s *Service) resolveSuccessionChain(ctx context.Context, product *mysqlInfr
 			visited[partNumber] = true
 			queue = append(queue, partNumber)
 
-			member, err := s.productRepository.FindBySourceAndPartNumber(ctx, product.SourceID, partNumber)
+			// ecom_products no tiene unique key sobre (source_id, part_number) — más de un
+			// producto puede compartir el mismo part_number dentro del source, y todos
+			// cuentan como miembros de esta cadena de sucesión (a diferencia de
+			// FindBySourceAndPartNumber, que solo devolvería uno arbitrario).
+			members, err := s.productRepository.FindAllBySourceAndPartNumber(ctx, product.SourceID, partNumber)
 			if err != nil {
-				if errors.Is(err, mysqlInfra.ErrProductNotFound) {
-					continue
-				}
-				return nil, fmt.Errorf("error loading product for part number %s: %w", partNumber, err)
+				return nil, fmt.Errorf("error loading products for part number %s: %w", partNumber, err)
 			}
-			chain = append(chain, member)
+			for i := range members {
+				chain = append(chain, &members[i])
+			}
 		}
 	}
 

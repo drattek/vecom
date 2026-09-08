@@ -49,12 +49,18 @@ func NewVecomImagesMigrationService(
 // every migrated file is attached to it.
 const vecomImagesDiskID int64 = 1
 
-// MigrateVecomImagesInput narrows a run to a page of vecom_products (ordered
-// by id) so a large migration can be done in batches. A batch always carries
-// every image of every product it selects — never a partial product — so
-// image_position ordering / is_first stay correct within a single call. A
-// zero Limit migrates every product's images in one call.
+// MigrateVecomImagesInput narrows a run either to one vecom_products.code (for
+// re-running the migration against a single product missed on the original
+// pass — e.g. one whose ecom_products row didn't exist yet because its sku
+// shared a part_number with another product, before that unique constraint
+// was dropped) or to a page of vecom_products ordered by id (for a large
+// batched migration). Code takes precedence over Limit/Offset when both are
+// set. A batch always carries every image of every product it selects — never
+// a partial product — so image_position ordering / is_first stay correct
+// within a single call. A zero Limit with no Code migrates every product's
+// images in one call.
 type MigrateVecomImagesInput struct {
+	Code   string
 	Limit  int
 	Offset int
 }
@@ -154,7 +160,11 @@ func (s *VecomImagesMigrationService) loadRows(ctx context.Context, input Migrat
 		JOIN vecom_products vp ON vp.id = vi.product_id
 	`
 	args := make([]any, 0, 2)
-	if input.Limit > 0 {
+	switch {
+	case input.Code != "":
+		query += " WHERE vp.code = ?"
+		args = append(args, input.Code)
+	case input.Limit > 0:
 		query += `
 			JOIN (
 				SELECT DISTINCT product_id

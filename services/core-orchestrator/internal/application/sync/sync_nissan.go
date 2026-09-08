@@ -337,6 +337,10 @@ func (t *nissanSyncTx) syncPartNumberSupersession(ctx context.Context, cache *ni
 		return nil
 	}
 
+	// El ERP solo reporta el part_number del sucesor, no un sku — si más de un producto de
+	// este source llegara a compartir ese part_number (ecom_products ya no lo impide a nivel
+	// de base de datos), FindBySourceAndPartNumber resuelve al más antiguo (ORDER BY id ASC)
+	// de forma determinística en vez de a uno arbitrario.
 	successor, err := t.productRepo.FindBySourceAndPartNumber(ctx, cache.sourceID, e.SupersededByPartNumber)
 	if errors.Is(err, mysqlRepo.ErrProductNotFound) {
 		// El sucesor todavía no existe como producto: la fila queda con new_product_id en

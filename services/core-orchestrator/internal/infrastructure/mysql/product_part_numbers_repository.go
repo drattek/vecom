@@ -112,22 +112,44 @@ func (r *ProductPartNumbersRepository) FindByProductID(ctx context.Context, prod
 	return &PaginatedProductPartNumbers{Data: partNumbers, Total: total}, nil
 }
 
+// Create agrega un número de parte alternativo. La tabla no tiene unique key,
+// pero un alternativo se identifica por (product_id, part_number): si ya existe
+// una fila para ese par —incluso soft-deleted— se **revive** (deleted_at = NULL)
+// y se le actualizan marca/tipo, en vez de acumular filas muertas. Solo se
+// inserta cuando no hay ninguna fila para ese par.
 func (r *ProductPartNumbersRepository) Create(ctx context.Context, input CreateProductPartNumberInput) (*ProductPartNumberDTO, error) {
-	query := `
-		INSERT INTO ecom_product_part_numbers (product_id, part_number, type, brand_id, created_by)
-		VALUES (?, ?, ?, ?, ?)
-	`
-
-	_, err := r.db.ExecContext(ctx, query, input.ProductID, input.PartNumber, input.Type, input.BrandID, input.CreatedBy)
-	if err != nil {
+	var exists bool
+	if err := r.db.QueryRowContext(ctx,
+		"SELECT EXISTS(SELECT 1 FROM ecom_product_part_numbers WHERE product_id = ? AND part_number = ?)",
+		input.ProductID, input.PartNumber,
+	).Scan(&exists); err != nil {
 		return nil, err
 	}
 
-	// Retrieve the created record
+	if exists {
+		query := `
+			UPDATE ecom_product_part_numbers
+			SET type = ?, brand_id = ?, deleted_at = NULL, updated_by = ?, updated_at = NOW()
+			WHERE product_id = ? AND part_number = ?
+		`
+		if _, err := r.db.ExecContext(ctx, query, input.Type, input.BrandID, input.CreatedBy, input.ProductID, input.PartNumber); err != nil {
+			return nil, err
+		}
+	} else {
+		query := `
+			INSERT INTO ecom_product_part_numbers (product_id, part_number, type, brand_id, created_by)
+			VALUES (?, ?, ?, ?, ?)
+		`
+		if _, err := r.db.ExecContext(ctx, query, input.ProductID, input.PartNumber, input.Type, input.BrandID, input.CreatedBy); err != nil {
+			return nil, err
+		}
+	}
+
 	getQuery := `
 		SELECT product_id, part_number, type, brand_id, created_by, updated_by, created_at, updated_at
 		FROM ecom_product_part_numbers
 		WHERE product_id = ? AND part_number = ? AND deleted_at IS NULL
+		LIMIT 1
 	`
 
 	var p ProductPartNumberDTO

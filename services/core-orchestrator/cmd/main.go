@@ -32,6 +32,8 @@ import (
 	meliNotificationsApp "core-orchestrator/internal/application/meli_notifications"
 	migrationApp "core-orchestrator/internal/application/migration"
 	pricingApp "core-orchestrator/internal/application/pricing"
+	productAttributeChecklistApp "core-orchestrator/internal/application/product_attributes_checklist"
+	productDetailsApp "core-orchestrator/internal/application/product_details"
 	productImageImportApp "core-orchestrator/internal/application/product_image_import"
 	productMediaApp "core-orchestrator/internal/application/product_media"
 	prodService "core-orchestrator/internal/application/products"
@@ -116,11 +118,33 @@ func main() {
 	sieExchangeRateUpdater := pricingApp.NewSIEExchangeRateUpdater(sieClient, mysqlRepos.CurrenciesRepository, mysqlRepos.ExchangeRatesRepository)
 	stockMovementsService := stockMovementsApp.NewStockMovementsService(db, mysqlRepos.StockMovementsRepository)
 	productImagesService := productMediaApp.NewProductImagesService(db, mysqlRepos.ProductImagesRepository)
+	// Read/write model de la página de detalle de producto (lecturas por
+	// sección + edición inline de la sección General vía PATCH).
+	productDetailsService := productDetailsApp.NewService(
+		db,
+		mysqlRepos.ProductDetailsRepository,
+		mysqlRepos.BrandsRepository,
+		mysqlRepos.CategoriesRepository,
+		mysqlRepos.ProductDimensionsRepository,
+		mysqlRepos.ProductSEORepository,
+	)
+	productAttributeChecklistService := productAttributeChecklistApp.NewService(
+		mysqlRepos.ProductDetailsRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.ChannelAttributesRepository,
+		mysqlRepos.ChannelAttributeMapRepository,
+		mysqlRepos.AttributesRepository,
+		mysqlRepos.AttributeOptionsRepository,
+		mysqlRepos.ProductAttributesRepository,
+	)
 	productImageImportService := productImageImportApp.NewService(
 		db,
 		mysqlRepos.ProductRepository,
 		mysqlRepos.FilesRepository,
 		mysqlRepos.ProductImagesRepository,
+		mysqlRepos.ProductVideosRepository,
+		mysqlRepos.ProductMediaRepository,
 		mysqlRepos.StorageDiskRepository,
 	)
 	productVideosService := productMediaApp.NewProductVideosService(db, mysqlRepos.ProductVideosRepository)
@@ -336,6 +360,8 @@ func main() {
 	exchangeRatesHandler := httpHandler.NewExchangeRatesHandler(exchangeRatesService)
 	stockMovementsHandler := httpHandler.NewStockMovementsHandler(stockMovementsService)
 	productImagesHandler := httpHandler.NewProductImagesHandler(productImagesService)
+	productDetailsHandler := httpHandler.NewProductDetailsHandler(productDetailsService)
+	productAttributeChecklistHandler := httpHandler.NewProductAttributeChecklistHandler(productAttributeChecklistService)
 	productImageImportHandler := httpHandler.NewProductImageImportHandler(productImageImportService)
 	productVideosHandler := httpHandler.NewProductVideosHandler(productVideosService)
 	productPartNumbersHandler := httpHandler.NewProductPartNumbersHandler(productPartNumbersService)
@@ -478,7 +504,7 @@ func main() {
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
 		authHandler, authMiddleware, brandHandler, categoryHandler, currencyHandler, branchHandler,
 		warehouseHandler, productStockHandler, priceListHandler, pricingFormulaHandler, productPricesHandler, exchangeRatesHandler,
-		stockMovementsHandler, productImagesHandler, productImageImportHandler, productVideosHandler, productPartNumbersHandler,
+		stockMovementsHandler, productImagesHandler, productDetailsHandler, productAttributeChecklistHandler, productImageImportHandler, productVideosHandler, productPartNumbersHandler,
 		productDimensionsHandler, productSEOHandler, connectionCredentialsHandler, connectionSettingsHandler,
 		connectionStatusHandler, channelParametersHandler, mercadoLibreHandler, meliNotificationHandler, odooHandler, sourceHandler,
 		migrationHandler, equipmentTypeHandler, vehicleFitmentHandler, equipmentFitmentHandler,

@@ -293,18 +293,65 @@ func (r *ProductRepository) FindBySKU(ctx context.Context, sku string) (*Product
 // FindBySourceAndPartNumber busca por part_number dentro de una fuente, no por sku — sku y
 // part_number pueden ser distintos fuera del flujo de Nissan (donde hoy son iguales, ver
 // createNissanProduct en sync_nissan.go), y la resolución de ecom_part_number_supersessions
-// está definida en términos de part_number, no de sku. Se apoya en el unique key
-// (source_id, part_number) de ecom_products para garantizar como mucho un resultado.
+// está definida en términos de part_number, no de sku. ecom_products ya NO tiene un unique key
+// sobre (source_id, part_number) — dos productos pueden compartir part_number dentro del mismo
+// source (sku sigue siendo el único identificador realmente único) — así que esto puede
+// devolver cualquiera de varios; ORDER BY id ASC lo hace al menos determinístico (gana el más
+// antiguo) en vez de depender del orden físico de InnoDB. Los llamadores que necesiten
+// considerar a todos los productos que comparten el part_number deben usar
+// FindAllBySourceAndPartNumber en su lugar.
 func (r *ProductRepository) FindBySourceAndPartNumber(ctx context.Context, sourceID int64, partNumber string) (*ProductDTO, error) {
 	query := `
 		SELECT ` + productColumns + `
 		FROM ecom_products
 		WHERE source_id = ? AND part_number = ? AND deleted_at IS NULL
+		ORDER BY id ASC
 		LIMIT 1
 	`
 
 	row := r.db.QueryRowContext(ctx, query, sourceID, partNumber)
 	return scanProductRow(row)
+}
+
+// FindAllBySourceAndPartNumber returns every ecom_products row for a given
+// (source_id, part_number) pair, oldest first — unlike FindBySourceAndPartNumber,
+// which only ever returns one. Use this where more than one product sharing
+// the part_number within the source must all be taken into account (e.g.
+// resolveSuccessionChain in channel_listings, which enumerates every product
+// linked through a part number supersession chain). Always a slice, never
+// nil, empty when nothing matches.
+func (r *ProductRepository) FindAllBySourceAndPartNumber(ctx context.Context, sourceID int64, partNumber string) ([]ProductDTO, error) {
+	query := `
+		SELECT ` + productColumns + `
+		FROM ecom_products
+		WHERE source_id = ? AND part_number = ? AND deleted_at IS NULL
+		ORDER BY id ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, sourceID, partNumber)
+	if err != nil {
+		return nil, fmt.Errorf("error querying products by source and part number: %w", err)
+	}
+	defer rows.Close()
+
+	products := make([]ProductDTO, 0)
+	for rows.Next() {
+		var p ProductDTO
+		if err := rows.Scan(
+			&p.ID, &p.SKU, &p.PartNumber, &p.Name, &p.Description, &p.ShortDescription,
+			&p.BrandID, &p.CategoryID, &p.ProductType, &p.Status, &p.IsSellable, &p.IsStockable,
+			&p.SourceID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt, &p.DeletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning product: %w", err)
+		}
+		products = append(products, p)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating products: %w", err)
+	}
+
+	return products, nil
 }
 
 func (r *ProductRepository) Create(ctx context.Context, input CreateProductInput) (*ProductDTO, error) {

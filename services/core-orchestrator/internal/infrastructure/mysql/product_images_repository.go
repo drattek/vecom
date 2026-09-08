@@ -158,6 +158,29 @@ func (r *ProductImagesRepository) FindAllByProductID(ctx context.Context, produc
 	return images, rows.Err()
 }
 
+// FindOldestByProductID returns the earliest-created non-deleted image of the
+// product (created_at, then id as tie-break). Used to pick a new cover when the
+// current one is removed.
+func (r *ProductImagesRepository) FindOldestByProductID(ctx context.Context, productID int64) (*ProductImageDTO, error) {
+	query := `
+		SELECT id, product_id, file_id, is_first, created_by, updated_by, created_at, updated_at
+		FROM ecom_product_images
+		WHERE product_id = ? AND deleted_at IS NULL
+		ORDER BY created_at ASC, id ASC
+		LIMIT 1
+	`
+
+	var p ProductImageDTO
+	if err := r.db.QueryRowContext(ctx, query, productID).Scan(&p.ID, &p.ProductID, &p.FileID, &p.IsFirst, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrProductImageNotFound
+		}
+		return nil, err
+	}
+
+	return &p, nil
+}
+
 // FindByProductAndFile looks up an existing ecom_product_images row linking
 // a product to a file, so callers can tell whether a given file is already
 // attached to the product before inserting a duplicate link.
@@ -221,6 +244,55 @@ func (r *ProductImagesRepository) Update(ctx context.Context, id int64, input Up
 	}
 
 	return r.FindByID(ctx, id)
+}
+
+// ProductHasCover reports whether the product already has an image flagged as
+// cover (is_first). Callers use it to decide whether a freshly added image
+// should be promoted to cover automatically.
+func (r *ProductImagesRepository) ProductHasCover(ctx context.Context, productID int64) (bool, error) {
+	var count int
+	query := "SELECT COUNT(*) FROM ecom_product_images WHERE product_id = ? AND is_first = 1 AND deleted_at IS NULL"
+	if err := r.db.QueryRowContext(ctx, query, productID).Scan(&count); err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+// ClearCover unsets is_first on every non-deleted image of the product. Run it
+// before SetCover so only one row stays flagged — there is no unique
+// constraint on is_first, the invariant is kept by the application.
+func (r *ProductImagesRepository) ClearCover(ctx context.Context, productID, updatedBy int64) error {
+	query := `
+		UPDATE ecom_product_images
+		SET is_first = 0, updated_by = ?, updated_at = NOW()
+		WHERE product_id = ? AND is_first = 1 AND deleted_at IS NULL
+	`
+	_, err := r.db.ExecContext(ctx, query, updatedBy, productID)
+	return err
+}
+
+// SetCover flags one image (scoped by product, so a stray id from another
+// product can't be promoted) as the cover. Pair it with ClearCover inside a
+// transaction.
+func (r *ProductImagesRepository) SetCover(ctx context.Context, id, productID, updatedBy int64) error {
+	query := `
+		UPDATE ecom_product_images
+		SET is_first = 1, updated_by = ?, updated_at = NOW()
+		WHERE id = ? AND product_id = ? AND deleted_at IS NULL
+	`
+	result, err := r.db.ExecContext(ctx, query, updatedBy, id, productID)
+	if err != nil {
+		return err
+	}
+
+	rowsAffected, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rowsAffected == 0 {
+		return ErrProductImageNotFound
+	}
+	return nil
 }
 
 func (r *ProductImagesRepository) SoftDelete(ctx context.Context, id int64) error {

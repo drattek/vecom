@@ -550,7 +550,6 @@ func (s *VecomSyncProductMigrationService) writeMeliDimensions(ctx context.Conte
 			Width:     firstNonEmpty(width, "1.00"),
 			Height:    firstNonEmpty(height, "1.00"),
 			Diameter:  "1.00",
-			Volume:    "1.00",
 			CreatedBy: actorID,
 		})
 		return cerr == nil, cerr
@@ -565,7 +564,6 @@ func (s *VecomSyncProductMigrationService) writeMeliDimensions(ctx context.Conte
 		Width:     firstNonEmpty(width, existing.Width),
 		Height:    firstNonEmpty(height, existing.Height),
 		Diameter:  existing.Diameter,
-		Volume:    existing.Volume,
 		UpdatedBy: actorID,
 	})
 	return uerr == nil, uerr

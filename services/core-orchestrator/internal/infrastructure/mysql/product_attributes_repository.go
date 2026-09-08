@@ -108,43 +108,52 @@ func (r *ProductAttributesRepository) findByID(ctx context.Context, id int64) (*
 // replaces its value on subsequent writes — mirrors
 // ChannelCategoryMapRepository.Upsert.
 func (r *ProductAttributesRepository) Upsert(ctx context.Context, input UpsertProductAttributeInput) (*ProductAttributeDTO, error) {
-	existing, err := r.FindByProductAndAttribute(ctx, input.ProductID, input.AttributeID)
-	if err != nil && !errors.Is(err, ErrProductAttributeNotFound) {
-		return nil, fmt.Errorf("error loading product attribute: %w", err)
-	}
+	// uq_product_attribute (product_id, attribute_id) NO considera deleted_at,
+	// así que buscamos la fila exista o esté soft-deleted: si está borrada la
+	// revivimos (deleted_at = NULL) en el UPDATE, en vez de intentar un INSERT
+	// que chocaría con la única.
+	var existingID int64
+	err := r.db.QueryRowContext(ctx,
+		"SELECT id FROM ecom_product_attributes WHERE product_id = ? AND attribute_id = ? LIMIT 1",
+		input.ProductID, input.AttributeID,
+	).Scan(&existingID)
 
-	if existing == nil {
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
 		query := `
 			INSERT INTO ecom_product_attributes
 				(product_id, attribute_id, value_text, value_number, value_boolean, value_date, option_id, created_by)
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
 		`
 
-		result, err := r.db.ExecContext(ctx, query, input.ProductID, input.AttributeID, input.ValueText, input.ValueNumber, input.ValueBool, input.ValueDate, input.OptionID, input.ActorID)
-		if err != nil {
-			return nil, fmt.Errorf("error creating product attribute: %w", err)
+		result, insertErr := r.db.ExecContext(ctx, query, input.ProductID, input.AttributeID, input.ValueText, input.ValueNumber, input.ValueBool, input.ValueDate, input.OptionID, input.ActorID)
+		if insertErr != nil {
+			return nil, fmt.Errorf("error creating product attribute: %w", insertErr)
 		}
 
-		id, err := result.LastInsertId()
-		if err != nil {
-			return nil, fmt.Errorf("error getting last insert id: %w", err)
+		id, idErr := result.LastInsertId()
+		if idErr != nil {
+			return nil, fmt.Errorf("error getting last insert id: %w", idErr)
 		}
 
 		return r.findByID(ctx, id)
+
+	case err != nil:
+		return nil, fmt.Errorf("error loading product attribute: %w", err)
 	}
 
 	query := `
 		UPDATE ecom_product_attributes
 		SET value_text = ?, value_number = ?, value_boolean = ?, value_date = ?, option_id = ?,
-		    updated_by = ?, updated_at = NOW()
+		    deleted_at = NULL, updated_by = ?, updated_at = NOW()
 		WHERE id = ?
 	`
 
-	if _, err := r.db.ExecContext(ctx, query, input.ValueText, input.ValueNumber, input.ValueBool, input.ValueDate, input.OptionID, input.ActorID, existing.ID); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, input.ValueText, input.ValueNumber, input.ValueBool, input.ValueDate, input.OptionID, input.ActorID, existingID); err != nil {
 		return nil, fmt.Errorf("error updating product attribute: %w", err)
 	}
 
-	return r.findByID(ctx, existing.ID)
+	return r.findByID(ctx, existingID)
 }
 
 func (r *ProductAttributesRepository) SoftDelete(ctx context.Context, id int64) error {

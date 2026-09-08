@@ -89,6 +89,41 @@ func (r *BrandsRepository) FindPaginated(ctx context.Context, offset, pageSize i
 	}, nil
 }
 
+// BrandOption is the slim {id, name} shape the admin UI needs to populate a
+// brand picker (no audit columns, no pagination).
+type BrandOption struct {
+	ID   int64  `json:"id"`
+	Name string `json:"name"`
+}
+
+// FindAllOptions returns every non-deleted brand as id/name, ordered by name —
+// para los selectores de marca del panel (edición de producto, etc.).
+func (r *BrandsRepository) FindAllOptions(ctx context.Context) ([]BrandOption, error) {
+	query := `
+		SELECT id, name
+		FROM ecom_brands
+		WHERE deleted_at IS NULL
+		ORDER BY name ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("error querying brand options: %w", err)
+	}
+	defer rows.Close()
+
+	options := make([]BrandOption, 0)
+	for rows.Next() {
+		var option BrandOption
+		if err := rows.Scan(&option.ID, &option.Name); err != nil {
+			return nil, fmt.Errorf("error scanning brand option: %w", err)
+		}
+		options = append(options, option)
+	}
+
+	return options, rows.Err()
+}
+
 func (r *BrandsRepository) FindByID(ctx context.Context, id int64) (*BrandDTO, error) {
 	query := `
 		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at

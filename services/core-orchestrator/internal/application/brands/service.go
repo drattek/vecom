@@ -40,6 +40,12 @@ func (s *BrandService) GetPaginatedBrands(ctx context.Context, offset, pageSize 
 	return s.repository.FindPaginated(ctx, offset, pageSize)
 }
 
+// GetBrandOptions devuelve todas las marcas como {id, name} para los selectores
+// del panel — sin paginar, ordenadas por nombre.
+func (s *BrandService) GetBrandOptions(ctx context.Context) ([]mysqlInfra.BrandOption, error) {
+	return s.repository.FindAllOptions(ctx)
+}
+
 func (s *BrandService) GetBrandByID(ctx context.Context, id int64) (*mysqlInfra.BrandDTO, error) {
 	if id <= 0 {
 		return nil, ErrInvalidBrandPayload

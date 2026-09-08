@@ -29,6 +29,7 @@ type MySQLRepositories struct {
 	StockMovementsRepository                *mysqlInfra.StockMovementsRepository
 	ProductImagesRepository                 *mysqlInfra.ProductImagesRepository
 	ProductVideosRepository                 *mysqlInfra.ProductVideosRepository
+	ProductMediaRepository                  *mysqlInfra.ProductMediaRepository
 	ProductPartNumbersRepository            *mysqlInfra.ProductPartNumbersRepository
 	ProductDimensionsRepository             *mysqlInfra.ProductDimensionsRepository
 	ProductSEORepository                    *mysqlInfra.ProductSEORepository
@@ -52,6 +53,7 @@ type MySQLRepositories struct {
 	ChannelAttributesRepository             *mysqlInfra.ChannelAttributesRepository
 	ChannelAttributeMapRepository           *mysqlInfra.ChannelAttributeMapRepository
 	MeliNotificationRepository              *mysqlInfra.MeliNotificationRepository
+	ProductDetailsRepository                *mysqlInfra.ProductDetailsRepository
 }
 
 func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
@@ -78,6 +80,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 	stockMovementsRepository := mysqlInfra.NewStockMovementsRepository(db)
 	productImagesRepository := mysqlInfra.NewProductImagesRepository(db)
 	productVideosRepository := mysqlInfra.NewProductVideosRepository(db)
+	productMediaRepository := mysqlInfra.NewProductMediaRepository(db)
 	productPartNumbersRepository := mysqlInfra.NewProductPartNumbersRepository(db)
 	productDimensionsRepository := mysqlInfra.NewProductDimensionsRepository(db)
 	productSEORepository := mysqlInfra.NewProductSEORepository(db)
@@ -101,6 +104,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 	channelAttributesRepository := mysqlInfra.NewChannelAttributesRepository(db)
 	channelAttributeMapRepository := mysqlInfra.NewChannelAttributeMapRepository(db)
 	meliNotificationRepository := mysqlInfra.NewMeliNotificationRepository(db)
+	productDetailsRepository := mysqlInfra.NewProductDetailsRepository(db)
 
 	return &MySQLRepositories{
 		ProductRepository:                       productRepository,
@@ -124,6 +128,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 		StockMovementsRepository:                stockMovementsRepository,
 		ProductImagesRepository:                 productImagesRepository,
 		ProductVideosRepository:                 productVideosRepository,
+		ProductMediaRepository:                  productMediaRepository,
 		ProductPartNumbersRepository:            productPartNumbersRepository,
 		ProductDimensionsRepository:             productDimensionsRepository,
 		ProductSEORepository:                    productSEORepository,
@@ -147,5 +152,6 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 		ChannelAttributesRepository:             channelAttributesRepository,
 		ChannelAttributeMapRepository:           channelAttributeMapRepository,
 		MeliNotificationRepository:              meliNotificationRepository,
+		ProductDetailsRepository:                productDetailsRepository,
 	}
 }

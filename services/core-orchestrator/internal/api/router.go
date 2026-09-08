@@ -30,6 +30,8 @@ func NewRouter(
 	exchangeRatesHandler *httpHandler.ExchangeRatesHandler,
 	stockMovementsHandler *httpHandler.StockMovementsHandler,
 	productImagesHandler *httpHandler.ProductImagesHandler,
+	productDetailsHandler *httpHandler.ProductDetailsHandler,
+	productAttributeChecklistHandler *httpHandler.ProductAttributeChecklistHandler,
 	productImageImportHandler *httpHandler.ProductImageImportHandler,
 	productVideosHandler *httpHandler.ProductVideosHandler,
 	productPartNumbersHandler *httpHandler.ProductPartNumbersHandler,
@@ -138,6 +140,7 @@ func NewRouter(
 
 		// Brands endpoints
 		protected.Get("/api/brands", brandHandler.GetBrands)
+		protected.Get("/api/brands/options", brandHandler.GetBrandOptions)
 		protected.Get("/api/brands/{id}", brandHandler.GetBrandByID)
 		protected.Post("/api/brands", brandHandler.CreateBrand)
 		protected.Put("/api/brands/{id}", brandHandler.UpdateBrand)
@@ -225,6 +228,43 @@ func NewRouter(
 		protected.Put("/api/product-images/{id}", productImagesHandler.UpdateImage)
 		protected.Delete("/api/product-images/{id}", productImagesHandler.DeleteImage)
 		protected.Post("/api/product-images/import", productImageImportHandler.Import)
+		// Alta / reemplazo / portada de imágenes desde el detalle de producto
+		// (Multimedia). El alta valida cada URL igual que el import por SKU.
+		protected.Post("/api/products/{productId}/images/bulk", productImageImportHandler.ImportForProduct)
+		protected.Put("/api/products/{productId}/images/{id}/replace", productImageImportHandler.ReplaceProductImage)
+		protected.Put("/api/products/{productId}/images/{id}/cover", productImagesHandler.SetCover)
+		// Archivos adjuntos por URL (ecom_product_media). Cada archivo lleva su
+		// tipo (manual / datasheet / certificate / image); no hay "principal".
+		protected.Post("/api/products/{productId}/attachments/bulk", productImageImportHandler.ImportAttachmentsForProduct)
+		protected.Put("/api/products/{productId}/attachments/{fileId}/replace", productImageImportHandler.ReplaceProductAttachment)
+		protected.Delete("/api/products/{productId}/attachments/{fileId}", productImageImportHandler.DeleteProductAttachment)
+
+		// Product detail page (read-only): one endpoint per section so the UI
+		// only fetches the tab being viewed. Every FK (marca, categoría, almacén,
+		// divisa, atributo, archivo) llega ya resuelto a nombre/URL.
+		protected.Get("/api/products/{productId}/details/general", productDetailsHandler.GetGeneral)
+		// Edición inline de la sección General (name / description / short_description):
+		// el body solo lleva las claves que se editan.
+		protected.Patch("/api/products/{productId}/details/general", productDetailsHandler.PatchGeneral)
+		protected.Get("/api/products/{productId}/details/media", productDetailsHandler.GetMedia)
+		protected.Get("/api/products/{productId}/details/pricing", productDetailsHandler.GetPricing)
+		protected.Get("/api/products/{productId}/details/pricing/history", productDetailsHandler.GetPriceHistory)
+		protected.Get("/api/products/{productId}/details/inventory", productDetailsHandler.GetInventory)
+		protected.Get("/api/products/{productId}/details/inventory/movements", productDetailsHandler.GetStockMovements)
+		protected.Get("/api/products/{productId}/details/part-numbers", productDetailsHandler.GetPartNumbers)
+		protected.Get("/api/products/{productId}/details/attributes", productDetailsHandler.GetAttributes)
+		// Checklist de atributos que un canal espera para la categoría del producto
+		// (requerido/opcional + valor actual). ?connectionId=N obligatorio.
+		protected.Get("/api/products/{productId}/details/attributes/checklist", productAttributeChecklistHandler.GetChecklist)
+		// Edición inline de la sección Dimensiones (upsert de ecom_product_dimensions).
+		protected.Patch("/api/products/{productId}/details/attributes/dimensions", productDetailsHandler.PatchDimensions)
+		// Edición inline de la sección SEO (upsert de ecom_product_seo).
+		protected.Patch("/api/products/{productId}/details/attributes/seo", productDetailsHandler.PatchSEO)
+
+		// Videos por URL desde el detalle de producto (Multimedia). Solo disco +
+		// URLs; sin orden, portada ni tipo.
+		protected.Post("/api/products/{productId}/videos/bulk", productImageImportHandler.ImportVideosForProduct)
+		protected.Put("/api/products/{productId}/videos/{id}/replace", productImageImportHandler.ReplaceProductVideo)
 
 		// Product Videos endpoints
 		protected.Get("/api/product-videos", productVideosHandler.GetProductVideos)

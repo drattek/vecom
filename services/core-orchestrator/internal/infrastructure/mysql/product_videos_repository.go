@@ -126,6 +126,28 @@ func (r *ProductVideosRepository) FindByProductID(ctx context.Context, productID
 	return &PaginatedProductVideos{Data: videos, Total: total}, nil
 }
 
+// FindByProductAndFile looks up an existing ecom_product_videos row linking a
+// file to a product, so callers that receive the same URL twice can reuse the
+// existing row instead of inserting a duplicate.
+func (r *ProductVideosRepository) FindByProductAndFile(ctx context.Context, productID, fileID int64) (*ProductVideoDTO, error) {
+	query := `
+		SELECT id, product_id, file_id, created_by, updated_by, created_at, updated_at
+		FROM ecom_product_videos
+		WHERE product_id = ? AND file_id = ? AND deleted_at IS NULL
+		LIMIT 1
+	`
+
+	var p ProductVideoDTO
+	if err := r.db.QueryRowContext(ctx, query, productID, fileID).Scan(&p.ID, &p.ProductID, &p.FileID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrProductVideoNotFound
+		}
+		return nil, err
+	}
+
+	return &p, nil
+}
+
 func (r *ProductVideosRepository) Create(ctx context.Context, input CreateProductVideoInput) (*ProductVideoDTO, error) {
 	query := `
 		INSERT INTO ecom_product_videos (product_id, file_id, created_by)

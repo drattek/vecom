@@ -25,6 +25,9 @@ type ProductDimensionsDTO struct {
 	UpdatedAt time.Time `json:"updatedAt"`
 }
 
+// Volume no se acepta en las entradas: la columna volume siempre se calcula
+// como largo * ancho * alto (cm³) en el propio SQL de Create/Update. El envío
+// se hace siempre en caja rectangular, así que el diámetro no interviene.
 type CreateProductDimensionsInput struct {
 	ProductID int64
 	Weight    string
@@ -32,7 +35,6 @@ type CreateProductDimensionsInput struct {
 	Width     string
 	Height    string
 	Diameter  string
-	Volume    string
 	CreatedBy int64
 }
 
@@ -42,7 +44,6 @@ type UpdateProductDimensionsInput struct {
 	Width     string
 	Height    string
 	Diameter  string
-	Volume    string
 	UpdatedBy int64
 }
 
@@ -73,12 +74,16 @@ func (r *ProductDimensionsRepository) FindByProductID(ctx context.Context, produ
 }
 
 func (r *ProductDimensionsRepository) Create(ctx context.Context, input CreateProductDimensionsInput) (*ProductDimensionsDTO, error) {
+	// volume = largo * ancho * alto (cm³), calculado por MySQL sobre los mismos
+	// valores que se insertan.
 	query := `
 		INSERT INTO ecom_product_dimensions (product_id, weight, length, width, height, diameter, volume, created_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		VALUES (?, ?, ?, ?, ?, ?, ROUND(? * ? * ?, 2), ?)
 	`
 
-	_, err := r.db.ExecContext(ctx, query, input.ProductID, input.Weight, input.Length, input.Width, input.Height, input.Diameter, input.Volume, input.CreatedBy)
+	_, err := r.db.ExecContext(ctx, query,
+		input.ProductID, input.Weight, input.Length, input.Width, input.Height, input.Diameter,
+		input.Length, input.Width, input.Height, input.CreatedBy)
 	if err != nil {
 		return nil, err
 	}
@@ -89,11 +94,14 @@ func (r *ProductDimensionsRepository) Create(ctx context.Context, input CreatePr
 func (r *ProductDimensionsRepository) Update(ctx context.Context, productID int64, input UpdateProductDimensionsInput) (*ProductDimensionsDTO, error) {
 	query := `
 		UPDATE ecom_product_dimensions
-		SET weight = ?, length = ?, width = ?, height = ?, diameter = ?, volume = ?, updated_by = ?, updated_at = NOW()
+		SET weight = ?, length = ?, width = ?, height = ?, diameter = ?,
+		    volume = ROUND(? * ? * ?, 2), updated_by = ?, updated_at = NOW()
 		WHERE product_id = ? AND deleted_at IS NULL
 	`
 
-	result, err := r.db.ExecContext(ctx, query, input.Weight, input.Length, input.Width, input.Height, input.Diameter, input.Volume, input.UpdatedBy, productID)
+	result, err := r.db.ExecContext(ctx, query,
+		input.Weight, input.Length, input.Width, input.Height, input.Diameter,
+		input.Length, input.Width, input.Height, input.UpdatedBy, productID)
 	if err != nil {
 		return nil, err
 	}

@@ -136,10 +136,13 @@ create table ecom_products (
     constraint fk_product_created_by foreign key (created_by) references ecom_api_user(id),
     constraint fk_product_updated_by foreign key (updated_by) references ecom_api_user(id),
     constraint fk_product_source foreign key (source_id) references ecom_sources(id),
-    -- Garantiza un solo producto activo por número de parte dentro del mismo ERP/origen;
-    -- sin esto, la resolución de FK de ecom_part_number_supersessions (ver más abajo)
-    -- sería ambigua cuando dos productos comparten part_number en el mismo source_id.
-    unique key uq_products_source_part_number (source_id, part_number)
+    -- sku es el único identificador realmente único del producto (unique arriba, global,
+    -- sin importar el source_id). part_number NO es único: dos productos del mismo source_id
+    -- pueden compartir part_number (ver FindBySourceAndPartNumber /
+    -- FindAllBySourceAndPartNumber en product_repository.go, que ya no asumen un único
+    -- resultado). Este índice solo sostiene fk_product_source — antes ese rol lo cumplía
+    -- uq_products_source_part_number, eliminado junto con la unicidad de part_number.
+    index idx_products_source_id (source_id)
 );
 
 create table ecom_product_part_numbers (

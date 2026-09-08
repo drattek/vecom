@@ -54,6 +54,18 @@ func (h *BrandHandler) GetBrands(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(result)
 }
 
+func (h *BrandHandler) GetBrandOptions(w http.ResponseWriter, r *http.Request) {
+	options, err := h.service.GetBrandOptions(r.Context())
+	if err != nil {
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(map[string]any{"brands": options})
+}
+
 func (h *BrandHandler) GetBrandByID(w http.ResponseWriter, r *http.Request) {
 	id, err := parseBrandID(r)
 	if err != nil {

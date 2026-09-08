@@ -133,13 +133,16 @@ func (h *MigrationHandler) MigrateVecomSyncProducts(w http.ResponseWriter, r *ht
 
 // migrateVecomImagesRequest is the (optional) JSON body for
 // MigrateVecomImages. Every field is optional: an empty body — or no body at
-// all — migrates every vecom_images row in one call. limit/offset page
-// through the source products (not raw image rows, so a batch never splits a
-// product's images across two calls) — each request is one batch, call again
-// with offset += limit for the next.
+// all — migrates every vecom_images row in one call. code re-runs the
+// migration for a single vecom_products.code (e.g. a product missed on the
+// original pass) and takes precedence over limit/offset when both are sent.
+// limit/offset page through the source products (not raw image rows, so a
+// batch never splits a product's images across two calls) — each request is
+// one batch, call again with offset += limit for the next.
 type migrateVecomImagesRequest struct {
-	Limit  int `json:"limit"`
-	Offset int `json:"offset"`
+	Code   string `json:"code"`
+	Limit  int    `json:"limit"`
+	Offset int    `json:"offset"`
 }
 
 // MigrateVecomImages is a TEMPORARY one-off endpoint: it migrates the
@@ -165,6 +168,7 @@ func (h *MigrationHandler) MigrateVecomImages(w http.ResponseWriter, r *http.Req
 	}
 
 	input := migrationApp.MigrateVecomImagesInput{
+		Code:   strings.TrimSpace(body.Code),
 		Limit:  body.Limit,
 		Offset: body.Offset,
 	}
