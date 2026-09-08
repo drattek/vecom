@@ -37,6 +37,24 @@ apiClient.interceptors.response.use(
 )
 
 /**
+ * Extrae el mensaje de error que envía el core (`{ "error": "..." }`) de un
+ * fallo de axios, cayendo a `fallback` cuando no hay respuesta útil (error de
+ * red, timeout, forma inesperada).
+ */
+export function getServerErrorMessage(error: unknown, fallback: string): string {
+  if (!axios.isAxiosError(error)) {
+    return fallback
+  }
+
+  const responseMessage = error.response?.data?.error
+  if (typeof responseMessage === 'string' && responseMessage.trim()) {
+    return responseMessage
+  }
+
+  return fallback
+}
+
+/**
  * Revokes the current access token server-side (ecom_api_token.revoked_at).
  * Safe to call even if the token is already invalid — the caller should clear
  * the local session regardless of the outcome.

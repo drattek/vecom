@@ -12,6 +12,13 @@ import { ProductsChannelPage } from './pages/ProductsChannelPage.tsx'
 import { ProductsChannelDashboard } from './pages/ProductsChannelDashboard.tsx'
 import { ProductsChannelConnectionPage } from './pages/ProductsChannelConnectionPage.tsx'
 import { ProductsPendingPage } from './pages/ProductsPendingPage.tsx'
+import { ProductDetailPage } from './pages/ProductDetailPage.tsx'
+import { ProductGeneralSection } from './pages/product-detail/ProductGeneralSection.tsx'
+import { ProductMediaSection } from './pages/product-detail/ProductMediaSection.tsx'
+import { ProductPricingSection } from './pages/product-detail/ProductPricingSection.tsx'
+import { ProductInventorySection } from './pages/product-detail/ProductInventorySection.tsx'
+import { ProductPartNumbersSection } from './pages/product-detail/ProductPartNumbersSection.tsx'
+import { ProductAttributesSection } from './pages/product-detail/ProductAttributesSection.tsx'
 import { ProfilePage } from './pages/ProfilePage.tsx'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { ProtectedLayout } from './layouts/ProtectedLayout.tsx'
@@ -48,6 +55,20 @@ function AppRoutes() {
         <Route path="/products/channels/:channelId" element={<ProductsChannelPage />}>
           <Route index element={<ProductsChannelDashboard />} />
           <Route path="connections/:connectionId" element={<ProductsChannelConnectionPage />} />
+        </Route>
+        {/*
+          Detalle de producto. Va después de /products/pending y
+          /products/channels/... a propósito: react-router prioriza los
+          segmentos estáticos sobre :productId, así que esas rutas siguen
+          ganando y este patrón solo captura ids reales.
+        */}
+        <Route path="/products/:productId" element={<ProductDetailPage />}>
+          <Route index element={<ProductGeneralSection />} />
+          <Route path="media" element={<ProductMediaSection />} />
+          <Route path="pricing" element={<ProductPricingSection />} />
+          <Route path="inventory" element={<ProductInventorySection />} />
+          <Route path="part-numbers" element={<ProductPartNumbersSection />} />
+          <Route path="attributes" element={<ProductAttributesSection />} />
         </Route>
         <Route path="/settings" element={<SettingsPage />}>
           <Route

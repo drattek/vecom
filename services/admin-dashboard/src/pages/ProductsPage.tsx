@@ -7,9 +7,9 @@ import { apiClient } from "@/lib/api";
 import { paginatedProductsResponseSchema } from "@/lib/schemas/products";
 import { useProductsPaginationStore } from "@/stores/productsPaginationStore";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { Loader2Icon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
-import { ChannelBadges, ProductThumbnail, SortableTableHead } from "@/components/products/ProductTableHelpers";
+import { ChannelBadges, ProductSKULink, ProductThumbnail, SortableTableHead, TableLoadingOverlay } from "@/components/products/ProductTableHelpers";
 import { formatPrice } from "@/components/products/ProductTableHelpers";
 
 export function ProductsPage() {
@@ -36,7 +36,7 @@ export function ProductsPage() {
         return () => clearTimeout(timer)
     }, [searchInput, search, setSearch])
 
-    const { data, isLoading, isError, error } = useQuery({
+    const { data, isLoading, isFetching, isError, error } = useQuery({
         queryKey: ["products", offset, pageSize, sortBy, sortDir, search],
         placeholderData: keepPreviousData,
         queryFn: async () => {
@@ -87,10 +87,18 @@ export function ProductsPage() {
                             </button>
                         ) : null}
                     </div>
-                    <Button className="ml-auto">
-                        <PlusIcon />
-                        Agregar producto
-                    </Button>
+                    <div className="ml-auto flex items-center gap-3">
+                        {isFetching && !isLoading ? (
+                            <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
+                                <Loader2Icon className="size-4 animate-spin" />
+                                Actualizando...
+                            </span>
+                        ) : null}
+                        <Button>
+                            <PlusIcon />
+                            Agregar producto
+                        </Button>
+                    </div>
                 </div>
 
                 {isError ? (
@@ -99,60 +107,66 @@ export function ProductsPage() {
                     </p>
                 ) : null}
 
-                <Table containerClassName="mt-4 min-h-0 flex-1 overflow-auto">
-                    <TableHeader>
-                        <TableRow>
-                            <TableHead className="w-16"></TableHead>
-                            <SortableTableHead label="SKU" column="sku" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-                            <SortableTableHead label="Número de parte" column="partNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-                            <SortableTableHead label="Nombre" column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-                            <SortableTableHead label="Marca" column="brand" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-                            <SortableTableHead label="Stock" column="stock" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-                            <SortableTableHead label="Precio" column="price" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
-                            <TableHead>Canales</TableHead>
-                            <TableHead>Acciones</TableHead>
-                        </TableRow>
-                    </TableHeader>
-                    <TableBody>
-                        {isLoading && products.length === 0 ? (
+                <div className="relative mt-4 min-h-0 flex-1">
+                    <Table containerClassName="h-full overflow-auto">
+                        <TableHeader>
                             <TableRow>
-                                <TableCell colSpan={9} className="text-center text-muted-foreground">
-                                    Cargando productos...
-                                </TableCell>
+                                <TableHead className="w-16"></TableHead>
+                                <SortableTableHead label="SKU" column="sku" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                                <SortableTableHead label="Número de parte" column="partNumber" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                                <SortableTableHead label="Nombre" column="name" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                                <SortableTableHead label="Marca" column="brand" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                                <SortableTableHead label="Stock" column="stock" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                                <SortableTableHead label="Precio" column="price" sortBy={sortBy} sortDir={sortDir} onSort={toggleSort} />
+                                <TableHead>Canales</TableHead>
+                                <TableHead>Acciones</TableHead>
                             </TableRow>
-                        ) : null}
+                        </TableHeader>
+                        <TableBody>
+                            {isLoading && products.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                                        Cargando productos...
+                                    </TableCell>
+                                </TableRow>
+                            ) : null}
 
-                        {!isLoading && products.length === 0 ? (
-                            <TableRow>
-                                <TableCell colSpan={9} className="text-center text-muted-foreground">
-                                    {search
-                                        ? "No hay productos que coincidan con la búsqueda."
-                                        : "No se encontraron productos."}
-                                </TableCell>
-                            </TableRow>
-                        ) : null}
+                            {!isLoading && products.length === 0 ? (
+                                <TableRow>
+                                    <TableCell colSpan={9} className="text-center text-muted-foreground">
+                                        {search
+                                            ? "No hay productos que coincidan con la búsqueda."
+                                            : "No se encontraron productos."}
+                                    </TableCell>
+                                </TableRow>
+                            ) : null}
 
-                        {products.map((product) => (
-                            <TableRow key={product.id}>
-                                <TableCell>
-                                    <ProductThumbnail src={product.imageUrl} alt={product.name} />
-                                </TableCell>
-                                <TableCell>{product.sku}</TableCell>
-                                <TableCell>{product.partNumber}</TableCell>
-                                <TableCell>{product.name}</TableCell>
-                                <TableCell>{product.brandName ?? "—"}</TableCell>
-                                <TableCell className="tabular-nums">{product.totalStock}</TableCell>
-                                <TableCell className="tabular-nums whitespace-nowrap">
-                                    {product.price ? formatPrice(product.price) : "—"}
-                                </TableCell>
-                                <TableCell>
-                                    <ChannelBadges channels={product.channels} />
-                                </TableCell>
-                                <TableCell></TableCell>
-                            </TableRow>
-                        ))}
-                    </TableBody>
-                </Table>
+                            {products.map((product) => (
+                                <TableRow key={product.id}>
+                                    <TableCell>
+                                        <ProductThumbnail src={product.imageUrl} alt={product.name} />
+                                    </TableCell>
+                                    <TableCell>
+                                        <ProductSKULink productId={product.id} sku={product.sku} />
+                                    </TableCell>
+                                    <TableCell>{product.partNumber}</TableCell>
+                                    <TableCell>{product.name}</TableCell>
+                                    <TableCell>{product.brandName ?? "—"}</TableCell>
+                                    <TableCell className="tabular-nums">{product.totalStock}</TableCell>
+                                    <TableCell className="tabular-nums whitespace-nowrap">
+                                        {product.price ? formatPrice(product.price) : "—"}
+                                    </TableCell>
+                                    <TableCell>
+                                        <ChannelBadges channels={product.channels} />
+                                    </TableCell>
+                                    <TableCell></TableCell>
+                                </TableRow>
+                            ))}
+                        </TableBody>
+                    </Table>
+
+                    <TableLoadingOverlay show={isFetching && !isLoading} />
+                </div>
 
                 <TablePagination
                     offset={offset}

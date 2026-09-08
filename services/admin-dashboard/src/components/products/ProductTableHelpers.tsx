@@ -3,8 +3,9 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 import { cn } from "@/lib/utils";
 import type { ProductChannel, ProductPrice } from "@/lib/schemas/products";
 import type { ProductSortColumn, SortDirection } from "@/stores/productsPaginationStore";
-import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon } from "lucide-react";
+import { ArrowDownIcon, ArrowUpDownIcon, ArrowUpIcon, Loader2Icon } from "lucide-react";
 import { useState } from "react";
+import { Link, useLocation } from "react-router-dom";
 
 export function formatPrice(price: ProductPrice): string {
     const amount = Number(price.amount)
@@ -41,6 +42,26 @@ export function ChannelBadges({ channels }: { channels: ProductChannel[] }) {
     )
 }
 
+/**
+ * El SKU es el punto de entrada al detalle del producto desde cualquier tabla.
+ * Manda en el state la ruta actual (incluyendo query string) para que el botón
+ * de regresar del detalle vuelva a la tabla de la que se salió — Todos,
+ * Pendientes o la de un canal— en vez de siempre a /products.
+ */
+export function ProductSKULink({ productId, sku }: { productId: number; sku: string }) {
+    const location = useLocation()
+
+    return (
+        <Link
+            to={`/products/${productId}`}
+            state={{ from: `${location.pathname}${location.search}` }}
+            className="font-medium underline-offset-2 outline-none hover:underline focus-visible:underline focus-visible:ring-2 focus-visible:ring-ring/50"
+        >
+            {sku}
+        </Link>
+    )
+}
+
 export function ProductThumbnail({ src, alt }: { src?: string | null; alt: string }) {
     const [errored, setErrored] = useState(false)
 
@@ -55,6 +76,25 @@ export function ProductThumbnail({ src, alt }: { src?: string | null; alt: strin
             className="size-10 rounded-md object-cover"
             onError={() => setErrored(true)}
         />
+    )
+}
+
+// TableLoadingOverlay dims the table and blocks pointer events while data is
+// refetching (sort/search/page change) — a fetch in flight replaces the row
+// data underneath it, so clicks on a row (e.g. opening/editing it, once rows
+// become interactive) need to be blocked until the new data lands. Render it
+// as an absolutely-positioned sibling of <Table> inside a `relative`
+// wrapper, not as a child of <Table> itself — a <table> can't have a <div>
+// child.
+export function TableLoadingOverlay({ show }: { show: boolean }) {
+    if (!show) {
+        return null
+    }
+
+    return (
+        <div className="absolute inset-0 z-20 flex cursor-wait items-center justify-center bg-background/60 backdrop-blur-[1px]">
+            <Loader2Icon className="size-6 animate-spin text-muted-foreground" />
+        </div>
     )
 }
 

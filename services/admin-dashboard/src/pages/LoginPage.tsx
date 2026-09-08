@@ -1,8 +1,7 @@
-import axios from 'axios'
 import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext.tsx'
-import { apiClient } from '../lib/api.ts'
+import { apiClient, getServerErrorMessage } from '../lib/api.ts'
 import type { LoginResponse } from '../types/auth.ts'
 
 interface LoginRequest {
@@ -10,18 +9,7 @@ interface LoginRequest {
   password: string
 }
 
-function extractServerError(error: unknown): string {
-  if (!axios.isAxiosError(error)) {
-    return 'No fue posible iniciar sesion. Intenta nuevamente.'
-  }
-
-  const responseMessage = error.response?.data?.error
-  if (typeof responseMessage === 'string' && responseMessage.trim()) {
-    return responseMessage
-  }
-
-  return 'No fue posible iniciar sesion. Intenta nuevamente.'
-}
+const LOGIN_ERROR_FALLBACK = 'No fue posible iniciar sesion. Intenta nuevamente.'
 
 export function LoginPage() {
   const { isAuthenticated, login } = useAuth()
@@ -65,7 +53,7 @@ export function LoginPage() {
 
       navigate(nextRoute, { replace: true })
     } catch (error) {
-      setErrorMessage(extractServerError(error))
+      setErrorMessage(getServerErrorMessage(error, LOGIN_ERROR_FALLBACK))
     } finally {
       setIsLoading(false)
     }
