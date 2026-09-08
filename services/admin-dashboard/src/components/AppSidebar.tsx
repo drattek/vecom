@@ -65,17 +65,17 @@ const sidebarItems: SidebarItem[] = [
     icon: LayoutDashboardIcon,
   },
   {
-    title: 'Users',
+    title: 'Usuarios',
     path: '/users',
     icon: UsersIcon,
   },
   {
-    title: 'Products',
+    title: 'Productos',
     path: '/products',
     icon: BoxIcon,
   },
   {
-    title: 'Settings',
+    title: 'Configuración',
     path: '/settings',
     icon: Settings,
   },
