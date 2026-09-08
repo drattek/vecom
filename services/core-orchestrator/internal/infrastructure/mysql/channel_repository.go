@@ -122,6 +122,58 @@ func (r *ChannelRepository) FindPaginated(ctx context.Context, offset, pageSize 
 	}, nil
 }
 
+// FindAll returns every non-deleted channel ordered by id — the unpaginated
+// counterpart of FindPaginated, for callers that need to cross-reference every
+// channel (e.g. category_import.Service grouping active connections by their
+// channel code).
+func (r *ChannelRepository) FindAll(ctx context.Context) ([]ChannelDTO, error) {
+	query := `
+		SELECT
+			c.id,
+			c.name,
+			c.code,
+			c.status,
+			c.icon_id,
+			c.description,
+			COALESCE(cc.connection_count, 0) AS connection_count,
+			c.created_by,
+			c.updated_by,
+			c.created_at,
+			c.updated_at,
+			c.deleted_at
+		FROM ecom_channels c
+		LEFT JOIN (
+			SELECT channel_id, COUNT(*) AS connection_count
+			FROM ecom_channel_connections
+			WHERE deleted_at IS NULL
+			GROUP BY channel_id
+		) cc ON cc.channel_id = c.id
+		WHERE c.deleted_at IS NULL
+		ORDER BY c.id ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("error querying channels: %w", err)
+	}
+	defer rows.Close()
+
+	channels := make([]ChannelDTO, 0)
+	for rows.Next() {
+		channel, scanErr := scanChannel(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		channels = append(channels, channel)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating channels: %w", err)
+	}
+
+	return channels, nil
+}
+
 func (r *ChannelRepository) FindByID(ctx context.Context, id int64) (*ChannelDTO, error) {
 	query := `
 		SELECT

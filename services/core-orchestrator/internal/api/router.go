@@ -20,6 +20,7 @@ func NewRouter(
 	authMiddleware *httpHandler.JWTMiddleware,
 	brandHandler *httpHandler.BrandHandler,
 	categoryHandler *httpHandler.CategoryHandler,
+	categoryImportHandler *httpHandler.CategoryImportHandler,
 	currencyHandler *httpHandler.CurrencyHandler,
 	branchHandler *httpHandler.BranchHandler,
 	warehouseHandler *httpHandler.WarehouseHandler,
@@ -153,9 +154,19 @@ func NewRouter(
 		protected.Get("/api/categories", categoryHandler.GetCategories)
 		protected.Get("/api/categories/{id}", categoryHandler.GetCategoryByID)
 		protected.Get("/api/categories/{id}/children", categoryHandler.GetCategoryChildren)
+		protected.Get("/api/categories/{id}/channel-mappings", categoryHandler.GetCategoryChannelMappings)
 		protected.Post("/api/categories", categoryHandler.CreateCategory)
 		protected.Put("/api/categories/{id}", categoryHandler.UpdateCategory)
 		protected.Delete("/api/categories/{id}", categoryHandler.DeleteCategory)
+
+		// Category import (browse a channel's external category tree and
+		// replicate a chosen leaf into ecom_categories) — see
+		// category_import.Service. Prefixed apart from /api/categories/* so it
+		// never collides with /api/categories/{id}.
+		protected.Get("/api/category-import/sources", categoryImportHandler.GetSources)
+		protected.Get("/api/category-import/tree", categoryImportHandler.GetTree)
+		protected.Post("/api/category-import", categoryImportHandler.Import)
+		protected.Post("/api/category-import/mapping", categoryImportHandler.SetMapping)
 
 		// Currencies endpoints
 		protected.Get("/api/currencies", currencyHandler.GetCurrencies)

@@ -17,6 +17,7 @@ import (
 	attributesApp "core-orchestrator/internal/application/attributes"
 	brandsApp "core-orchestrator/internal/application/brands"
 	categoriesApp "core-orchestrator/internal/application/categories"
+	categoryImportApp "core-orchestrator/internal/application/category_import"
 	channelAttributeValuesApp "core-orchestrator/internal/application/channel_attribute_values"
 	channelAttributesApp "core-orchestrator/internal/application/channel_attributes"
 	channelConfigApp "core-orchestrator/internal/application/channel_config"
@@ -103,7 +104,13 @@ func main() {
 		cfg.JWTTTLMinutes,
 	)
 	brandService := brandsApp.NewBrandService(db, mysqlRepos.BrandsRepository, mysqlRepos.ProductRepository)
-	categoryService := categoriesApp.NewCategoryService(db, mysqlRepos.CategoriesRepository)
+	categoryService := categoriesApp.NewCategoryService(
+		db,
+		mysqlRepos.CategoriesRepository,
+		mysqlRepos.ChannelRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelCategoryMapRepository,
+	)
 	currencyService := currenciesApp.NewCurrencyService(db, mysqlRepos.CurrenciesRepository)
 	sourceService := sourcesApp.NewSourceService(db, mysqlRepos.SourcesRepository)
 	branchService := inventoryApp.NewBranchService(db, mysqlRepos.BranchesRepository)
@@ -270,6 +277,18 @@ func main() {
 		mysqlRepos.ChannelCategoryMapRepository,
 		odooRateLimiter,
 	)
+	// Backs Settings → Categorías: browse a channel's external category tree
+	// and replicate a chosen leaf (plus its ancestry) into ecom_categories.
+	categoryImportService := categoryImportApp.NewService(
+		mysqlRepos.ChannelRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.CategoriesRepository,
+		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.ConnectionCredentialsRepository,
+		mysqlRepos.ConnectionSettingsRepository,
+		mercadoLibreCategoryPredictorService,
+		odooRateLimiter,
+	)
 	// TEMPORARY one-off migration service — migra vecom_sync_product /
 	// vecom_products (sistema anterior) a ecom_products / ecom_channel_product_map.
 	// Eliminar junto con su handler y su ruta al terminar la migración.
@@ -367,6 +386,7 @@ func main() {
 	authMiddleware := httpHandler.NewJWTMiddleware(authService)
 	brandHandler := httpHandler.NewBrandHandler(brandService)
 	categoryHandler := httpHandler.NewCategoryHandler(categoryService)
+	categoryImportHandler := httpHandler.NewCategoryImportHandler(categoryImportService)
 	currencyHandler := httpHandler.NewCurrencyHandler(currencyService)
 	sourceHandler := httpHandler.NewSourceHandler(sourceService)
 	branchHandler := httpHandler.NewBranchHandler(branchService)
@@ -526,7 +546,7 @@ func main() {
 	// Create router and start server.
 	router := api.NewRouter(
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
-		authHandler, authMiddleware, brandHandler, categoryHandler, currencyHandler, branchHandler,
+		authHandler, authMiddleware, brandHandler, categoryHandler, categoryImportHandler, currencyHandler, branchHandler,
 		warehouseHandler, productStockHandler, priceListHandler, pricingFormulaHandler, productPricesHandler, exchangeRatesHandler,
 		stockMovementsHandler, productImagesHandler, productDetailsHandler, productAttributeChecklistHandler, productSyncHandler, productImageImportHandler, productVideosHandler, productPartNumbersHandler,
 		productDimensionsHandler, productSEOHandler, connectionCredentialsHandler, connectionSettingsHandler,

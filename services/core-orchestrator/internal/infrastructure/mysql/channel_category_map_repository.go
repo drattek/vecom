@@ -110,6 +110,52 @@ func (r *ChannelCategoryMapRepository) FindActiveConnectionIDsByCategory(ctx con
 	return connectionIDs, nil
 }
 
+// FindByCategory returns every non-deleted mapping row for a local category
+// across all connections — what the category detail view needs to show the
+// external category each connection maps this one to. Ordered by connection
+// id; always a slice, empty when the category is mapped nowhere.
+func (r *ChannelCategoryMapRepository) FindByCategory(ctx context.Context, categoryID int64) ([]ChannelCategoryMapDTO, error) {
+	query := `
+		SELECT id, category_id, connection_id, external_category_id, external_category_name,
+		       created_by, updated_by, created_at, updated_at, deleted_at
+		FROM ecom_channel_category_map
+		WHERE category_id = ? AND deleted_at IS NULL
+		ORDER BY connection_id ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, categoryID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying category mappings for category %d: %w", categoryID, err)
+	}
+	defer rows.Close()
+
+	mappings := make([]ChannelCategoryMapDTO, 0)
+	for rows.Next() {
+		var m ChannelCategoryMapDTO
+		if err := rows.Scan(
+			&m.ID,
+			&m.CategoryID,
+			&m.ConnectionID,
+			&m.ExternalCategoryID,
+			&m.ExternalCategoryName,
+			&m.CreatedBy,
+			&m.UpdatedBy,
+			&m.CreatedAt,
+			&m.UpdatedAt,
+			&m.DeletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning category mapping for category %d: %w", categoryID, err)
+		}
+		mappings = append(mappings, m)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating category mappings for category %d: %w", categoryID, err)
+	}
+
+	return mappings, nil
+}
+
 func (r *ChannelCategoryMapRepository) findByID(ctx context.Context, id int64) (*ChannelCategoryMapDTO, error) {
 	query := `
 		SELECT id, category_id, connection_id, external_category_id, external_category_name,

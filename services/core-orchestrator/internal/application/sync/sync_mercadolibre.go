@@ -551,6 +551,18 @@ func (s *MercadoLibreCategoryPredictorService) BrowseRootCategories(ctx context.
 	return s.categoriesHandler.GetSiteCategoriesRaw(ctx, accessToken, siteID)
 }
 
+// BrowseRootCategoriesForConnection is BrowseRootCategories with the site id
+// resolved from the connection's own settings (site_id) instead of passed in —
+// the entry point category_import.Service uses to start walking a MercadoLibre
+// connection's category tree without the caller having to know its site.
+func (s *MercadoLibreCategoryPredictorService) BrowseRootCategoriesForConnection(ctx context.Context, connectionID int64) (json.RawMessage, error) {
+	siteID, err := s.resolveSiteID(ctx, connectionID, "")
+	if err != nil {
+		return nil, err
+	}
+	return s.BrowseRootCategories(ctx, connectionID, siteID)
+}
+
 // BrowseCategory is a thin passthrough to GET /categories/{categoryID},
 // returning MercadoLibre's full response as-is — including
 // children_categories — rather than GetCategoryAttributes'/GetCategory's

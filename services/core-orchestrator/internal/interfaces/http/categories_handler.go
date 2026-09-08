@@ -81,6 +81,32 @@ func (h *CategoryHandler) GetCategoryChildren(w http.ResponseWriter, r *http.Req
 	json.NewEncoder(w).Encode(map[string]interface{}{"children": children})
 }
 
+func (h *CategoryHandler) GetCategoryChannelMappings(w http.ResponseWriter, r *http.Request) {
+	id, err := parseCategoryID(r)
+	if err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid category id")
+		return
+	}
+
+	mappings, err := h.service.GetChannelMappings(r.Context(), id)
+	if err != nil {
+		if errors.Is(err, categoriesApp.ErrInvalidCategoryPayload) {
+			writeJSONError(w, http.StatusBadRequest, "invalid category id")
+			return
+		}
+		if errors.Is(err, mysqlInfra.ErrCategoryNotFound) {
+			writeJSONError(w, http.StatusNotFound, "category not found")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(mappings)
+}
+
 func (h *CategoryHandler) CreateCategory(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {

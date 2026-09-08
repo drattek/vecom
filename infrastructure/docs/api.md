@@ -144,3 +144,40 @@ Estandarizar contratos HTTP y reglas de diseño para endpoints entre UI y backen
 
 - 400 Bad Request: connectionId inválido, o faltan odoo_url/ApiKey en settings/credentials de la conexión.
 - 500 Internal Server Error: errores de red/integración con Odoo u otros errores internos.
+
+## Categorías - Importación desde canales
+
+Flujo de la vista Settings → Categorías para dar de alta categorías locales
+navegando el árbol de categorías **externas** de un canal (MercadoLibre u Odoo)
+e importando una hoja. Al importar se replica en `ecom_categories` la hoja y sus
+ancestros faltantes, y se registra `ecom_channel_category_map`. Capa aplicación:
+`internal/application/category_import/service.go`; handler:
+`internal/interfaces/http/category_import_handler.go`.
+
+- `GET /api/category-import/sources` — protegido. Un objeto por canal con ≥1
+  conexión activa: `{ sources: [{ channelId, channelCode, channelName, supported,
+  connections: [{ id, name, environment }] }] }`. `supported` es `true` solo para
+  `MERCADOLIBRE` y `ODOO`.
+- `GET /api/category-import/tree?connectionId=<id>&externalCategoryId=<id?>` —
+  protegido. Un nivel del árbol externo: sin `externalCategoryId` devuelve las
+  raíces; con él, los hijos de esa categoría. `{ nodes: [{ externalId, name,
+  leaf }] }`. `leaf` es `null` cuando el canal no puede saberlo sin expandir
+  (MercadoLibre): el cliente expande y trata "0 hijos" como hoja. `409` si el
+  canal no soporta importación; `400` si a la conexión de MercadoLibre le falta
+  `site_id` o no está autenticada.
+- `POST /api/category-import` — protegido. Body `{ connectionId,
+  externalCategoryId, onlySelectedConnection }`. Importa la hoja: crea/matchea
+  (por nombre + padre) la jerarquía local y hace `Upsert` de
+  `ecom_channel_category_map` para la hoja en **todas** las conexiones activas del
+  canal, o solo en `connectionId` si `onlySelectedConnection` es `true`. Responde
+  `{ categoryId, name, createdCount, alreadyLinked, mappedConnectionIds }`.
+  `422` si la categoría externa no es hoja; `404` si no existe.
+- `POST /api/category-import/mapping` — protegido. Body `{ categoryId,
+  connectionId, externalCategoryId }`. Vincula (o reemplaza) el mapeo de una
+  categoría local **ya existente** con una hoja externa en una conexión — la
+  acción "Vincular / Reemplazar" del detalle de categoría. No crea categorías
+  locales: valida que la hoja externa lo sea, resuelve su nombre y hace `Upsert`
+  de `ecom_channel_category_map` solo para `(categoryId, connectionId)`. Responde
+  `{ categoryId, connectionId, externalCategoryId, externalCategoryName,
+  replaced }`. `404` si la categoría local no existe; `422` si la externa no es
+  hoja.
