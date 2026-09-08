@@ -10,31 +10,53 @@ import {
 } from "@/components/ui/dialog"
 import { useCategoryTree, type CategoryNode } from "@/lib/categories"
 import { cn } from "@/lib/utils"
-import { CheckIcon, ChevronRightIcon, FolderIcon } from "lucide-react"
+import { CheckIcon, ChevronRightIcon, FolderTreeIcon } from "lucide-react"
 import { useMemo, useState } from "react"
 
-// value 0 = "sin categoría". Solo las hojas del árbol son asignables: los nodos
-// con hijos solo se expanden/colapsan.
-export function CategoryPickerDialog({
+/**
+ * Selector de categoría en árbol donde **cualquier** nodo es elegible (rama u
+ * hoja), más una opción "sin padre". Generaliza CategoryPickerDialog (que solo
+ * deja elegir hojas y usa 0 = "sin categoría"). `value` es el id o null;
+ * `excludeId` oculta esa categoría y toda su descendencia (para no elegirse a sí
+ * misma como padre).
+ */
+export function CategoryTreePicker({
     value,
     onChange,
+    excludeId,
     disabled,
+    rootLabel = "Sin categoría padre",
 }: {
-    value: number
-    onChange: (categoryId: number) => void
+    value: number | null
+    onChange: (categoryId: number | null) => void
+    excludeId?: number
     disabled?: boolean
+    rootLabel?: string
 }) {
     const [open, setOpen] = useState(false)
     const { data, isLoading, isError } = useCategoryTree()
 
-    const selectedPath = value > 0 ? data?.byId.get(value)?.path : null
-    const triggerLabel = value > 0 ? (selectedPath ?? `Categoría #${value}`) : "Sin categoría"
+    const excluded = useMemo(() => {
+        const ids = new Set<number>()
+        if (excludeId != null && data) {
+            const walk = (node?: CategoryNode) => {
+                if (!node) return
+                ids.add(node.id)
+                for (const child of node.children) {
+                    walk(child)
+                }
+            }
+            walk(data.byId.get(excludeId))
+        }
+        return ids
+    }, [data, excludeId])
 
-    // Ids de los ancestros de la categoría seleccionada, para abrir el árbol ya
-    // desplegado hasta ella.
+    const triggerLabel =
+        value != null ? (data?.byId.get(value)?.path ?? `Categoría #${value}`) : rootLabel
+
     const ancestorIds = useMemo(() => {
         const ids = new Set<number>()
-        if (data && value > 0) {
+        if (data && value != null) {
             let node = data.byId.get(value)
             while (node?.parentId != null) {
                 ids.add(node.parentId)
@@ -65,7 +87,7 @@ export function CategoryPickerDialog({
         })
     }
 
-    function select(categoryId: number) {
+    function select(categoryId: number | null) {
         onChange(categoryId)
         setOpen(false)
     }
@@ -74,19 +96,15 @@ export function CategoryPickerDialog({
         <Dialog open={open} onOpenChange={handleOpenChange}>
             <DialogTrigger
                 render={
-                    <Button
-                        variant="outline"
-                        className="w-full justify-between font-normal"
-                        disabled={disabled}
-                    >
+                    <Button variant="outline" className="w-full justify-between font-normal" disabled={disabled}>
                         <span className="truncate">{triggerLabel}</span>
-                        <FolderIcon className="text-muted-foreground" />
+                        <FolderTreeIcon className="text-muted-foreground" />
                     </Button>
                 }
             />
             <DialogContent className="max-h-[80dvh] w-[40vw] min-w-[20rem] max-w-none">
                 <DialogHeader>
-                    <DialogTitle>Seleccionar categoría</DialogTitle>
+                    <DialogTitle>Seleccionar categoría padre</DialogTitle>
                 </DialogHeader>
 
                 <div className="-mx-2 min-h-0 flex-1 overflow-y-auto px-2">
@@ -103,29 +121,32 @@ export function CategoryPickerDialog({
                             <li>
                                 <button
                                     type="button"
-                                    onClick={() => select(0)}
+                                    onClick={() => select(null)}
                                     className={cn(
                                         "flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left hover:bg-muted",
-                                        value === 0 ? "font-medium text-foreground" : "text-muted-foreground",
+                                        value == null ? "font-medium text-foreground" : "text-muted-foreground",
                                     )}
                                 >
                                     <span className="flex size-4 shrink-0 items-center justify-center">
-                                        {value === 0 ? <CheckIcon className="size-3.5" /> : null}
+                                        {value == null ? <CheckIcon className="size-3.5" /> : null}
                                     </span>
-                                    Sin categoría
+                                    {rootLabel}
                                 </button>
                             </li>
-                            {data.tree.map((node) => (
-                                <CategoryTreeNode
-                                    key={node.id}
-                                    node={node}
-                                    depth={0}
-                                    value={value}
-                                    expanded={expanded}
-                                    onToggle={toggle}
-                                    onSelect={select}
-                                />
-                            ))}
+                            {data.tree
+                                .filter((node) => !excluded.has(node.id))
+                                .map((node) => (
+                                    <TreeNode
+                                        key={node.id}
+                                        node={node}
+                                        depth={0}
+                                        value={value}
+                                        excluded={excluded}
+                                        expanded={expanded}
+                                        onToggle={toggle}
+                                        onSelect={select}
+                                    />
+                                ))}
                         </ul>
                     ) : null}
                 </div>
@@ -138,34 +159,51 @@ export function CategoryPickerDialog({
     )
 }
 
-function CategoryTreeNode({
+function TreeNode({
     node,
     depth,
     value,
+    excluded,
     expanded,
     onToggle,
     onSelect,
 }: {
     node: CategoryNode
     depth: number
-    value: number
+    value: number | null
+    excluded: Set<number>
     expanded: Set<number>
     onToggle: (id: number) => void
     onSelect: (id: number) => void
 }) {
-    const isExpanded = expanded.has(node.id)
+    const childNodes = node.children.filter((child) => !excluded.has(child.id))
+    const hasChildren = childNodes.length > 0
+    const isExpanded = hasChildren && expanded.has(node.id)
     const isSelected = node.id === value
     const paddingLeft = 8 + depth * 16
 
-    if (node.isLeaf) {
-        return (
-            <li>
+    return (
+        <li>
+            <div className="flex items-center gap-1 pr-2 hover:bg-muted" style={{ paddingLeft }}>
+                {hasChildren ? (
+                    <button
+                        type="button"
+                        onClick={() => onToggle(node.id)}
+                        aria-expanded={isExpanded}
+                        aria-label={isExpanded ? `Colapsar ${node.name}` : `Expandir ${node.name}`}
+                        className="flex size-5 shrink-0 items-center justify-center rounded text-muted-foreground hover:text-foreground"
+                    >
+                        <ChevronRightIcon className={cn("size-4 transition-transform", isExpanded && "rotate-90")} />
+                    </button>
+                ) : (
+                    <span className="size-5 shrink-0" />
+                )}
+
                 <button
                     type="button"
                     onClick={() => onSelect(node.id)}
-                    style={{ paddingLeft }}
                     className={cn(
-                        "flex w-full items-center gap-2 rounded-md py-1.5 pr-2 text-left hover:bg-muted",
+                        "flex min-w-0 flex-1 items-center gap-2 rounded-md py-1.5 pr-2 text-left",
                         isSelected ? "font-medium text-foreground" : "text-foreground",
                     )}
                 >
@@ -174,32 +212,17 @@ function CategoryTreeNode({
                     </span>
                     <span className="truncate">{node.name}</span>
                 </button>
-            </li>
-        )
-    }
+            </div>
 
-    return (
-        <li>
-            <button
-                type="button"
-                onClick={() => onToggle(node.id)}
-                aria-expanded={isExpanded}
-                style={{ paddingLeft }}
-                className="flex w-full items-center gap-1.5 rounded-md py-1.5 pr-2 text-left font-medium text-muted-foreground hover:bg-muted"
-            >
-                <ChevronRightIcon
-                    className={cn("size-4 shrink-0 transition-transform", isExpanded && "rotate-90")}
-                />
-                <span className="truncate">{node.name}</span>
-            </button>
             {isExpanded ? (
                 <ul>
-                    {node.children.map((child) => (
-                        <CategoryTreeNode
+                    {childNodes.map((child) => (
+                        <TreeNode
                             key={child.id}
                             node={child}
                             depth={depth + 1}
                             value={value}
+                            excluded={excluded}
                             expanded={expanded}
                             onToggle={onToggle}
                             onSelect={onSelect}

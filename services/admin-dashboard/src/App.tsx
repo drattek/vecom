@@ -34,6 +34,7 @@ import { BrandsPage } from './pages/settings/BrandsPage.tsx'
 import { CurrenciesPage } from './pages/settings/CurrenciesPage.tsx'
 import { ExchangeRatesPage } from './pages/settings/ExchangeRatesPage.tsx'
 import { CategoriesPage } from './pages/settings/CategoriesPage.tsx'
+import { CategoryDetailPage } from './pages/settings/CategoryDetailPage.tsx'
 
 const queryClient = new QueryClient()
 
@@ -116,6 +117,10 @@ function AppRoutes() {
           <Route
             path="marketplace-categories"
             element={<CategoriesPage />}
+          />
+          <Route
+            path="marketplace-categories/:categoryId"
+            element={<CategoryDetailPage />}
           />
         </Route>
       </Route>

@@ -1,5 +1,4 @@
 import { apiClient, getServerErrorMessage } from "@/lib/api"
-import { categoriesResponseSchema, type CategoryTree } from "@/lib/schemas/categories"
 import {
     paginatedChannelConnectionsResponseSchema,
     type ChannelConnection,
@@ -472,41 +471,13 @@ export function useCardEditor<TDraft, TPatch>(config: {
     }
 }
 
-/**
- * CategoryNode enriquece el árbol de categorías con la ruta completa y si es
- * hoja (sin hijos) — solo las hojas son asignables a un producto.
- */
-export type CategoryNode = {
-    id: number
-    name: string
-    parentId: number | null
-    path: string
-    isLeaf: boolean
-    children: CategoryNode[]
-}
-
-function decorateCategoryTree(
-    nodes: CategoryTree[],
-    parentPath: string,
-    parentId: number | null,
-): CategoryNode[] {
-    return nodes.map((node) => {
-        const path = parentPath ? `${parentPath} / ${node.name}` : node.name
-        return {
-            id: node.id,
-            name: node.name,
-            parentId,
-            path,
-            isLeaf: node.children.length === 0,
-            children: decorateCategoryTree(node.children, path, node.id),
-        }
-    })
-}
+// El árbol de categorías (useCategoryTree / CategoryNode) vive en @/lib/categories;
+// se re-exporta al final de este archivo para no romper imports existentes.
 
 /**
- * useBrandOptions / useCategoryTree alimentan los selectores de la sección
- * Clasificación. Se cachean aparte (no dependen del producto) y con staleTime
- * alto porque los catálogos cambian poco.
+ * useBrandOptions alimenta el selector de marca de la sección Clasificación. Se
+ * cachea aparte (no depende del producto) y con staleTime alto porque el
+ * catálogo cambia poco.
  */
 export function useBrandOptions(enabled = true) {
     return useQuery({
@@ -520,33 +491,7 @@ export function useBrandOptions(enabled = true) {
     })
 }
 
-/**
- * useCategoryTree devuelve el árbol decorado + un índice `byId` para resolver la
- * ruta de la categoría seleccionada sin recorrer el árbol.
- */
-export function useCategoryTree(enabled = true) {
-    return useQuery({
-        queryKey: ["category-tree"],
-        enabled,
-        staleTime: 5 * 60_000,
-        queryFn: async () => {
-            const response = await apiClient.get("/api/categories")
-            const { categories } = categoriesResponseSchema.parse(response.data)
-            const tree = decorateCategoryTree(categories, "", null)
-
-            const byId = new Map<number, CategoryNode>()
-            const index = (nodes: CategoryNode[]) => {
-                for (const node of nodes) {
-                    byId.set(node.id, node)
-                    index(node.children)
-                }
-            }
-            index(tree)
-
-            return { tree, byId }
-        },
-    })
-}
+export { useCategoryTree, type CategoryNode } from "@/lib/categories"
 
 /** Formatea una fecha ISO del API al formato local corto. "—" si no hay valor. */
 export function formatDate(value?: string | null, withTime = false): string {
