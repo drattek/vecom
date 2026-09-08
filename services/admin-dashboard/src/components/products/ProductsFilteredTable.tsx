@@ -1,5 +1,4 @@
 import { TablePagination } from "@/components/TablePagination";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiClient } from "@/lib/api";
@@ -7,7 +6,7 @@ import { paginatedProductsResponseSchema } from "@/lib/schemas/products";
 import type { ProductSortColumn, SortDirection } from "@/stores/productsPaginationStore";
 import { formatPrice, ProductSKULink, ProductThumbnail, SortableTableHead, TableLoadingOverlay } from "@/components/products/ProductTableHelpers";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { Loader2Icon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { Loader2Icon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 
 const DEFAULT_PAGE_SIZE = 10
@@ -114,10 +113,6 @@ export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage }: 
                             Actualizando...
                         </span>
                     ) : null}
-                    <Button>
-                        <PlusIcon />
-                        Agregar producto
-                    </Button>
                 </div>
             </div>
 

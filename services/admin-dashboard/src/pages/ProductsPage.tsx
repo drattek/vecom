@@ -1,13 +1,12 @@
 import { PageHeader } from "@/components/PageHeader.tsx";
 import { TablePagination } from "@/components/TablePagination";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiClient } from "@/lib/api";
 import { paginatedProductsResponseSchema } from "@/lib/schemas/products";
 import { useProductsPaginationStore } from "@/stores/productsPaginationStore";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { Loader2Icon, PlusIcon, SearchIcon, XIcon } from "lucide-react";
+import { Loader2Icon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { ChannelBadges, ProductSKULink, ProductThumbnail, SortableTableHead, TableLoadingOverlay } from "@/components/products/ProductTableHelpers";
 import { formatPrice } from "@/components/products/ProductTableHelpers";
@@ -94,10 +93,6 @@ export function ProductsPage() {
                                 Actualizando...
                             </span>
                         ) : null}
-                        <Button>
-                            <PlusIcon />
-                            Agregar producto
-                        </Button>
                     </div>
                 </div>
 
