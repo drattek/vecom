@@ -353,6 +353,55 @@ export const attributeChecklistSchema = z.object({
 export type AttributeChecklist = z.infer<typeof attributeChecklistSchema>
 export type AttributeChecklistItem = z.infer<typeof attributeChecklistItemSchema>
 
+// --- Sincronización ----------------------------------------------------------
+// GET /api/products/{id}/details/sync — una caja por conexión activa con lo
+// que el producto ya tiene sincronizado ahí (id externo, categoría externa,
+// título, estado, última sincronización); en conexiones con
+// allowsMultipleListings además la compatibilidad de cada publicación y las
+// compatibilidades que aún no tienen publicación (pending).
+
+export const syncCompatibilitySchema = z.object({
+  vehicleFitmentId: z.number(),
+  brandName: z.string(),
+  model: z.string(),
+  yearStart: z.number(),
+  yearEnd: z.number().nullish(),
+  motor: z.string().optional().default(''),
+  position: z.string().optional().default(''),
+  side: z.string().optional().default(''),
+})
+
+export const syncListingSchema = z.object({
+  id: z.number(),
+  listingTitle: z.string().nullish(),
+  externalId: z.string().nullish(),
+  externalCategoryId: z.string().nullish(),
+  externalCategoryName: z.string().nullish(),
+  status: z.string(),
+  isEnabled: z.boolean(),
+  lastSyncedAt: z.string().nullish(),
+  compatibility: syncCompatibilitySchema.nullish(),
+})
+
+export const syncConnectionSchema = z.object({
+  connectionId: z.number(),
+  channelName: z.string(),
+  connectionName: z.string(),
+  environment: z.string(),
+  allowsMultipleListings: z.boolean(),
+  listings: z.array(syncListingSchema),
+  pending: z.array(syncCompatibilitySchema),
+})
+
+export const productSyncSectionSchema = z.object({
+  connections: z.array(syncConnectionSchema),
+})
+
+export type SyncCompatibility = z.infer<typeof syncCompatibilitySchema>
+export type SyncListing = z.infer<typeof syncListingSchema>
+export type SyncConnection = z.infer<typeof syncConnectionSchema>
+export type ProductSyncSection = z.infer<typeof productSyncSectionSchema>
+
 export type ProductGeneral = z.infer<typeof productGeneralSchema>
 export type ProductDimensions = z.infer<typeof productDimensionsSchema>
 export type ProductSeo = z.infer<typeof productSeoSchema>

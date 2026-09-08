@@ -22,6 +22,7 @@ const sections = [
     { label: "Inventario", path: "inventory" },
     { label: "Números de parte", path: "part-numbers" },
     { label: "Atributos", path: "attributes" },
+    { label: "Sincronización", path: "sync" },
 ]
 
 /** Contexto que el layout comparte con cada sección (ver Outlet más abajo). */
@@ -86,9 +87,6 @@ export function ProductDetailPage() {
                     <h1 className="truncate text-sm font-semibold text-foreground">
                         {isError ? "Producto no encontrado" : (product?.sku ?? "Cargando...")}
                     </h1>
-                    {product ? (
-                        <p className="truncate text-xs text-muted-foreground">{product.name}</p>
-                    ) : null}
                 </div>
 
                 <NavigationMenu className="ml-2">

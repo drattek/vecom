@@ -36,6 +36,7 @@ import (
 	productDetailsApp "core-orchestrator/internal/application/product_details"
 	productImageImportApp "core-orchestrator/internal/application/product_image_import"
 	productMediaApp "core-orchestrator/internal/application/product_media"
+	productSyncApp "core-orchestrator/internal/application/product_sync"
 	prodService "core-orchestrator/internal/application/products"
 	sourcesApp "core-orchestrator/internal/application/sources"
 	stockMovementsApp "core-orchestrator/internal/application/stock_movements"
@@ -137,6 +138,15 @@ func main() {
 		mysqlRepos.AttributesRepository,
 		mysqlRepos.AttributeOptionsRepository,
 		mysqlRepos.ProductAttributesRepository,
+	)
+	productSyncService := productSyncApp.NewService(
+		mysqlRepos.ProductRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelProductMapRepository,
+		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.ProductVehicleCompatibilityRepository,
+		mysqlRepos.VehicleFitmentsRepository,
+		mysqlRepos.BrandsRepository,
 	)
 	productImageImportService := productImageImportApp.NewService(
 		db,
@@ -362,6 +372,7 @@ func main() {
 	productImagesHandler := httpHandler.NewProductImagesHandler(productImagesService)
 	productDetailsHandler := httpHandler.NewProductDetailsHandler(productDetailsService)
 	productAttributeChecklistHandler := httpHandler.NewProductAttributeChecklistHandler(productAttributeChecklistService)
+	productSyncHandler := httpHandler.NewProductSyncHandler(productSyncService)
 	productImageImportHandler := httpHandler.NewProductImageImportHandler(productImageImportService)
 	productVideosHandler := httpHandler.NewProductVideosHandler(productVideosService)
 	productPartNumbersHandler := httpHandler.NewProductPartNumbersHandler(productPartNumbersService)
@@ -504,7 +515,7 @@ func main() {
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
 		authHandler, authMiddleware, brandHandler, categoryHandler, currencyHandler, branchHandler,
 		warehouseHandler, productStockHandler, priceListHandler, pricingFormulaHandler, productPricesHandler, exchangeRatesHandler,
-		stockMovementsHandler, productImagesHandler, productDetailsHandler, productAttributeChecklistHandler, productImageImportHandler, productVideosHandler, productPartNumbersHandler,
+		stockMovementsHandler, productImagesHandler, productDetailsHandler, productAttributeChecklistHandler, productSyncHandler, productImageImportHandler, productVideosHandler, productPartNumbersHandler,
 		productDimensionsHandler, productSEOHandler, connectionCredentialsHandler, connectionSettingsHandler,
 		connectionStatusHandler, channelParametersHandler, mercadoLibreHandler, meliNotificationHandler, odooHandler, sourceHandler,
 		migrationHandler, equipmentTypeHandler, vehicleFitmentHandler, equipmentFitmentHandler,

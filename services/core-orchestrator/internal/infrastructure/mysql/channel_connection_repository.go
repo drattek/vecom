@@ -152,6 +152,44 @@ func (r *ChannelConnectionRepository) FindActiveByChannelCode(ctx context.Contex
 	return channelConnections, nil
 }
 
+// FindAllActive returns every non-deleted, status='active' connection across
+// every channel, ordered by channel name then connection name — for flows
+// that need to sweep every active connection regardless of channel (e.g. the
+// product detail Sincronización view), unlike FindActiveByChannelCode which
+// scopes to one channel.
+func (r *ChannelConnectionRepository) FindAllActive(ctx context.Context) ([]ChannelConnectionDTO, error) {
+	query := `
+		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
+		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
+		       ch.name
+		FROM ecom_channel_connections cc
+		JOIN ecom_channels ch ON ch.id = cc.channel_id
+		WHERE cc.deleted_at IS NULL AND cc.status = 'active'
+		ORDER BY ch.name ASC, cc.name ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query)
+	if err != nil {
+		return nil, fmt.Errorf("error querying active channel connections: %w", err)
+	}
+	defer rows.Close()
+
+	channelConnections := make([]ChannelConnectionDTO, 0)
+	for rows.Next() {
+		channelConnection, scanErr := scanChannelConnection(rows)
+		if scanErr != nil {
+			return nil, scanErr
+		}
+		channelConnections = append(channelConnections, channelConnection)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating active channel connections: %w", err)
+	}
+
+	return channelConnections, nil
+}
+
 func (r *ChannelConnectionRepository) FindByID(ctx context.Context, id int64) (*ChannelConnectionDTO, error) {
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,

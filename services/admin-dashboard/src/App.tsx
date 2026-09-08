@@ -19,6 +19,7 @@ import { ProductPricingSection } from './pages/product-detail/ProductPricingSect
 import { ProductInventorySection } from './pages/product-detail/ProductInventorySection.tsx'
 import { ProductPartNumbersSection } from './pages/product-detail/ProductPartNumbersSection.tsx'
 import { ProductAttributesSection } from './pages/product-detail/ProductAttributesSection.tsx'
+import { ProductSyncSection } from './pages/product-detail/ProductSyncSection.tsx'
 import { ProfilePage } from './pages/ProfilePage.tsx'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { ProtectedLayout } from './layouts/ProtectedLayout.tsx'
@@ -69,6 +70,7 @@ function AppRoutes() {
           <Route path="inventory" element={<ProductInventorySection />} />
           <Route path="part-numbers" element={<ProductPartNumbersSection />} />
           <Route path="attributes" element={<ProductAttributesSection />} />
+          <Route path="sync" element={<ProductSyncSection />} />
         </Route>
         <Route path="/settings" element={<SettingsPage />}>
           <Route

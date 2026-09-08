@@ -32,6 +32,7 @@ func NewRouter(
 	productImagesHandler *httpHandler.ProductImagesHandler,
 	productDetailsHandler *httpHandler.ProductDetailsHandler,
 	productAttributeChecklistHandler *httpHandler.ProductAttributeChecklistHandler,
+	productSyncHandler *httpHandler.ProductSyncHandler,
 	productImageImportHandler *httpHandler.ProductImageImportHandler,
 	productVideosHandler *httpHandler.ProductVideosHandler,
 	productPartNumbersHandler *httpHandler.ProductPartNumbersHandler,
@@ -260,6 +261,10 @@ func NewRouter(
 		protected.Patch("/api/products/{productId}/details/attributes/dimensions", productDetailsHandler.PatchDimensions)
 		// Edición inline de la sección SEO (upsert de ecom_product_seo).
 		protected.Patch("/api/products/{productId}/details/attributes/seo", productDetailsHandler.PatchSEO)
+		// Vista de Sincronización: una caja por conexión activa con lo que ya
+		// tenga sincronizado ese producto (o pendiente, en conexiones con
+		// allows_multiple_listings). Solo lectura.
+		protected.Get("/api/products/{productId}/details/sync", productSyncHandler.GetSync)
 
 		// Videos por URL desde el detalle de producto (Multimedia). Solo disco +
 		// URLs; sin orden, portada ni tipo.
