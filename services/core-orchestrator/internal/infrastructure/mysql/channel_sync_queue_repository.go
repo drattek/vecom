@@ -11,6 +11,14 @@ var ErrChannelSyncQueueEntryNotFound = errors.New("channel sync queue entry not 
 
 const defaultChannelSyncQueueSyncType = "full"
 
+// ChannelSyncQueueListingSyncType is the sync_type value for every row the
+// listing-discovery flow produces and the marketplace consumer processes: it
+// means "publish this product on this connection through channel_listings"
+// (as opposed to the legacy 'full'/'price'/'stock' values). It is the only
+// value written or read now that the manual /api/channel-sync-queue endpoint
+// is gone.
+const ChannelSyncQueueListingSyncType = "listing"
+
 type ChannelSyncQueueDTO struct {
 	ID           int64      `json:"id"`
 	ProductID    int64      `json:"productId"`
@@ -72,14 +80,15 @@ func (r *ChannelSyncQueueRepository) Create(ctx context.Context, input CreateCha
 	return r.FindByID(ctx, id)
 }
 
-// FindPending returns up to limit pending entries, oldest id first, for a
-// worker to claim and process.
+// FindPending returns up to limit pending 'listing' entries, oldest id first,
+// for the marketplace consumer to claim and process. Legacy non-'listing'
+// rows are never returned — nothing processes them anymore.
 func (r *ChannelSyncQueueRepository) FindPending(ctx context.Context, limit int) ([]ChannelSyncQueueDTO, error) {
 	query := `
 		SELECT id, product_id, connection_id, sync_type, status, attempts, last_error,
 		       requested_at, processed_at, updated_by, created_at, updated_at
 		FROM ecom_channel_sync_queue
-		WHERE status = 'pending' AND deleted_at IS NULL
+		WHERE status = 'pending' AND sync_type = '` + ChannelSyncQueueListingSyncType + `' AND deleted_at IS NULL
 		ORDER BY id ASC
 		LIMIT ?
 	`
@@ -158,6 +167,48 @@ func (r *ChannelSyncQueueRepository) ReleasePending(ctx context.Context, id int6
 		SET status = 'pending', last_error = ?, updated_by = ?
 		WHERE id = ?
 	`, note, updatedBy, id)
+	return err
+}
+
+// FindListingEntry returns the single 'listing' queue row for a
+// (product, connection) pair, or ErrChannelSyncQueueEntryNotFound when there
+// is none. There is at most one such row per pair — enforced by the
+// uq_sync_queue_active_pair unique index (see ADR 0003) and by
+// ListingDiscoveryService, which reactivates the existing row instead of
+// inserting another.
+func (r *ChannelSyncQueueRepository) FindListingEntry(ctx context.Context, productID, connectionID int64) (*ChannelSyncQueueDTO, error) {
+	query := `
+		SELECT id, product_id, connection_id, sync_type, status, attempts, last_error,
+		       requested_at, processed_at, updated_by, created_at, updated_at
+		FROM ecom_channel_sync_queue
+		WHERE product_id = ? AND connection_id = ? AND sync_type = '` + ChannelSyncQueueListingSyncType + `' AND deleted_at IS NULL
+		LIMIT 1
+	`
+
+	var q ChannelSyncQueueDTO
+	if err := r.db.QueryRowContext(ctx, query, productID, connectionID).Scan(
+		&q.ID, &q.ProductID, &q.ConnectionID, &q.SyncType, &q.Status, &q.Attempts, &q.LastError,
+		&q.RequestedAt, &q.ProcessedAt, &q.UpdatedBy, &q.CreatedAt, &q.UpdatedAt,
+	); err != nil {
+		if err == sql.ErrNoRows {
+			return nil, ErrChannelSyncQueueEntryNotFound
+		}
+		return nil, err
+	}
+
+	return &q, nil
+}
+
+// ReactivateToPending flips a failed entry back to pending so the consumer
+// retries it, without touching attempts or last_error (they stay as a record
+// of the prior failures). Used by ListingDiscoveryService when it re-finds a
+// failed row still under the attempts cap.
+func (r *ChannelSyncQueueRepository) ReactivateToPending(ctx context.Context, id, updatedBy int64) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE ecom_channel_sync_queue
+		SET status = 'pending', processed_at = NULL, updated_by = ?, updated_at = NOW()
+		WHERE id = ?
+	`, updatedBy, id)
 	return err
 }
 

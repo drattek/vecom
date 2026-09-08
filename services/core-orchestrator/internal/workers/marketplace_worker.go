@@ -23,33 +23,22 @@ const systemSyncWorkerActorID int64 = 1
 
 const defaultMarketplaceWorkerBatchSize = 10
 
-// ProductSyncer is implemented by each marketplace-specific sync service
-// (Odoo today; MercadoLibre, Amazon, etc. later). Sync pushes/updates a
-// single product on the given connection and is responsible for its own
-// create-vs-update decision.
-//
-// Returning an error wrapping ErrSyncNotReady signals a precondition that
-// isn't met yet (missing image, missing category mapping, ...): the queue
-// entry is left pending instead of marked failed, so it is retried on a
-// later poll once the precondition is met.
-type ProductSyncer interface {
-	Sync(ctx context.Context, productID, connectionID int64) error
-}
-
-// ErrSyncNotReady is not returned directly; syncers wrap it (fmt.Errorf
-// with %w) so errors.Is still matches through additional context.
+// ErrSyncNotReady signals a precondition that isn't met yet (missing image,
+// missing category mapping, ...). Marketplace publishers wrap it (fmt.Errorf
+// with %w) so errors.Is still matches through additional context; the worker
+// itself no longer special-cases it (any publish error marks the row failed),
+// but sync_odoo_products.go still returns it.
 var ErrSyncNotReady = errors.New("product not ready to sync")
 
-// ChannelListingsRetrier is implemented by channel_listings.Service.
-// RetryQueuedEntry re-attempts publishing every listing for productID on
-// connectionID, recomputing the stock/cover-image preconditions and vehicle
-// compatibility fan-out live (never off a snapshot taken when the entry was
-// first queued). It returns an error wrapping
-// channelListingsApp.ErrChannelListingsNotReady when a precondition still
-// isn't met, so the caller leaves the queue entry pending instead of
-// marking it done or failed.
-type ChannelListingsRetrier interface {
-	RetryQueuedEntry(ctx context.Context, productID, connectionID int64) (*channelListingsApp.CreateListingsResult, error)
+// QueuedListingPublisher is implemented by channel_listings.Service.
+// PublishQueuedProduct re-attempts publishing every listing for productID on
+// connectionID, recomputing the stock precondition and vehicle compatibility
+// fan-out live (never off a snapshot taken when the entry was first queued).
+// It returns an error wrapping channelListingsApp.ErrChannelListingsNotReady
+// when the product no longer has stock, so the caller releases the queue
+// entry back to pending instead of marking it failed.
+type QueuedListingPublisher interface {
+	PublishQueuedProduct(ctx context.Context, productID, connectionID int64) (*channelListingsApp.CreateListingsResult, error)
 }
 
 type MarketplaceWorkerConfig struct {
@@ -59,33 +48,19 @@ type MarketplaceWorkerConfig struct {
 	BatchSize int
 }
 
-// MarketplaceWorker polls ecom_channel_sync_queue for pending entries and
-// processes each one of two ways, chosen by entry.SyncType:
-//
-//   - channelListingsApp.QueueSyncType ("listing"): retried through
-//     channelListingsRetrier — these are rows channel_listings.Service
-//     itself queued after a stock/cover-image precondition failed on a
-//     publish request.
-//   - anything else (the "price"/"stock"/"full" values the pre-existing,
-//     channel-agnostic /api/channel-sync-queue endpoint uses): dispatched to
-//     the ProductSyncer registered for the connection's channel code
-//     (ecom_channels.code), same as before. Adding a new marketplace to this
-//     path means registering a new syncer here — the polling/dispatch logic
-//     never changes.
+// MarketplaceWorker polls ecom_channel_sync_queue for pending 'listing'
+// entries — the rows ListingDiscoveryScheduler produces — claims each one
+// atomically and publishes it through channel_listings. It is the only
+// consumer of the queue; ListingDiscoveryScheduler is the only producer.
 type MarketplaceWorker struct {
-	queueRepository        *mysqlInfra.ChannelSyncQueueRepository
-	connectionRepository   *mysqlInfra.ChannelConnectionRepository
-	channelRepository      *mysqlInfra.ChannelRepository
-	channelListingsRetrier ChannelListingsRetrier
-	config                 MarketplaceWorkerConfig
-	syncers                map[string]ProductSyncer
+	queueRepository *mysqlInfra.ChannelSyncQueueRepository
+	publisher       QueuedListingPublisher
+	config          MarketplaceWorkerConfig
 }
 
 func NewMarketplaceWorker(
 	queueRepository *mysqlInfra.ChannelSyncQueueRepository,
-	connectionRepository *mysqlInfra.ChannelConnectionRepository,
-	channelRepository *mysqlInfra.ChannelRepository,
-	channelListingsRetrier ChannelListingsRetrier,
+	publisher QueuedListingPublisher,
 	config MarketplaceWorkerConfig,
 ) *MarketplaceWorker {
 	if config.BatchSize <= 0 {
@@ -93,21 +68,10 @@ func NewMarketplaceWorker(
 	}
 
 	return &MarketplaceWorker{
-		queueRepository:        queueRepository,
-		connectionRepository:   connectionRepository,
-		channelRepository:      channelRepository,
-		channelListingsRetrier: channelListingsRetrier,
-		config:                 config,
-		syncers:                make(map[string]ProductSyncer),
+		queueRepository: queueRepository,
+		publisher:       publisher,
+		config:          config,
 	}
-}
-
-// Register associates a ProductSyncer with a channel code
-// (ecom_channels.code, matched case-insensitively). Queue entries whose
-// connection resolves to a channel with no registered syncer are left
-// pending, untouched, until one is registered for it.
-func (w *MarketplaceWorker) Register(channelCode string, syncer ProductSyncer) {
-	w.syncers[normalizeChannelCode(channelCode)] = syncer
 }
 
 // Start runs the polling loop until ctx is cancelled. It is blocking — call
@@ -155,63 +119,14 @@ func (w *MarketplaceWorker) processEntry(ctx context.Context, entry mysqlInfra.C
 		return
 	}
 
-	if entry.SyncType == channelListingsApp.QueueSyncType {
-		w.processChannelListingsEntry(ctx, entry)
-		return
-	}
-
-	connection, err := w.connectionRepository.FindByID(ctx, entry.ConnectionID)
-	if err != nil {
-		w.fail(ctx, entry.ID, fmt.Sprintf("error loading connection %d: %v", entry.ConnectionID, err))
-		return
-	}
-
-	channel, err := w.channelRepository.FindByID(ctx, connection.ChannelID)
-	if err != nil {
-		w.fail(ctx, entry.ID, fmt.Sprintf("error loading channel %d: %v", connection.ChannelID, err))
-		return
-	}
-
-	syncer, ok := w.syncers[normalizeChannelCode(channel.Code)]
-	if !ok {
-		w.release(ctx, entry.ID, fmt.Sprintf("no syncer registered for channel %q", channel.Code))
-		return
-	}
-
-	if err := syncer.Sync(ctx, entry.ProductID, entry.ConnectionID); err != nil {
-		if errors.Is(err, ErrSyncNotReady) {
-			w.release(ctx, entry.ID, err.Error())
-			return
-		}
-
-		log.Printf("marketplace worker: error syncing queue entry %d (product %d, connection %d): %v", entry.ID, entry.ProductID, entry.ConnectionID, err)
-		w.fail(ctx, entry.ID, err.Error())
-		return
-	}
-
-	if err := w.queueRepository.MarkDone(ctx, entry.ID, systemSyncWorkerActorID); err != nil {
-		log.Printf("marketplace worker: error marking queue entry %d done: %v", entry.ID, err)
-	}
-}
-
-// processChannelListingsEntry handles a queue row created by
-// channel_listings.Service.queuePending (entry.SyncType ==
-// channelListingsApp.QueueSyncType), retrying it through
-// channelListingsRetrier instead of the per-channel ProductSyncer registry.
-func (w *MarketplaceWorker) processChannelListingsEntry(ctx context.Context, entry mysqlInfra.ChannelSyncQueueDTO) {
-	if w.channelListingsRetrier == nil {
-		w.release(ctx, entry.ID, "no channel listings retrier configured")
-		return
-	}
-
-	result, err := w.channelListingsRetrier.RetryQueuedEntry(ctx, entry.ProductID, entry.ConnectionID)
+	result, err := w.publisher.PublishQueuedProduct(ctx, entry.ProductID, entry.ConnectionID)
 	if err != nil {
 		if errors.Is(err, channelListingsApp.ErrChannelListingsNotReady) || errors.Is(err, channelListingsApp.ErrNoPublisherForChannel) {
 			w.release(ctx, entry.ID, err.Error())
 			return
 		}
 
-		log.Printf("marketplace worker: error retrying channel listings queue entry %d (product %d, connection %d): %v", entry.ID, entry.ProductID, entry.ConnectionID, err)
+		log.Printf("marketplace worker: error publishing queue entry %d (product %d, connection %d): %v", entry.ID, entry.ProductID, entry.ConnectionID, err)
 		w.fail(ctx, entry.ID, err.Error())
 		return
 	}
@@ -251,8 +166,4 @@ func (w *MarketplaceWorker) release(ctx context.Context, id int64, message strin
 	if err := w.queueRepository.ReleasePending(ctx, id, message, systemSyncWorkerActorID); err != nil {
 		log.Printf("marketplace worker: error releasing queue entry %d: %v", id, err)
 	}
-}
-
-func normalizeChannelCode(code string) string {
-	return strings.ToUpper(strings.TrimSpace(code))
 }

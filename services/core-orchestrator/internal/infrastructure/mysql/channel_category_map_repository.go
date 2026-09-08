@@ -73,6 +73,43 @@ func (r *ChannelCategoryMapRepository) FindByExternalCategoryAndConnection(ctx c
 	return scanChannelCategoryMapRow(r.db.QueryRowContext(ctx, query, externalCategoryID, connectionID))
 }
 
+// FindActiveConnectionIDsByCategory returns the ids of every active, non-
+// deleted channel connection that has a category mapping for categoryID —
+// i.e. the connections a product in that local category may be auto-published
+// to (see ListingDiscoveryScheduler). Ordered by connection id; always a
+// slice, empty when the category is mapped nowhere.
+func (r *ChannelCategoryMapRepository) FindActiveConnectionIDsByCategory(ctx context.Context, categoryID int64) ([]int64, error) {
+	query := `
+		SELECT ccm.connection_id
+		FROM ecom_channel_category_map ccm
+		JOIN ecom_channel_connections cc ON cc.id = ccm.connection_id
+		WHERE ccm.category_id = ? AND ccm.deleted_at IS NULL
+		  AND cc.deleted_at IS NULL AND cc.status = 'active'
+		ORDER BY ccm.connection_id ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, categoryID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying connections for category %d: %w", categoryID, err)
+	}
+	defer rows.Close()
+
+	connectionIDs := make([]int64, 0)
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("error scanning connection id for category %d: %w", categoryID, err)
+		}
+		connectionIDs = append(connectionIDs, id)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating connections for category %d: %w", categoryID, err)
+	}
+
+	return connectionIDs, nil
+}
+
 func (r *ChannelCategoryMapRepository) findByID(ctx context.Context, id int64) (*ChannelCategoryMapDTO, error) {
 	query := `
 		SELECT id, category_id, connection_id, external_category_id, external_category_name,

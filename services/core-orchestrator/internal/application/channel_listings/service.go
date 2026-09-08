@@ -1,8 +1,10 @@
 // Package channel_listings publishes brand-new marketplace listings for a
 // batch of SKUs against a single channel connection, dispatching to
 // whichever Publisher is registered for that connection's channel code
-// (ecom_channels.code) — mirroring the registry pattern workers.MarketplaceWorker
-// uses for the background sync queue. It only ever creates listings: a
+// (ecom_channels.code). The same publish path is driven two ways: directly by
+// the CreateListings endpoint, and one (product, connection) pair at a time
+// by workers.MarketplaceWorker via PublishQueuedProduct, for the rows
+// ListingDiscoveryScheduler enqueues. It only ever creates listings: a
 // (product, connection, vehicle fitment) combination that already has a row
 // in ecom_channel_product_map is skipped, never updated — except when that
 // row's status is channelProductMapStatusClosed (see publishOne), which is
@@ -42,12 +44,6 @@ const nissanBrandID int64 = 1
 // starting product, guarding against a corrupted/cyclic chain in the data.
 const maxSuccessionChainNodes = 50
 
-// systemChannelListingsActorID is recorded as the actor for
-// ecom_channel_sync_queue writes made by this flow, since publish requests
-// aren't threaded through an authenticated user today (mirrors
-// application/sync's systemMercadoLibreSyncActorID/systemOdooSyncActorID).
-const systemChannelListingsActorID int64 = 1
-
 const (
 	reasonNoStock = "product has no available stock"
 	reasonNoImage = "product has no cover image (ecom_product_images row with is_first=true)"
@@ -64,23 +60,14 @@ const (
 // of skipping forever.
 const channelProductMapStatusClosed = "closed"
 
-// QueueSyncType is the ecom_channel_sync_queue.sync_type value stamped on
-// every row queuePending creates. It tells the background worker
-// (workers.MarketplaceWorker) that a row means "retry this package's
-// RetryQueuedEntry" rather than "run the channel's regular
-// create-or-update ProductSyncer.Sync" — the same table is shared with the
-// pre-existing, channel-agnostic /api/channel-sync-queue endpoint, whose
-// rows keep the default "full" sync_type and are handled the old way.
-const QueueSyncType = "listing"
-
 var (
 	ErrEmptyChannelListingsInput = errors.New("connectionId and at least one sku are required")
 	ErrInvalidChannelConnection  = errors.New("invalid connectionId")
 	ErrNoPublisherForChannel     = errors.New("no listing publisher registered for this connection's channel")
 	ErrNoRefresherForChannel     = errors.New("no listing refresher registered for this connection's channel")
-	// ErrChannelListingsNotReady is returned by RetryQueuedEntry, wrapped
-	// with the specific reason (reasonNoStock/reasonNoImage), when the
-	// product's precondition still isn't met.
+	// ErrChannelListingsNotReady is returned by PublishQueuedProduct, wrapped
+	// with reasonNoStock, when the product has lost its stock between being
+	// enqueued and being processed.
 	ErrChannelListingsNotReady = errors.New("product still not ready to publish")
 )
 
@@ -144,12 +131,6 @@ type ListingOutcome struct {
 	Success          bool   `json:"success"`
 	Skipped          bool   `json:"skipped,omitempty"`
 	ExternalID       string `json:"externalId,omitempty"`
-	// Queued is true when, instead of being published or skipped, the sku was
-	// enqueued into ecom_channel_sync_queue because it isn't ready to publish
-	// yet (no stock, no cover image) — Error carries the reason and QueueID
-	// the row that was created for it.
-	Queued  bool   `json:"queued,omitempty"`
-	QueueID *int64 `json:"queueId,omitempty"`
 	// MissingRequiredAttributes lists the marketplace-required attribute
 	// external keys (MercadoLibre's ecom_channel_attributes slots with
 	// is_required=true) the product had no value for at publish time. The
@@ -192,7 +173,6 @@ type Service struct {
 	channelRepository                     *mysqlInfra.ChannelRepository
 	channelConnectionRepository           *mysqlInfra.ChannelConnectionRepository
 	channelProductMapRepository           *mysqlInfra.ChannelProductMapRepository
-	channelSyncQueueRepository            *mysqlInfra.ChannelSyncQueueRepository
 	productVehicleCompatibilityRepository *mysqlInfra.ProductVehicleCompatibilityRepository
 	vehicleFitmentsRepository             *mysqlInfra.VehicleFitmentsRepository
 	partNumberSupersessionsRepository     *mysqlInfra.PartNumberSupersessionsRepository
@@ -209,7 +189,6 @@ func NewService(
 	channelRepository *mysqlInfra.ChannelRepository,
 	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository,
 	channelProductMapRepository *mysqlInfra.ChannelProductMapRepository,
-	channelSyncQueueRepository *mysqlInfra.ChannelSyncQueueRepository,
 	productVehicleCompatibilityRepository *mysqlInfra.ProductVehicleCompatibilityRepository,
 	vehicleFitmentsRepository *mysqlInfra.VehicleFitmentsRepository,
 	partNumberSupersessionsRepository *mysqlInfra.PartNumberSupersessionsRepository,
@@ -223,7 +202,6 @@ func NewService(
 		channelRepository:                     channelRepository,
 		channelConnectionRepository:           channelConnectionRepository,
 		channelProductMapRepository:           channelProductMapRepository,
-		channelSyncQueueRepository:            channelSyncQueueRepository,
 		productVehicleCompatibilityRepository: productVehicleCompatibilityRepository,
 		vehicleFitmentsRepository:             vehicleFitmentsRepository,
 		partNumberSupersessionsRepository:     partNumberSupersessionsRepository,
@@ -263,7 +241,7 @@ func (s *Service) RegisterRefresher(channelCode string, refresher Refresher) {
 // resolveSuccessionChain) — every product connected to it through
 // ecom_part_number_supersessions, in both directions — and every distinct
 // product across every SKU's chain is processed independently: one SKU with
-// no stock is queued for retry while another in the same chain that does
+// no stock is reported as not-ready while another in the same chain that does
 // have stock still gets published. On a connection that allows multiple
 // listings, the vehicle compatibilities considered for each chain member are
 // the union across the whole chain, not just that member's own (see
@@ -317,20 +295,20 @@ func (s *Service) CreateListings(ctx context.Context, input CreateListingsInput)
 	return &CreateListingsResult{Results: results}, nil
 }
 
-// RetryQueuedEntry re-attempts every listing for productID on connectionID —
-// used by the background worker that consumes ecom_channel_sync_queue
-// entries this package queued via queuePending after a stock/cover-image
-// precondition failed. Unlike CreateListings/processChainMember, it never
-// enqueues a new row itself when the precondition still isn't met: it
-// returns ErrChannelListingsNotReady so the caller can release the *same*
-// queue entry back to pending instead of this method creating a duplicate
-// one. It resolves productID's succession chain the same way CreateListings
-// does, so a cover image borrowed from a chain sibling (see
-// resolveImageSource) and pooled compatibilities both apply here too — but,
-// unlike CreateListings, it only ever publishes productID itself, never
-// fanning out to the rest of the chain (those are each retried through their
-// own queue entry, if they have one).
-func (s *Service) RetryQueuedEntry(ctx context.Context, productID, connectionID int64) (*CreateListingsResult, error) {
+// PublishQueuedProduct publishes every listing for productID on connectionID —
+// the entry point the marketplace consumer (internal/workers.MarketplaceWorker)
+// calls for each 'listing' row ListingDiscoveryScheduler enqueued. It
+// re-validates only stock live: everything else (price, cover image,
+// category, brand) was checked when the row was enqueued and doesn't
+// realistically change in the poll window; if it did, the publish call itself
+// fails and the caller marks the row failed. When stock has dropped to 0 it
+// returns ErrChannelListingsNotReady so the caller releases the *same* queue
+// row back to pending instead of failing it. It resolves productID's
+// succession chain the same way CreateListings does (so a cover image
+// borrowed from a chain sibling and pooled compatibilities both apply), but
+// only ever publishes productID itself, never fanning out to the rest of the
+// chain.
+func (s *Service) PublishQueuedProduct(ctx context.Context, productID, connectionID int64) (*CreateListingsResult, error) {
 	product, err := s.productRepository.FindByID(ctx, productID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading product %d: %w", productID, err)
@@ -354,23 +332,28 @@ func (s *Service) RetryQueuedEntry(ctx context.Context, productID, connectionID 
 		return nil, fmt.Errorf("error resolving succession chain for product %d: %w", product.ID, err)
 	}
 
+	// The cover image was verified at enqueue time; it isn't re-gated here.
+	// resolveImageSource still runs to pick which product's images to list
+	// under (its own, or a chain sibling's) — if somehow none has one now,
+	// fall back to the product itself and let publisher.Publish fail, so the
+	// row is marked failed rather than silently released.
 	imageSourceProductID, hasImage, err := s.resolveImageSource(ctx, product, chain)
 	if err != nil {
 		return nil, fmt.Errorf("error checking product images: %w", err)
 	}
 	if !hasImage {
-		return nil, fmt.Errorf("%w: %s", ErrChannelListingsNotReady, reasonNoImage)
+		imageSourceProductID = product.ID
 	}
 
-	// officialStoreID is always nil here: a queued retry has no access to the
-	// original CreateListings request that triggered it, only what
-	// queuePending persisted (see queuePending) — which doesn't include it.
+	// officialStoreID is always nil here: a queued publish has no access to an
+	// original CreateListings request (there isn't one — the row came from the
+	// discovery scan).
 	return &CreateListingsResult{Results: s.publishReady(ctx, publisher, connection, product, chain, imageSourceProductID, nil)}, nil
 }
 
 // resolveConnectionPublisher loads connectionID, its channel, and the
 // Publisher registered for that channel's code — shared by CreateListings
-// and RetryQueuedEntry.
+// and PublishQueuedProduct.
 func (s *Service) resolveConnectionPublisher(ctx context.Context, connectionID int64) (*mysqlInfra.ChannelConnectionDTO, Publisher, error) {
 	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
 	if err != nil {
@@ -599,20 +582,19 @@ func (s *Service) resolveImageSource(ctx context.Context, member *mysqlInfra.Pro
 }
 
 // processChainMember validates member (has stock, has a usable cover image —
-// its own or borrowed from another product in chain, see
-// resolveImageSource) and fans it out into one or more listing outcomes per
-// the multi-listing/compatibility rules described on CreateListings. A
-// product with no available stock, or with no usable cover image anywhere in
-// chain, is never published — it is queued into ecom_channel_sync_queue for
-// connection instead, with the reason recorded as last_error, so it can be
-// retried once the precondition is met.
+// its own or borrowed from another product in chain, see resolveImageSource)
+// and fans it out into one or more listing outcomes per the multi-listing/
+// compatibility rules described on CreateListings. A product with no available
+// stock, or with no usable cover image anywhere in chain, is not published —
+// the outcome just carries the reason in Error. It is not enqueued for retry:
+// ListingDiscoveryScheduler picks the product up on its own once it is ready.
 func (s *Service) processChainMember(ctx context.Context, publisher Publisher, connection *mysqlInfra.ChannelConnectionDTO, member *mysqlInfra.ProductDTO, chain []*mysqlInfra.ProductDTO, officialStoreID *int64) []ListingOutcome {
 	availableStock, err := s.sumAvailableStock(ctx, member.ID)
 	if err != nil {
 		return []ListingOutcome{{SKU: member.SKU, Error: fmt.Sprintf("error checking product stock: %v", err)}}
 	}
 	if availableStock <= 0 {
-		return []ListingOutcome{s.queuePending(ctx, member, connection.ID, reasonNoStock)}
+		return []ListingOutcome{{SKU: member.SKU, Error: reasonNoStock}}
 	}
 
 	imageSourceProductID, hasImage, err := s.resolveImageSource(ctx, member, chain)
@@ -620,7 +602,7 @@ func (s *Service) processChainMember(ctx context.Context, publisher Publisher, c
 		return []ListingOutcome{{SKU: member.SKU, Error: fmt.Sprintf("error checking product images: %v", err)}}
 	}
 	if !hasImage {
-		return []ListingOutcome{s.queuePending(ctx, member, connection.ID, reasonNoImage)}
+		return []ListingOutcome{{SKU: member.SKU, Error: reasonNoImage}}
 	}
 
 	return s.publishReady(ctx, publisher, connection, member, chain, imageSourceProductID, officialStoreID)
@@ -630,9 +612,9 @@ func (s *Service) processChainMember(ctx context.Context, publisher Publisher, c
 // connection, once stock and a usable cover image are already confirmed
 // (product's own, or imageSourceProductID naming another product in chain —
 // see resolveImageSource) — shared by processChainMember (first attempt,
-// called right after its own gate checks pass) and RetryQueuedEntry
-// (background retry, once the worker has independently confirmed the same
-// preconditions are now met). On a connection that allows multiple listings,
+// called right after its own gate checks pass) and PublishQueuedProduct
+// (the marketplace consumer, once it has re-confirmed stock is still there).
+// On a connection that allows multiple listings,
 // the vehicle compatibilities considered are the union across every product
 // in chain (see pooledCompatibilityFitmentIDs) — not just product's own — so
 // a superseded/superseding sibling's compatibilities are picked up too: two
@@ -735,28 +717,6 @@ func (s *Service) publishOne(ctx context.Context, publisher Publisher, product *
 	outcome.ExternalID = externalID
 	outcome.MissingRequiredAttributes = missingRequiredAttributes
 	outcome.MissingOptionalAttributes = missingOptionalAttributes
-	return outcome
-}
-
-// queuePending enqueues product for connectionID into ecom_channel_sync_queue
-// with reason recorded as last_error, since it isn't ready to publish yet.
-func (s *Service) queuePending(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, reason string) ListingOutcome {
-	outcome := ListingOutcome{SKU: product.SKU, Error: reason}
-
-	entry, err := s.channelSyncQueueRepository.Create(ctx, mysqlInfra.CreateChannelSyncQueueEntryInput{
-		ProductID:    product.ID,
-		ConnectionID: connectionID,
-		SyncType:     QueueSyncType,
-		LastError:    reason,
-		UpdatedBy:    systemChannelListingsActorID,
-	})
-	if err != nil {
-		outcome.Error = fmt.Sprintf("%s (also failed to enqueue for retry: %v)", reason, err)
-		return outcome
-	}
-
-	outcome.Queued = true
-	outcome.QueueID = &entry.ID
 	return outcome
 }
 

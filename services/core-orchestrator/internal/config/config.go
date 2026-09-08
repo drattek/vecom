@@ -61,10 +61,22 @@ type Config struct {
 	TokenRefreshPollInterval time.Duration
 	TokenRefreshLookahead    time.Duration
 
-	// SyncQueuePollInterval and SyncQueueBatchSize configure the
-	// marketplace sync worker. See internal/workers/marketplace_worker.go.
+	// SyncQueuePollInterval and SyncQueueBatchSize configure the marketplace
+	// consumer (internal/workers/marketplace_worker.go), which polls
+	// ecom_channel_sync_queue for pending 'listing' rows and publishes them.
+	// Default poll interval is 30 min — the rows are produced once a day by
+	// ListingDiscoveryScheduler, so there is nothing to gain from polling
+	// tighter, and publishing hits rate-limited marketplace APIs.
 	SyncQueuePollInterval time.Duration
 	SyncQueueBatchSize    int
+
+	// ListingDiscoveryRunAtHour/ListingDiscoveryRunAtMinute configure the
+	// server-local time of day ListingDiscoveryScheduler runs its once-a-day
+	// scan for products ready to publish (see ADR 0003 and
+	// internal/interfaces/schedulers/listing_discovery_scheduler.go). Default
+	// is 01:00.
+	ListingDiscoveryRunAtHour   int
+	ListingDiscoveryRunAtMinute int
 
 	// CompatibilitiesFixRunAtHour/CompatibilitiesFixRunAtMinute configure the
 	// server-local time of day CompatibilitiesFixScheduler runs once a day,
@@ -223,7 +235,7 @@ func Load() Config {
 		}
 	}
 
-	syncQueuePollSeconds := 30
+	syncQueuePollSeconds := 1800
 	if raw := os.Getenv("SYNC_QUEUE_POLL_INTERVAL_SECONDS"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
 			syncQueuePollSeconds = parsed
@@ -248,6 +260,20 @@ func Load() Config {
 	if raw := os.Getenv("COMPATIBILITIES_FIX_RUN_AT_MINUTE"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 59 {
 			compatibilitiesFixRunAtMinute = parsed
+		}
+	}
+
+	listingDiscoveryRunAtHour := 1
+	if raw := os.Getenv("LISTING_DISCOVERY_RUN_AT_HOUR"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 23 {
+			listingDiscoveryRunAtHour = parsed
+		}
+	}
+
+	listingDiscoveryRunAtMinute := 0
+	if raw := os.Getenv("LISTING_DISCOVERY_RUN_AT_MINUTE"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 59 {
+			listingDiscoveryRunAtMinute = parsed
 		}
 	}
 
@@ -305,6 +331,9 @@ func Load() Config {
 
 		SyncQueuePollInterval: time.Duration(syncQueuePollSeconds) * time.Second,
 		SyncQueueBatchSize:    syncQueueBatchSize,
+
+		ListingDiscoveryRunAtHour:   listingDiscoveryRunAtHour,
+		ListingDiscoveryRunAtMinute: listingDiscoveryRunAtMinute,
 
 		CompatibilitiesFixRunAtHour:   compatibilitiesFixRunAtHour,
 		CompatibilitiesFixRunAtMinute: compatibilitiesFixRunAtMinute,

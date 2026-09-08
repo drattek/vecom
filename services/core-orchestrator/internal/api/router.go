@@ -52,7 +52,6 @@ func NewRouter(
 	equipmentFitmentHandler *httpHandler.EquipmentFitmentHandler,
 	productVehicleCompatibilityHandler *httpHandler.ProductVehicleCompatibilityHandler,
 	productEquipmentCompatibilityHandler *httpHandler.ProductEquipmentCompatibilityHandler,
-	channelSyncQueueHandler *httpHandler.ChannelSyncQueueHandler,
 	channelListingsHandler *httpHandler.ChannelListingsHandler,
 	mercadoLibreItemLookupHandler *httpHandler.MercadoLibreItemLookupHandler,
 	mercadoLibrePauseUnmappedListingsHandler *httpHandler.MercadoLibrePauseUnmappedListingsHandler,
@@ -428,9 +427,6 @@ func NewRouter(
 		protected.Get("/api/products/{productId}/equipment-compatibilities", productEquipmentCompatibilityHandler.GetByProduct)
 		protected.Post("/api/product-equipment-compatibilities", productEquipmentCompatibilityHandler.Create)
 		protected.Delete("/api/product-equipment-compatibilities/{id}", productEquipmentCompatibilityHandler.Delete)
-
-		// Channel Sync Queue endpoints (marketplace sync waitlist)
-		protected.Post("/api/channel-sync-queue", channelSyncQueueHandler.Enqueue)
 
 		// Channel Listings endpoints (create brand-new marketplace listings for
 		// a batch of skus, one per vehicle compatibility when the connection

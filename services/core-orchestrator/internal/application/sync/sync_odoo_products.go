@@ -44,10 +44,10 @@ const (
 // Refresh, toggled independently.
 const odooRefreshPriceStockGateEnabled = true
 
-// OdooProductSyncService pushes a single product's current price/stock/
-// images/category to Odoo, creating the product.template on first sync and
-// only refreshing qty_available/list_price on later ones. It implements
-// workers.ProductSyncer (duck-typed: no import from workers is needed here).
+// OdooProductSyncService creates and refreshes Odoo product.templates. It
+// implements channel_listings.Publisher and channel_listings.Refresher
+// (duck-typed: no import from that package is needed here) — Publish creates
+// the template, Refresh pushes qty_available/list_price changes.
 type OdooProductSyncService struct {
 	credentialsRepository        *mysqlInfra.ConnectionCredentialsRepository
 	settingsRepository           *mysqlInfra.ConnectionSettingsRepository
@@ -102,73 +102,6 @@ func NewOdooProductSyncService(
 		formulaCalculator:            formulaCalculator,
 		effectivePriceResolver:       effectivePriceResolver,
 	}
-}
-
-// Sync resolves productID's current MXN price and total stock, then either
-// creates it in Odoo (first time on this connection) or refreshes its
-// price/stock (already synced), recording the external id in
-// ecom_channel_product_map either way.
-func (s *OdooProductSyncService) Sync(ctx context.Context, productID, connectionID int64) error {
-	product, err := s.productRepository.FindByID(ctx, productID)
-	if err != nil {
-		return fmt.Errorf("error loading product %d: %w", productID, err)
-	}
-
-	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
-	if err != nil {
-		return fmt.Errorf("error loading odoo connection %d: %w", connectionID, err)
-	}
-
-	odooURL, ok := values["odoo_url"]
-	if !ok || odooURL == "" {
-		return fmt.Errorf("%w: odoo_url", ErrMissingOdooSettings)
-	}
-	apiKey, ok := values["apikey"]
-	if !ok || apiKey == "" {
-		return fmt.Errorf("%w: ApiKey", ErrMissingOdooCredentials)
-	}
-	database := values["x-odoo-database"]
-	credentials := odooInfra.Credentials{APIKey: apiKey, Database: database}
-
-	client := odooInfra.NewClient(nil, odooURL, s.rateLimiter)
-	productsHandler := odooInfra.NewProductsHandler(client)
-	imagesHandler := odooInfra.NewImagesHandler(client)
-	categoriesHandler := odooInfra.NewCategoriesHandler(client)
-
-	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
-	if err != nil {
-		return fmt.Errorf("error loading %s currency: %w", odooSyncCurrency, err)
-	}
-
-	basePrice, _, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, productID, mxnCurrency.ID)
-	if err != nil {
-		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
-			return fmt.Errorf("%w: no active price list entry for product %d", workers.ErrSyncNotReady, productID)
-		}
-		return fmt.Errorf("error loading effective price for product %d: %w", productID, err)
-	}
-	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
-	if err != nil {
-		return fmt.Errorf("error calculating final price for product %d: %w", productID, err)
-	}
-
-	qtyAvailable, err := s.sumAvailableStock(ctx, productID)
-	if err != nil {
-		return fmt.Errorf("error summing stock for product %d: %w", productID, err)
-	}
-
-	existingMap, err := s.channelProductMapRepository.FindByProductAndConnection(ctx, productID, connectionID)
-	if err != nil && !errors.Is(err, mysqlInfra.ErrChannelProductMapNotFound) {
-		return fmt.Errorf("error loading channel product map for product %d: %w", productID, err)
-	}
-
-	if existingMap != nil && existingMap.ExternalID != nil && strings.TrimSpace(*existingMap.ExternalID) != "" {
-		title := resolveOdooRefreshTitle(existingMap, product)
-		return s.update(ctx, productsHandler, categoriesHandler, credentials, connectionID, product, existingMap, title, listPrice, qtyAvailable)
-	}
-
-	_, err = s.create(ctx, productsHandler, imagesHandler, categoriesHandler, credentials, product, connectionID, product.Name, nil, listPrice, qtyAvailable, product.ID)
-	return err
 }
 
 // Publish implements channel_listings.Publisher (duck-typed: no import from

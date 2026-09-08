@@ -22,13 +22,13 @@ import (
 	channelConfigApp "core-orchestrator/internal/application/channel_config"
 	channelConnectionsService "core-orchestrator/internal/application/channel_connections"
 	channelListingsApp "core-orchestrator/internal/application/channel_listings"
-	channelSyncQueueApp "core-orchestrator/internal/application/channel_sync_queue"
 	channelsService "core-orchestrator/internal/application/channels"
 	compatibilityApp "core-orchestrator/internal/application/compatibility"
 	credService "core-orchestrator/internal/application/credentials"
 	currenciesApp "core-orchestrator/internal/application/currencies"
 	filesService "core-orchestrator/internal/application/files"
 	inventoryApp "core-orchestrator/internal/application/inventory"
+	listingDiscoveryApp "core-orchestrator/internal/application/listing_discovery"
 	meliNotificationsApp "core-orchestrator/internal/application/meli_notifications"
 	migrationApp "core-orchestrator/internal/application/migration"
 	pricingApp "core-orchestrator/internal/application/pricing"
@@ -320,12 +320,6 @@ func main() {
 	equipmentFitmentService := compatibilityApp.NewEquipmentFitmentService(db, mysqlRepos.EquipmentFitmentsRepository)
 	productVehicleCompatibilityService := compatibilityApp.NewProductVehicleCompatibilityService(db, mysqlRepos.ProductVehicleCompatibilityRepository)
 	productEquipmentCompatibilityService := compatibilityApp.NewProductEquipmentCompatibilityService(db, mysqlRepos.ProductEquipmentCompatibilityRepository)
-	channelSyncQueueService := channelSyncQueueApp.NewService(
-		db,
-		mysqlRepos.ProductRepository,
-		mysqlRepos.ChannelConnectionRepository,
-		mysqlRepos.ChannelSyncQueueRepository,
-	)
 	// Channel listings: creates brand-new marketplace listings for a batch of
 	// skus (one per vehicle compatibility when the connection allows it),
 	// dispatching to whichever publisher is registered for the connection's
@@ -340,7 +334,6 @@ func main() {
 		mysqlRepos.ChannelRepository,
 		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelProductMapRepository,
-		mysqlRepos.ChannelSyncQueueRepository,
 		mysqlRepos.ProductVehicleCompatibilityRepository,
 		mysqlRepos.VehicleFitmentsRepository,
 		mysqlRepos.PartNumberSupersessionsRepository,
@@ -349,6 +342,21 @@ func main() {
 	channelListingsService.Register("ODOO", odooProductSyncService)
 	channelListingsService.RegisterRefresher("MERCADOLIBRE", mercadoLibreProductSyncService)
 	channelListingsService.RegisterRefresher("ODOO", odooProductSyncService)
+
+	// Listing discovery: once a day scans every product that is ready to
+	// publish (stock, effective price > 0, cover image, category, brand) and
+	// enqueues an ecom_channel_sync_queue 'listing' row for each connection
+	// its category is mapped to that has no publication yet. The only
+	// producer of that table. See ADR 0003.
+	listingDiscoveryService := listingDiscoveryApp.NewService(
+		mysqlRepos.ProductRepository,
+		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.ChannelProductMapRepository,
+		mysqlRepos.ChannelSyncQueueRepository,
+		mysqlRepos.CurrenciesRepository,
+		effectivePriceResolver,
+		pricingFormulaCalculator,
+	)
 
 	productHandler := httpHandler.NewProductHandler(productService)
 	storageDiskHandler := httpHandler.NewStorageDiskHandler(storageDiskService)
@@ -405,7 +413,6 @@ func main() {
 	equipmentFitmentHandler := httpHandler.NewEquipmentFitmentHandler(equipmentFitmentService)
 	productVehicleCompatibilityHandler := httpHandler.NewProductVehicleCompatibilityHandler(productVehicleCompatibilityService)
 	productEquipmentCompatibilityHandler := httpHandler.NewProductEquipmentCompatibilityHandler(productEquipmentCompatibilityService)
-	channelSyncQueueHandler := httpHandler.NewChannelSyncQueueHandler(channelSyncQueueService)
 	channelListingsHandler := httpHandler.NewChannelListingsHandler(channelListingsService)
 	// TEMPORARY debug handler — see MercadoLibreItemLookupHandler. Remove
 	// once no longer needed.
@@ -443,27 +450,21 @@ func main() {
 		startConsumers(bgCtx, cfg, syncService)
 	}()
 
-	// Marketplace sync worker: polls ecom_channel_sync_queue for every
-	// pending entry, regardless of who queued it. "listing" entries (queued
-	// by channelListingsService itself, after a stock/cover-image
-	// precondition failed on a publish request) are retried through it,
-	// recomputing stock/image/vehicle-compatibility fan-out live; every
-	// other entry (from the channel-agnostic /api/channel-sync-queue
-	// endpoint) is dispatched to the ProductSyncer registered for its
-	// connection's channel code, same as before. Registering additional
-	// marketplaces (MercadoLibre, Amazon, ...) on that second path only
-	// means adding another Register call here.
+	// Marketplace consumer: every SyncQueuePollInterval, claims pending
+	// 'listing' rows from ecom_channel_sync_queue (produced once a day by the
+	// listing discovery scheduler) and publishes each through
+	// channelListingsService — re-checking only that the product still has
+	// stock. On any publish error the row is marked failed with the message
+	// in last_error; the discovery scheduler reactivates it next run, up to
+	// maxListingQueueAttempts. See ADR 0003.
 	marketplaceWorker := workers.NewMarketplaceWorker(
 		mysqlRepos.ChannelSyncQueueRepository,
-		mysqlRepos.ChannelConnectionRepository,
-		mysqlRepos.ChannelRepository,
 		channelListingsService,
 		workers.MarketplaceWorkerConfig{
 			PollInterval: cfg.SyncQueuePollInterval,
 			BatchSize:    cfg.SyncQueueBatchSize,
 		},
 	)
-	marketplaceWorker.Register("ODOO", odooProductSyncService)
 	go safe.Supervise(bgCtx, "marketplace worker", marketplaceWorker.Start)
 
 	// Token refresh scheduler: polls ecom_connection_status for connections
@@ -510,6 +511,18 @@ func main() {
 	)
 	go safe.Supervise(bgCtx, "exchange rate scheduler", exchangeRateScheduler.Start)
 
+	// Listing discovery scheduler: once a day (01:00 by default) scans for
+	// products ready to publish and enqueues them into ecom_channel_sync_queue
+	// for the marketplace consumer above. See ADR 0003.
+	listingDiscoveryScheduler := schedulers.NewListingDiscoveryScheduler(
+		listingDiscoveryService,
+		schedulers.ListingDiscoverySchedulerConfig{
+			RunAtHour:   cfg.ListingDiscoveryRunAtHour,
+			RunAtMinute: cfg.ListingDiscoveryRunAtMinute,
+		},
+	)
+	go safe.Supervise(bgCtx, "listing discovery scheduler", listingDiscoveryScheduler.Start)
+
 	// Create router and start server.
 	router := api.NewRouter(
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
@@ -519,7 +532,7 @@ func main() {
 		productDimensionsHandler, productSEOHandler, connectionCredentialsHandler, connectionSettingsHandler,
 		connectionStatusHandler, channelParametersHandler, mercadoLibreHandler, meliNotificationHandler, odooHandler, sourceHandler,
 		migrationHandler, equipmentTypeHandler, vehicleFitmentHandler, equipmentFitmentHandler,
-		productVehicleCompatibilityHandler, productEquipmentCompatibilityHandler, channelSyncQueueHandler,
+		productVehicleCompatibilityHandler, productEquipmentCompatibilityHandler,
 		channelListingsHandler, mercadoLibreItemLookupHandler, mercadoLibrePauseUnmappedListingsHandler,
 		mercadoLibreCloseUnmappedListingsHandler, mercadoLibreCloseItemHandler,
 		attributeHandler, attributeOptionHandler, productAttributeHandler, channelAttributeHandler, channelAttributeMapHandler,

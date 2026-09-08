@@ -89,6 +89,24 @@ func (r *ChannelProductMapRepository) FindByProductAndConnection(ctx context.Con
 	return scanChannelProductMapRow(r.db.QueryRowContext(ctx, query, productID, connectionID))
 }
 
+// CountActiveListings returns how many live listings a product has on a
+// connection — non-deleted rows whose status isn't 'closed' (a closed listing
+// is treated as if it didn't exist, matching channel_listings' publishOne).
+// ListingDiscoveryScheduler uses it to decide whether a product already has
+// any publication on a connection before enqueueing it.
+func (r *ChannelProductMapRepository) CountActiveListings(ctx context.Context, productID, connectionID int64) (int, error) {
+	var count int
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*)
+		FROM ecom_channel_product_map
+		WHERE product_id = ? AND connection_id = ? AND deleted_at IS NULL AND status <> 'closed'
+	`, productID, connectionID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("error counting active listings for product %d on connection %d: %w", productID, connectionID, err)
+	}
+	return count, nil
+}
+
 // FindByProductConnectionAndFitment finds the listing for one specific
 // (product, connection, vehicle fitment) combination. vehicleFitmentID nil
 // looks up the general listing, same as FindByProductAndConnection.

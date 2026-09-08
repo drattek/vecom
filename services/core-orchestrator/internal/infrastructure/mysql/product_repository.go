@@ -354,6 +354,69 @@ func (r *ProductRepository) FindAllBySourceAndPartNumber(ctx context.Context, so
 	return products, nil
 }
 
+// ReadyForListingProduct is the minimal projection ListingDiscoveryScheduler
+// needs per product: its id, plus the category and brand ids it already
+// resolved as non-null in the query (both are guaranteed present — the WHERE
+// clause filters out products missing either).
+type ReadyForListingProduct struct {
+	ID         int64
+	CategoryID int64
+	BrandID    int64
+}
+
+// FindReadyForListingPage returns one keyset page (id > afterID, oldest first)
+// of products that pass every "ready to publish" gate that isn't
+// connection-specific: not soft-deleted, status 'active', sellable, has a
+// category and a brand assigned, has total available stock > 0, and has at
+// least one cover image (ecom_product_images.is_first = 1). The price gate
+// (effective price > 0 in the connection's currency) is left to the caller —
+// it depends on the connection's pricing formula. Pass afterID = 0 for the
+// first page; keep calling with the last returned id until fewer than limit
+// rows come back.
+func (r *ProductRepository) FindReadyForListingPage(ctx context.Context, afterID int64, limit int) ([]ReadyForListingProduct, error) {
+	query := `
+		SELECT p.id, p.category_id, p.brand_id
+		FROM ecom_products p
+		WHERE p.deleted_at IS NULL
+		  AND p.status = 'active'
+		  AND p.is_sellable = 1
+		  AND p.category_id IS NOT NULL
+		  AND p.brand_id IS NOT NULL
+		  AND p.id > ?
+		  AND COALESCE((
+		        SELECT SUM(ps.available_qty) FROM ecom_product_stock ps
+		        WHERE ps.product_id = p.id
+		      ), 0) > 0
+		  AND EXISTS (
+		        SELECT 1 FROM ecom_product_images pi
+		        WHERE pi.product_id = p.id AND pi.is_first = 1 AND pi.deleted_at IS NULL
+		      )
+		ORDER BY p.id ASC
+		LIMIT ?
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, afterID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("error querying products ready for listing: %w", err)
+	}
+	defer rows.Close()
+
+	ready := make([]ReadyForListingProduct, 0, limit)
+	for rows.Next() {
+		var p ReadyForListingProduct
+		if err := rows.Scan(&p.ID, &p.CategoryID, &p.BrandID); err != nil {
+			return nil, fmt.Errorf("error scanning product ready for listing: %w", err)
+		}
+		ready = append(ready, p)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating products ready for listing: %w", err)
+	}
+
+	return ready, nil
+}
+
 func (r *ProductRepository) Create(ctx context.Context, input CreateProductInput) (*ProductDTO, error) {
 	query := `
 		INSERT INTO ecom_products (
