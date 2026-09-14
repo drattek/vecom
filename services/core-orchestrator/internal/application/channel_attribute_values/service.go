@@ -33,10 +33,23 @@ type LocalCategoryResolver interface {
 	EnsureLocalCategory(ctx context.Context, connectionID int64, externalCategoryID string, actorID int64) (int64, error)
 }
 
-// mercadoLibreChannelCode is ecom_channels.code for MercadoLibre — the only
-// channel this package supports today (mirrors the literal used to register
-// channel_listings.Publisher/Refresher and the token refresher in main.go).
+// mercadoLibreChannelCode is ecom_channels.code for MercadoLibre — the channel
+// SetValue defaults to when no ConnectionID is given (mirrors the literal used
+// to register channel_listings.Publisher/Refresher and the token refresher in
+// main.go).
 const mercadoLibreChannelCode = "MERCADOLIBRE"
+
+// odooChannelCode / odooProductInfoTargetField: a channel whose
+// ecom_channels.attribute_scope is "product" (Odoo) stores custom attributes in
+// a per-product key/value model rather than per-category fixed keys, so SetValue
+// creates its ecom_channel_attributes slots as target_strategy 'dynamic_field'
+// pointing at that model, with category_id NULL. The literal is duplicated from
+// odooInfra.ProductInfoModel to avoid an application→marketplace-infra import.
+// See ADR 0004.
+const (
+	odooChannelCode            = "ODOO"
+	odooProductInfoTargetField = "website.sale.product.info"
+)
 
 // Defaults applied to a newly-created ecom_channel_attributes slot: MercadoLibre
 // exposes a fixed, known vocabulary of external keys (target_strategy
@@ -50,6 +63,7 @@ const mercadoLibreChannelCode = "MERCADOLIBRE"
 // has no MercadoLibre category payload to read value_type from.
 const (
 	channelAttributeDefaultTargetStrategy = "fixed_key"
+	channelAttributeDynamicTargetStrategy = "dynamic_field"
 	channelAttributeDefaultValueMode      = "value_name"
 	channelAttributeValueModeValueID      = "value_id"
 )
@@ -113,13 +127,18 @@ var skippedExternalKeys = map[string]bool{
 // ValueText/ValueNumber/ValueBool/ValueDate/EnumValue must be set, matching
 // DataType.
 type SetValueInput struct {
-	SKU         string
-	ExternalKey string
-	DataType    string
-	ValueText   *string
-	ValueNumber *float64
-	ValueBool   *bool
-	ValueDate   *time.Time
+	SKU string
+	// ConnectionID picks the channel: nil resolves to MercadoLibre (the
+	// historical default), otherwise the connection's channel is used — which is
+	// how an Odoo (attribute_scope "product") slot gets created as a
+	// dynamic_field targeting website.sale.product.info. See ADR 0004.
+	ConnectionID *int64
+	ExternalKey  string
+	DataType     string
+	ValueText    *string
+	ValueNumber  *float64
+	ValueBool    *bool
+	ValueDate    *time.Time
 	// EnumValue is the raw option text for DataType "enum" — the option row
 	// itself (ecom_attribute_options) is resolved/created inside SetValue,
 	// once the attribute it belongs to is known.
@@ -140,6 +159,7 @@ type Service struct {
 	db                            *sql.DB
 	productRepository             *mysqlInfra.ProductRepository
 	channelRepository             *mysqlInfra.ChannelRepository
+	channelConnectionRepository   *mysqlInfra.ChannelConnectionRepository
 	attributesRepository          *mysqlInfra.AttributesRepository
 	attributeOptionsRepository    *mysqlInfra.AttributeOptionsRepository
 	channelAttributesRepository   *mysqlInfra.ChannelAttributesRepository
@@ -153,6 +173,7 @@ func NewService(
 	db *sql.DB,
 	productRepository *mysqlInfra.ProductRepository,
 	channelRepository *mysqlInfra.ChannelRepository,
+	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository,
 	attributesRepository *mysqlInfra.AttributesRepository,
 	attributeOptionsRepository *mysqlInfra.AttributeOptionsRepository,
 	channelAttributesRepository *mysqlInfra.ChannelAttributesRepository,
@@ -165,6 +186,7 @@ func NewService(
 		db:                            db,
 		productRepository:             productRepository,
 		channelRepository:             channelRepository,
+		channelConnectionRepository:   channelConnectionRepository,
 		attributesRepository:          attributesRepository,
 		attributeOptionsRepository:    attributeOptionsRepository,
 		channelAttributesRepository:   channelAttributesRepository,
@@ -206,12 +228,26 @@ func (s *Service) SetValue(ctx context.Context, input SetValueInput) (*SetValueR
 		return nil, err
 	}
 
-	channel, err := s.channelRepository.FindByCode(ctx, mercadoLibreChannelCode)
+	channel, err := s.resolveChannel(ctx, input.ConnectionID)
 	if err != nil {
-		return nil, fmt.Errorf("error loading %s channel: %w", mercadoLibreChannelCode, err)
+		return nil, err
 	}
 
 	externalKey := strings.TrimSpace(input.ExternalKey)
+
+	// A "product"-scope channel (Odoo) keeps its slots category-agnostic
+	// (category_id NULL) and targets a per-product key/value model via
+	// dynamic_field; a "category"-scope channel (MercadoLibre) scopes the slot
+	// to the product's own category with a fixed external key.
+	slotCategoryID := product.CategoryID
+	targetStrategy := channelAttributeDefaultTargetStrategy
+	var targetField *string
+	if channel.AttributeScope == mysqlInfra.ChannelAttributeScopeProduct {
+		slotCategoryID = nil
+		targetStrategy = channelAttributeDynamicTargetStrategy
+		field := odooProductInfoTargetField
+		targetField = &field
+	}
 
 	// isRequired/valueMode are always false/value_name here: SetValue has no
 	// MercadoLibre category payload to read Tags.Required/value_type from
@@ -223,12 +259,12 @@ func (s *Service) SetValue(ctx context.Context, input SetValueInput) (*SetValueR
 	// below (resolveOrCreateOption) actually take effect for a
 	// list-provisioned attribute even though this call site itself never
 	// requests value_id mode.
-	channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, product.CategoryID, externalKey, false, channelAttributeDefaultValueMode, input.ActorID)
+	channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, slotCategoryID, externalKey, targetStrategy, targetField, false, channelAttributeDefaultValueMode, input.ActorID)
 	if err != nil {
 		return nil, err
 	}
 
-	attribute, err := s.resolveOrCreateAttribute(ctx, externalKey, externalKey, input.DataType, input.ActorID)
+	attribute, err := s.resolveOrCreateAttribute(ctx, externalKey, externalKey, input.DataType, false, input.ActorID)
 	if err != nil {
 		return nil, err
 	}
@@ -439,7 +475,7 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 			// system_field slots are always value_name: their value comes
 			// straight from product/brand/dimensions data, never from a
 			// MercadoLibre closed list.
-			channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, localCategoryID, attr.ID, attr.Tags.Required, channelAttributeDefaultValueMode, input.ActorID)
+			channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, localCategoryID, attr.ID, channelAttributeDefaultTargetStrategy, nil, attr.Tags.Required, channelAttributeDefaultValueMode, input.ActorID)
 			if err != nil {
 				outcome.Error = err.Error()
 				results = append(results, outcome)
@@ -460,15 +496,20 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		if attr.IsListType() {
 			valueMode = channelAttributeValueModeValueID
 		}
-		channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, localCategoryID, attr.ID, attr.Tags.Required, valueMode, input.ActorID)
+		channelAttribute, err := s.resolveOrCreateChannelAttribute(ctx, channel.ID, localCategoryID, attr.ID, channelAttributeDefaultTargetStrategy, nil, attr.Tags.Required, valueMode, input.ActorID)
 		if err != nil {
 			outcome.Error = err.Error()
 			results = append(results, outcome)
 			continue
 		}
 
-		dataType := mapMercadoLibreValueType(attr.ValueType)
-		attribute, err := s.resolveOrCreateAttribute(ctx, attr.ID, attr.Name, dataType, input.ActorID)
+		dataType := mapMercadoLibreDataType(attr)
+		// reconcileToEnum: MercadoLibre is the source of truth for whether this
+		// attribute is a closed list. If an earlier provision (before "string
+		// with values" counted as a list) or a SetValue call created the local
+		// ecom_attributes row as free "text", widen it to "enum" in place
+		// rather than failing every publish with ErrAttributeDataTypeConflict.
+		attribute, err := s.resolveOrCreateAttribute(ctx, attr.ID, attr.Name, dataType, dataType == "enum", input.ActorID)
 		if err != nil {
 			outcome.Error = err.Error()
 			results = append(results, outcome)
@@ -498,21 +539,23 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 	return &ProvisionCategoryAttributesResult{CategoryID: categoryID, LocalCategoryID: localCategoryID, Results: results}, nil
 }
 
-// mapMercadoLibreValueType maps MercadoLibre's value_type to
-// mysqlInfra.AttributeDataTypes: "number" and "boolean" map directly; "list"
-// and "string_list" — MercadoLibre's closed-catalogue types, see
-// CategoryRequiredAttribute.IsListType — become "enum", since their allowed
-// values are provisioned into ecom_attribute_options (see
-// provisionAttributeOptions); everything else (string, number_unit, ...)
-// becomes "text".
-func mapMercadoLibreValueType(valueType string) string {
-	switch valueType {
+// mapMercadoLibreDataType maps a MercadoLibre category attribute to one of
+// mysqlInfra.AttributeDataTypes: any closed-catalogue attribute (see
+// CategoryRequiredAttribute.IsListType — "list"/"string_list", or a "string"
+// that ships a values list) becomes "enum", since its allowed values are
+// provisioned into ecom_attribute_options (see provisionAttributeOptions);
+// "number" and "boolean" map directly; everything else (free "string",
+// "number_unit", ...) becomes "text". Keyed off the whole attribute rather
+// than just value_type so the "string-with-values" case lands on "enum" too.
+func mapMercadoLibreDataType(attr mercadoLibreInfra.CategoryRequiredAttribute) string {
+	if attr.IsListType() {
+		return "enum"
+	}
+	switch attr.ValueType {
 	case "number":
 		return "number"
 	case "boolean":
 		return "boolean"
-	case "list", "string_list":
-		return "enum"
 	default:
 		return "text"
 	}
@@ -564,18 +607,42 @@ func (s *Service) provisionAttributeOptions(ctx context.Context, attributeID int
 	return firstErr
 }
 
+// resolveChannel picks the channel a SetValue call targets: nil connectionID
+// resolves to MercadoLibre (the historical default), otherwise the given
+// connection's channel is loaded. Used so an Odoo (attribute_scope "product")
+// connection routes SetValue to a dynamic_field slot. See ADR 0004.
+func (s *Service) resolveChannel(ctx context.Context, connectionID *int64) (*mysqlInfra.ChannelDTO, error) {
+	if connectionID == nil {
+		channel, err := s.channelRepository.FindByCode(ctx, mercadoLibreChannelCode)
+		if err != nil {
+			return nil, fmt.Errorf("error loading %s channel: %w", mercadoLibreChannelCode, err)
+		}
+		return channel, nil
+	}
+
+	connection, err := s.channelConnectionRepository.FindByID(ctx, *connectionID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading connection %d: %w", *connectionID, err)
+	}
+	channel, err := s.channelRepository.FindByID(ctx, connection.ChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
+	}
+	return channel, nil
+}
+
 // resolveOrCreateChannelAttribute finds the ecom_channel_attributes row for
 // (channelID, externalKey) that applies to productCategoryID — a row scoped
 // to that exact category taking precedence over a channel-wide one (see
 // ChannelAttributesRepository.FindApplicable) — creating one scoped to
-// productCategoryID (NULL if the product has no category yet) if neither
-// exists, with is_required/value_mode set to isRequired/valueMode. An
-// existing row's is_required/value_mode are never updated to match a later
-// call's values — if MercadoLibre changes whether an attribute is mandatory,
-// or switches it between a closed list and free text, for a category, the
-// slot needs a direct edit (or deletion so it gets re-created) to pick that
-// up.
-func (s *Service) resolveOrCreateChannelAttribute(ctx context.Context, channelID int64, productCategoryID *int64, externalKey string, isRequired bool, valueMode string, actorID int64) (*mysqlInfra.ChannelAttributeDTO, error) {
+// productCategoryID (NULL if the product has no category yet, or always for a
+// product-scope channel) if neither exists, as targetStrategy/targetField with
+// is_required/value_mode set to isRequired/valueMode. An existing row's
+// is_required/value_mode/target_* are never updated to match a later call's
+// values — if MercadoLibre changes whether an attribute is mandatory, or
+// switches it between a closed list and free text, for a category, the slot
+// needs a direct edit (or deletion so it gets re-created) to pick that up.
+func (s *Service) resolveOrCreateChannelAttribute(ctx context.Context, channelID int64, productCategoryID *int64, externalKey, targetStrategy string, targetField *string, isRequired bool, valueMode string, actorID int64) (*mysqlInfra.ChannelAttributeDTO, error) {
 	applicable, err := s.channelAttributesRepository.FindApplicable(ctx, channelID, productCategoryID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel attributes for external key %s: %w", externalKey, err)
@@ -588,8 +655,9 @@ func (s *Service) resolveOrCreateChannelAttribute(ctx context.Context, channelID
 
 	created, err := s.channelAttributesRepository.Create(ctx, mysqlInfra.CreateChannelAttributeInput{
 		ChannelID:      channelID,
-		TargetStrategy: channelAttributeDefaultTargetStrategy,
+		TargetStrategy: targetStrategy,
 		ExternalKey:    &externalKey,
+		TargetField:    targetField,
 		ValueMode:      valueMode,
 		CategoryID:     productCategoryID,
 		IsRequired:     isRequired,
@@ -609,16 +677,36 @@ func (s *Service) resolveOrCreateChannelAttribute(ctx context.Context, channelID
 // none exists yet (SetValue has no separate display label to offer, so it
 // passes externalKey as name too; ProvisionCategoryAttributes passes
 // MercadoLibre's own attribute name).
-func (s *Service) resolveOrCreateAttribute(ctx context.Context, externalKey, name, dataType string, actorID int64) (*mysqlInfra.AttributeDTO, error) {
+//
+// widenTextToEnum lets the one safe reconciliation through: a row created as
+// free "text" being promoted to "enum" because MercadoLibre now exposes the
+// attribute as a closed value list. Only ProvisionCategoryAttributes passes
+// true (MercadoLibre's category payload is authoritative about this); it never
+// widens the other direction or across unrelated types, and existing
+// ecom_product_attributes.value_text rows keep rendering unchanged (see
+// formatProductAttributeValue / renderAttributeValue).
+func (s *Service) resolveOrCreateAttribute(ctx context.Context, externalKey, name, dataType string, widenTextToEnum bool, actorID int64) (*mysqlInfra.AttributeDTO, error) {
 	existing, err := s.attributesRepository.FindByCode(ctx, externalKey)
 	if err != nil && !errors.Is(err, mysqlInfra.ErrAttributeNotFound) {
 		return nil, fmt.Errorf("error loading attribute %s: %w", externalKey, err)
 	}
 	if existing != nil {
-		if existing.DataType != dataType {
-			return nil, fmt.Errorf("%w: %s is %s, got %s", ErrAttributeDataTypeConflict, externalKey, existing.DataType, dataType)
+		if existing.DataType == dataType {
+			return existing, nil
 		}
-		return existing, nil
+		if widenTextToEnum && existing.DataType == "text" && dataType == "enum" {
+			updated, updErr := s.attributesRepository.Update(ctx, existing.ID, mysqlInfra.UpdateAttributeInput{
+				Name:      existing.Name,
+				DataType:  "enum",
+				Unit:      existing.Unit,
+				UpdatedBy: actorID,
+			})
+			if updErr != nil {
+				return nil, fmt.Errorf("error widening attribute %s from text to enum: %w", externalKey, updErr)
+			}
+			return updated, nil
+		}
+		return nil, fmt.Errorf("%w: %s is %s, got %s", ErrAttributeDataTypeConflict, externalKey, existing.DataType, dataType)
 	}
 
 	created, err := s.attributesRepository.Create(ctx, mysqlInfra.CreateAttributeInput{

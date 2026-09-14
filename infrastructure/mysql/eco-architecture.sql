@@ -455,6 +455,10 @@ create table ecom_channels (
     status enum('active', 'discontinued', 'hidden') default 'active',
     icon_id bigint unsigned default null,
     description text default null,
+    -- category: los atributos que exige el canal dependen de la categoría (Mercado Libre).
+    -- product:  los atributos son por producto, no por categoría (Odoo / website.sale.product.info).
+    --           el checklist no exige categoría asignada ni mapeada. Ver ADR 0004.
+    attribute_scope enum('category','product') not null default 'category',
     created_by bigint unsigned not null ,
     updated_by bigint unsigned default null,
     created_at timestamp default current_timestamp,

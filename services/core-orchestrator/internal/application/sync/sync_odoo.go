@@ -28,6 +28,12 @@ var (
 	ErrInvalidOdooConnection  = errors.New("invalid odoo connection")
 	ErrMissingOdooSettings    = errors.New("missing required odoo connection settings")
 	ErrMissingOdooCredentials = errors.New("missing required odoo connection credentials")
+	// ErrMissingRequiredOdooAttributes is returned by OdooProductSyncService.create
+	// when a required ecom_channel_attributes slot for the ODOO channel has no
+	// value on the product — the publish is aborted before the product.template
+	// is created, mirroring MercadoLibre's errMissingRequiredMercadoLibreAttributes.
+	// See ADR 0004.
+	ErrMissingRequiredOdooAttributes = errors.New("product is missing Odoo-required attribute values")
 )
 
 type OdooConnectionService struct {

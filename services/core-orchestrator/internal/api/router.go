@@ -356,11 +356,15 @@ func NewRouter(
 		// item + user-product compatibility payloads — to see why copy found
 		// nothing. See MercadoLibreCompatibilitiesHandler.Diagnose.
 		protected.Post("/api/marketplaces/mercadolibre/compatibilities/diagnose", mercadoLibreCompatibilitiesHandler.Diagnose)
-		// Sets a MercadoLibre custom attribute value on a product by sku +
-		// external_key, resolving/creating the ecom_attributes/
-		// ecom_channel_attributes/ecom_channel_attribute_map chain behind it —
-		// see channel_attribute_values.Service.SetValue.
-		protected.Post("/api/marketplaces/mercadolibre/product-attributes", channelAttributeValueHandler.SetMercadoLibreValue)
+		// Sets a custom attribute value on a product by sku + external_key,
+		// resolving/creating the ecom_attributes/ecom_channel_attributes/
+		// ecom_channel_attribute_map chain behind it — see
+		// channel_attribute_values.Service.SetValue. Channel is picked by the
+		// body's optional connectionId (omit it for MercadoLibre; an Odoo
+		// connection creates a dynamic_field slot — ADR 0004). Both paths hit
+		// the same handler; the mercadolibre one is kept for compatibility.
+		protected.Post("/api/channel-attribute-values", channelAttributeValueHandler.SetValue)
+		protected.Post("/api/marketplaces/mercadolibre/product-attributes", channelAttributeValueHandler.SetValue)
 		// Seeds the required-attribute slots for a product's MercadoLibre
 		// category (sku + MercadoLibre categoryId only) — see
 		// channel_attribute_values.Service.ProvisionCategoryAttributes.
@@ -445,6 +449,7 @@ func NewRouter(
 		// endpoints)
 		protected.Post("/api/channel-listings/publish", channelListingsHandler.CreateListings)
 		protected.Post("/api/channel-listings/refresh", channelListingsHandler.RefreshListings)
+		protected.Post("/api/channel-listings/resync", channelListingsHandler.ResyncListings)
 
 		// TEMPORARY debug endpoint — see MercadoLibreItemLookupHandler. Remove
 		// once no longer needed.

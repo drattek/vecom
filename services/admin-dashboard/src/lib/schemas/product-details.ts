@@ -340,6 +340,9 @@ export const attributeChecklistSchema = z.object({
   connectionId: z.number(),
   channelName: z.string(),
   connectionName: z.string(),
+  // 'category' (Mercado Libre): atributos por categoría. 'product' (Odoo):
+  // atributos por producto — el front ofrece un alta libre de atributos.
+  attributeScope: z.enum(['category', 'product']),
   categoryId: z.number().nullish(),
   categoryName: z.string().nullish(),
   state: z.enum(['no_category', 'category_not_mapped', 'ok']),
@@ -401,6 +404,51 @@ export type SyncCompatibility = z.infer<typeof syncCompatibilitySchema>
 export type SyncListing = z.infer<typeof syncListingSchema>
 export type SyncConnection = z.infer<typeof syncConnectionSchema>
 export type ProductSyncSection = z.infer<typeof productSyncSectionSchema>
+
+// Publicar el producto en una conexión sin sincronización todavía (botón
+// "Publicar" de la vista Sincronización) — POST /api/channel-listings/publish
+// con { connectionId, skus: [sku] }. Puede devolver más de un resultado si la
+// conexión permite múltiples publicaciones (una por compatibilidad).
+export const listingOutcomeSchema = z.object({
+  sku: z.string(),
+  vehicleFitmentId: z.number().nullish(),
+  title: z.string().optional().default(''),
+  success: z.boolean(),
+  skipped: z.boolean().optional().default(false),
+  externalId: z.string().optional().default(''),
+  missingRequiredAttributes: z.array(z.string()).optional().default([]),
+  missingOptionalAttributes: z.array(z.string()).optional().default([]),
+  error: z.string().optional().default(''),
+})
+
+export const createListingsResultSchema = z.object({
+  results: z.array(listingOutcomeSchema),
+})
+
+export type ListingOutcome = z.infer<typeof listingOutcomeSchema>
+export type CreateListingsResult = z.infer<typeof createListingsResultSchema>
+
+// Resincronizar el producto en una conexión (botón "Resincronizar" de la vista
+// Sincronización) — POST /api/channel-listings/resync con
+// { connectionId, productId }. A diferencia de "Publicar", empuja todos los
+// campos que el marketplace permite modificar en una publicación ya creada
+// (no solo precio/stock), a cada publicación activa del producto en esa
+// conexión.
+export const refreshOutcomeSchema = z.object({
+  productId: z.number(),
+  sku: z.string().optional().default(''),
+  externalId: z.string().optional().default(''),
+  updated: z.boolean().optional().default(false),
+  skipped: z.boolean().optional().default(false),
+  error: z.string().optional().default(''),
+})
+
+export const resyncListingsResultSchema = z.object({
+  results: z.array(refreshOutcomeSchema),
+})
+
+export type RefreshOutcome = z.infer<typeof refreshOutcomeSchema>
+export type ResyncListingsResult = z.infer<typeof resyncListingsResultSchema>
 
 export type ProductGeneral = z.infer<typeof productGeneralSchema>
 export type ProductDimensions = z.infer<typeof productDimensionsSchema>

@@ -6,6 +6,7 @@ import {
 import {
     attributeChecklistSchema,
     brandOptionsResponseSchema,
+    createListingsResultSchema,
     productAttributesSectionSchema,
     productGeneralSchema,
     productAttachmentImportResponseSchema,
@@ -14,6 +15,7 @@ import {
     productImageImportResultSchema,
     productVideoImportResponseSchema,
     productVideoImportResultSchema,
+    resyncListingsResultSchema,
     type BrandOption,
     type ProductDimensionsPatch,
     type ProductGeneralPatch,
@@ -171,6 +173,66 @@ export function useAttributeChecklist(productId: string | undefined, connectionI
     })
 }
 
+/**
+ * usePublishChannelListing crea la primera publicación de un producto en una
+ * conexión sin sincronización todavía (botón "Publicar" de la vista
+ * Sincronización). POST /api/channel-listings/publish solo crea — si la
+ * conexión ya tiene alguna publicación para este producto la reporta como
+ * skipped en vez de tocarla. Al terminar invalida la sección "sync" para que
+ * la card de la conexión pase de "sin sincronizar" a mostrar lo publicado.
+ *
+ * Timeout ampliado: una publicación nueva en un marketplace encadena varias
+ * llamadas externas (token, predictor de categoría, provisioning de atributos,
+ * alta del ítem, descripción, compatibilidades) y no entra en los 12 s del
+ * cliente por defecto — cortarla ahí deja el alta a medias y sin error visible.
+ */
+const PUBLISH_LISTING_TIMEOUT_MS = 90_000
+
+export function usePublishChannelListing(productId: string | undefined) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (input: { connectionId: number; sku: string }) => {
+            const response = await apiClient.post(
+                "/api/channel-listings/publish",
+                { connectionId: input.connectionId, skus: [input.sku] },
+                { timeout: PUBLISH_LISTING_TIMEOUT_MS },
+            )
+            return createListingsResultSchema.parse(response.data)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId, "sync"] })
+        },
+    })
+}
+
+/**
+ * useResyncChannelListing empuja, a cada publicación activa del producto en
+ * una conexión, todos los campos que ese canal permite modificar después de
+ * creada (atributos, descripción, imágenes — categoría/título también en
+ * Odoo) — a diferencia del worker automático, que solo sincroniza precio y
+ * stock. POST /api/channel-listings/resync solo necesita el id numérico del
+ * producto (a diferencia de "Publicar", no depende del SKU).
+ *
+ * Mismo timeout ampliado que usePublishChannelListing: un resync también
+ * descarga y sube imágenes al marketplace.
+ */
+export function useResyncChannelListing(productId: string | undefined) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (input: { connectionId: number }) => {
+            const response = await apiClient.post(
+                "/api/channel-listings/resync",
+                { connectionId: input.connectionId, productId: Number(productId) },
+                { timeout: PUBLISH_LISTING_TIMEOUT_MS },
+            )
+            return resyncListingsResultSchema.parse(response.data)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId, "sync"] })
+        },
+    })
+}
+
 type SetProductAttributeInput = {
     attributeId: number
     valueText?: string
@@ -199,6 +261,40 @@ export function useDeleteProductAttribute(productId: string | undefined) {
     return useMutation({
         mutationFn: async (productAttributeId: number) => {
             await apiClient.delete(`/api/product-attributes/${productAttributeId}`)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId, "attributes"] })
+        },
+    })
+}
+
+type AddChannelAttributeValueInput = {
+    sku: string
+    connectionId: number
+    externalKey: string
+    dataType: "text" | "number" | "boolean" | "date"
+    value: string | number | boolean
+}
+
+/**
+ * useAddChannelAttributeValue crea, para un canal cuyo `attributeScope` es
+ * `product` (Odoo), un atributo nuevo del producto: resuelve/crea la cadena
+ * ecom_attributes / ecom_channel_attributes (slot dynamic_field) /
+ * ecom_channel_attribute_map y escribe el valor en una sola llamada
+ * (POST /api/channel-attribute-values). Refresca el checklist y la sección
+ * Atributos para que la fila nueva aparezca.
+ */
+export function useAddChannelAttributeValue(productId: string | undefined) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (input: AddChannelAttributeValueInput) => {
+            await apiClient.post("/api/channel-attribute-values", {
+                sku: input.sku,
+                connectionId: input.connectionId,
+                externalKey: input.externalKey,
+                dataType: input.dataType,
+                value: input.value,
+            })
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["product-details", productId, "attributes"] })

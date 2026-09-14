@@ -13,22 +13,24 @@ import (
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
 
-// ChannelAttributeValueHandler — write side of setting a MercadoLibre custom
-// attribute value on a product by sku + external_key, resolving/creating the
-// ecom_attributes/ecom_channel_attributes/ecom_channel_attribute_map chain
-// behind it (see channel_attribute_values.Service.SetValue). MercadoLibre-only
-// for now, mirroring the underlying service.
+// ChannelAttributeValueHandler — write side of setting a custom attribute value
+// on a product by sku + external_key, resolving/creating the ecom_attributes/
+// ecom_channel_attributes/ecom_channel_attribute_map chain behind it (see
+// channel_attribute_values.Service.SetValue). Channel is picked by connectionId
+// (omit it for MercadoLibre); an Odoo connection creates a dynamic_field slot
+// for website.sale.product.info (ADR 0004).
 
 // setChannelAttributeValueRequest.Value is decoded generically and typed
 // against DataType by parseChannelAttributeValue: when DataType is omitted,
 // it's inferred from Value's own JSON shape (string/number/boolean), which
 // covers the common case without the caller needing to know the target
-// attribute's data_type up front.
+// attribute's data_type up front. ConnectionID is optional (nil = MercadoLibre).
 type setChannelAttributeValueRequest struct {
-	SKU         string          `json:"sku"`
-	ExternalKey string          `json:"externalKey"`
-	Value       json.RawMessage `json:"value"`
-	DataType    string          `json:"dataType,omitempty"`
+	SKU          string          `json:"sku"`
+	ConnectionID *int64          `json:"connectionId,omitempty"`
+	ExternalKey  string          `json:"externalKey"`
+	Value        json.RawMessage `json:"value"`
+	DataType     string          `json:"dataType,omitempty"`
 }
 
 type ChannelAttributeValueHandler struct {
@@ -39,7 +41,7 @@ func NewChannelAttributeValueHandler(service *channelAttributeValuesApp.Service)
 	return &ChannelAttributeValueHandler{service: service}
 }
 
-func (h *ChannelAttributeValueHandler) SetMercadoLibreValue(w http.ResponseWriter, r *http.Request) {
+func (h *ChannelAttributeValueHandler) SetValue(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {
 		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
@@ -59,15 +61,16 @@ func (h *ChannelAttributeValueHandler) SetMercadoLibreValue(w http.ResponseWrite
 	}
 
 	result, err := h.service.SetValue(r.Context(), channelAttributeValuesApp.SetValueInput{
-		SKU:         req.SKU,
-		ExternalKey: req.ExternalKey,
-		DataType:    parsed.dataType,
-		ValueText:   parsed.valueText,
-		ValueNumber: parsed.valueNumber,
-		ValueBool:   parsed.valueBool,
-		ValueDate:   parsed.valueDate,
-		EnumValue:   parsed.enumValue,
-		ActorID:     user.ID,
+		SKU:          req.SKU,
+		ConnectionID: req.ConnectionID,
+		ExternalKey:  req.ExternalKey,
+		DataType:     parsed.dataType,
+		ValueText:    parsed.valueText,
+		ValueNumber:  parsed.valueNumber,
+		ValueBool:    parsed.valueBool,
+		ValueDate:    parsed.valueDate,
+		EnumValue:    parsed.enumValue,
+		ActorID:      user.ID,
 	})
 	if err != nil {
 		if errors.Is(err, channelAttributeValuesApp.ErrInvalidSetValueInput) {
@@ -78,8 +81,12 @@ func (h *ChannelAttributeValueHandler) SetMercadoLibreValue(w http.ResponseWrite
 			writeJSONError(w, http.StatusNotFound, "product not found for sku")
 			return
 		}
+		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
+			writeJSONError(w, http.StatusNotFound, "connection not found")
+			return
+		}
 		if errors.Is(err, mysqlInfra.ErrChannelNotFound) {
-			writeJSONError(w, http.StatusInternalServerError, "mercadolibre channel is not configured (no ecom_channels row with code MERCADOLIBRE)")
+			writeJSONError(w, http.StatusInternalServerError, "channel is not configured for this connection")
 			return
 		}
 		if errors.Is(err, channelAttributeValuesApp.ErrAttributeDataTypeConflict) || errors.Is(err, channelAttributeValuesApp.ErrChannelAttributeMapConflict) {

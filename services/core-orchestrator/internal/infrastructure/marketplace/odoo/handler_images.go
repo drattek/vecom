@@ -37,3 +37,47 @@ func (h *ImagesHandler) CreateProductImage(ctx context.Context, req CreateProduc
 
 	return h.client.Call(ctx, req.Credentials, "product.image", "create", params, nil)
 }
+
+type productImageIDRow struct {
+	ID int64 `json:"id"`
+}
+
+// SearchProductImageIDs returns the ids of every product.image row already
+// attached to productTemplateID — used by
+// sync.OdooProductSyncService.Resync to clear out an already-synced
+// product's extra photos before recreating them from
+// ecom_product_images' current state (see DeleteProductImages), so a resync
+// never accumulates duplicate photos across repeated runs.
+func (h *ImagesHandler) SearchProductImageIDs(ctx context.Context, credentials Credentials, productTemplateID int64) ([]int64, error) {
+	params := map[string]any{
+		"domain": []any{[]any{"product_tmpl_id", "=", productTemplateID}},
+		"fields": []string{"id"},
+	}
+
+	var rows []productImageIDRow
+	if err := h.client.Call(ctx, credentials, "product.image", "search_read", params, &rows); err != nil {
+		return nil, err
+	}
+
+	ids := make([]int64, 0, len(rows))
+	for _, row := range rows {
+		ids = append(ids, row.ID)
+	}
+
+	return ids, nil
+}
+
+// DeleteProductImages calls product.image/unlink to remove every id in ids —
+// a no-op (no call made) when ids is empty, since Odoo's unlink rejects an
+// empty id list.
+func (h *ImagesHandler) DeleteProductImages(ctx context.Context, credentials Credentials, ids []int64) error {
+	if len(ids) == 0 {
+		return nil
+	}
+
+	params := map[string]any{
+		"ids": ids,
+	}
+
+	return h.client.Call(ctx, credentials, "product.image", "unlink", params, nil)
+}

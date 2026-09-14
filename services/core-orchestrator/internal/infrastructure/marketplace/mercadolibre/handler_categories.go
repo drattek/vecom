@@ -156,9 +156,26 @@ type CategoryRequiredAttribute struct {
 
 // IsListType reports whether attr's value must be sent as one of a fixed,
 // MercadoLibre-defined set of options (value_id) rather than free text
-// (value_name) — true for "list" and "string_list" value_type.
+// (value_name): always for "list"/"string_list" value_type, and for a plain
+// "string" value_type that both ships a closed "values" catalogue AND is
+// marked required. MercadoLibre does expose enum-like attributes as
+// "string"+values (e.g. SIDE — "Lado": Delantero/Trasero — in some autopart
+// categories), and a required one must travel as a value_id from that list.
+// The required guard is deliberate: the API also exposes many *optional*
+// "string"+values attributes (COLOR's ~50 colours, ORIGIN, the SAT tax keys)
+// whose whole option list would otherwise be mirrored into ecom_attribute_options
+// on every publish just to sit unused — those stay free text. "boolean"/
+// "number" value_types keep their own handling even with a values array
+// (e.g. IS_KIT).
 func (attr CategoryRequiredAttribute) IsListType() bool {
-	return attr.ValueType == "list" || attr.ValueType == "string_list"
+	switch attr.ValueType {
+	case "list", "string_list":
+		return true
+	case "string":
+		return len(attr.Values) > 0 && attr.Tags.Required
+	default:
+		return false
+	}
 }
 
 // GetCategoryAttributes calls MercadoLibre's public (no access token

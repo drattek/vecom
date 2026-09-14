@@ -223,8 +223,33 @@ func (h *ItemsHandler) UpdateItemStatus(ctx context.Context, req UpdateItemStatu
 	return h.putItem(ctx, req.AccessToken, req.ExternalID, payload)
 }
 
+// UpdateItemPicturesRequest carries a full replacement pictures array for an
+// already-listed item — see UpdateItemPictures.
+type UpdateItemPicturesRequest struct {
+	AccessToken string
+	ExternalID  string
+	Pictures    []ItemPicture
+}
+
+// UpdateItemPictures calls PUT /items/{id} with only the pictures field, a
+// partial update like UpdateItemShipping/UpdateItemStatus, so it doesn't
+// touch price/stock/category or anything else already set on the listing.
+// Pictures is sent as a full replacement — MercadoLibre reorders/removes any
+// picture not present in it — so callers must always pass every picture the
+// listing should end up with (see sync.MercadoLibreProductSyncService.Resync),
+// never just the ones being added.
+func (h *ItemsHandler) UpdateItemPictures(ctx context.Context, req UpdateItemPicturesRequest) error {
+	payload, err := json.Marshal(struct {
+		Pictures []ItemPicture `json:"pictures"`
+	}{Pictures: req.Pictures})
+	if err != nil {
+		return fmt.Errorf("error encoding mercadolibre item pictures update request: %w", err)
+	}
+	return h.putItem(ctx, req.AccessToken, req.ExternalID, payload)
+}
+
 // putItem sends payload as the body of a PUT /items/{id} request, shared by
-// UpdateItem, UpdateItemShipping and UpdateItemStatus.
+// UpdateItem, UpdateItemShipping, UpdateItemStatus and UpdateItemPictures.
 func (h *ItemsHandler) putItem(ctx context.Context, accessToken, externalID string, payload []byte) error {
 	log.Printf("mercadolibre items: update payload for %s: %s", externalID, payload)
 
@@ -550,6 +575,53 @@ func (h *ItemsHandler) CreateItemDescription(ctx context.Context, req CreateItem
 
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
 		return fmt.Errorf("mercadolibre item description create failed: %w", parseItemAPIError(response.StatusCode, responsePayload))
+	}
+
+	return nil
+}
+
+type UpdateItemDescriptionRequest struct {
+	AccessToken string
+	ExternalID  string
+	PlainText   string
+}
+
+// UpdateItemDescription calls PUT /items/{externalID}/description to
+// replace an already-listed item's description — unlike
+// CreateItemDescription (POST, for an item with no description resource
+// yet), this targets one that was already created at Publish time. Used by
+// sync.MercadoLibreProductSyncService.Resync, which runs only against
+// already-published listings.
+func (h *ItemsHandler) UpdateItemDescription(ctx context.Context, req UpdateItemDescriptionRequest) error {
+	payload, err := json.Marshal(struct {
+		PlainText string `json:"plain_text"`
+	}{PlainText: req.PlainText})
+	if err != nil {
+		return fmt.Errorf("error encoding mercadolibre item description update request: %w", err)
+	}
+
+	requestURL := fmt.Sprintf("%s/items/%s/description", h.client.baseURL, req.ExternalID)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPut, requestURL, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("error creating mercadolibre item description update request: %w", err)
+	}
+
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+req.AccessToken)
+
+	response, err := h.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("error calling mercadolibre item description update endpoint: %w", err)
+	}
+	defer response.Body.Close()
+
+	responsePayload, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("error reading mercadolibre item description update response: %w", err)
+	}
+
+	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
+		return fmt.Errorf("mercadolibre item description update failed: %w", parseItemAPIError(response.StatusCode, responsePayload))
 	}
 
 	return nil

@@ -105,3 +105,49 @@ func (h *ChannelListingsHandler) RefreshListings(w http.ResponseWriter, r *http.
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(result)
 }
+
+type resyncChannelListingsRequest struct {
+	ConnectionID int64 `json:"connectionId"`
+	ProductID    int64 `json:"productId"`
+}
+
+// ResyncListings accepts a connectionId and productId and pushes every field
+// that connection's channel allows changing on an already-published listing
+// (not just price/stock, and not gated on whether anything actually
+// changed) to every ecom_channel_product_map row already recorded for that
+// (product, connection) pair — see channel_listings.Service.
+// ResyncProductListings. Driven by the "Resincronizar" button on the
+// product detail page's Sincronización section; scoped to a single product,
+// unlike RefreshListings which sweeps every product on a connection.
+func (h *ChannelListingsHandler) ResyncListings(w http.ResponseWriter, r *http.Request) {
+	var req resyncChannelListingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.service.ResyncProductListings(r.Context(), channelListingsApp.ResyncListingsInput{
+		ProductID:    req.ProductID,
+		ConnectionID: req.ConnectionID,
+	})
+	if err != nil {
+		if errors.Is(err, channelListingsApp.ErrInvalidProductID) {
+			writeJSONError(w, http.StatusBadRequest, "invalid productId")
+			return
+		}
+		if errors.Is(err, channelListingsApp.ErrInvalidChannelConnection) {
+			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
+			return
+		}
+		if errors.Is(err, channelListingsApp.ErrNoFullRefresherForChannel) {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}

@@ -13,13 +13,26 @@ var ErrChannelNotFound = errors.New("channel not found")
 var ErrChannelCodeAlreadyExists = errors.New("channel code already exists")
 var ErrChannelInvalidReference = errors.New("channel invalid reference")
 
+// ecom_channels.attribute_scope values (see ADR 0004): "category" — the
+// channel's required attributes depend on the product's category (MercadoLibre);
+// "product" — attributes are per-product, the checklist doesn't require a
+// category (Odoo).
+const (
+	ChannelAttributeScopeCategory = "category"
+	ChannelAttributeScopeProduct  = "product"
+)
+
 type ChannelDTO struct {
-	ID              int64      `json:"id"`
-	Name            string     `json:"name"`
-	Code            string     `json:"code"`
-	Status          string     `json:"status"`
-	IconID          *int64     `json:"iconId,omitempty"`
-	Description     *string    `json:"description,omitempty"`
+	ID          int64   `json:"id"`
+	Name        string  `json:"name"`
+	Code        string  `json:"code"`
+	Status      string  `json:"status"`
+	IconID      *int64  `json:"iconId,omitempty"`
+	Description *string `json:"description,omitempty"`
+	// AttributeScope is ecom_channels.attribute_scope: "category" (the channel's
+	// required attributes depend on the product's category — MercadoLibre) or
+	// "product" (attributes are per-product, not per-category — Odoo). See ADR 0004.
+	AttributeScope  string     `json:"attributeScope"`
 	ConnectionCount int64      `json:"connectionCount"`
 	CreatedBy       int64      `json:"createdBy"`
 	UpdatedBy       *int64     `json:"updatedBy,omitempty"`
@@ -76,6 +89,7 @@ func (r *ChannelRepository) FindPaginated(ctx context.Context, offset, pageSize 
 			c.status,
 			c.icon_id,
 			c.description,
+			c.attribute_scope,
 			COALESCE(cc.connection_count, 0) AS connection_count,
 			c.created_by,
 			c.updated_by,
@@ -135,6 +149,7 @@ func (r *ChannelRepository) FindAll(ctx context.Context) ([]ChannelDTO, error) {
 			c.status,
 			c.icon_id,
 			c.description,
+			c.attribute_scope,
 			COALESCE(cc.connection_count, 0) AS connection_count,
 			c.created_by,
 			c.updated_by,
@@ -183,6 +198,7 @@ func (r *ChannelRepository) FindByID(ctx context.Context, id int64) (*ChannelDTO
 			c.status,
 			c.icon_id,
 			c.description,
+			c.attribute_scope,
 			COALESCE(cc.connection_count, 0) AS connection_count,
 			c.created_by,
 			c.updated_by,
@@ -221,6 +237,7 @@ func (r *ChannelRepository) FindByCode(ctx context.Context, code string) (*Chann
 			c.status,
 			c.icon_id,
 			c.description,
+			c.attribute_scope,
 			COALESCE(cc.connection_count, 0) AS connection_count,
 			c.created_by,
 			c.updated_by,
@@ -360,6 +377,7 @@ func scanChannel(scanner interface{ Scan(dest ...any) error }) (ChannelDTO, erro
 		&channel.Status,
 		&iconID,
 		&description,
+		&channel.AttributeScope,
 		&channel.ConnectionCount,
 		&channel.CreatedBy,
 		&updatedBy,

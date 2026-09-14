@@ -5,6 +5,11 @@
 // channel-attribute, category-map and product-attribute tables — nothing here
 // writes (the UI edits values through the existing /api/products/{id}/attributes
 // endpoints).
+//
+// A channel whose ecom_channels.attribute_scope is "product" (Odoo — see ADR
+// 0004) has attributes that don't depend on the category: the no_category /
+// category_not_mapped short-circuits are skipped and the applicable slots
+// (category_id IS NULL) are listed regardless of the product's category.
 package product_attributes_checklist
 
 import (
@@ -32,6 +37,7 @@ const (
 
 type Service struct {
 	productDetails      *mysqlInfra.ProductDetailsRepository
+	channels            *mysqlInfra.ChannelRepository
 	channelConnections  *mysqlInfra.ChannelConnectionRepository
 	channelCategoryMap  *mysqlInfra.ChannelCategoryMapRepository
 	channelAttributes   *mysqlInfra.ChannelAttributesRepository
@@ -43,6 +49,7 @@ type Service struct {
 
 func NewService(
 	productDetails *mysqlInfra.ProductDetailsRepository,
+	channels *mysqlInfra.ChannelRepository,
 	channelConnections *mysqlInfra.ChannelConnectionRepository,
 	channelCategoryMap *mysqlInfra.ChannelCategoryMapRepository,
 	channelAttributes *mysqlInfra.ChannelAttributesRepository,
@@ -53,6 +60,7 @@ func NewService(
 ) *Service {
 	return &Service{
 		productDetails:      productDetails,
+		channels:            channels,
 		channelConnections:  channelConnections,
 		channelCategoryMap:  channelCategoryMap,
 		channelAttributes:   channelAttributes,
@@ -88,9 +96,13 @@ type AutoCoveredDTO struct {
 }
 
 type ChecklistDTO struct {
-	ConnectionID         int64            `json:"connectionId"`
-	ChannelName          string           `json:"channelName"`
-	ConnectionName       string           `json:"connectionName"`
+	ConnectionID   int64  `json:"connectionId"`
+	ChannelName    string `json:"channelName"`
+	ConnectionName string `json:"connectionName"`
+	// AttributeScope mirrors ecom_channels.attribute_scope ("category" | "product").
+	// "product" (Odoo) means the UI can offer a free-form "add attribute" form
+	// since attributes aren't tied to the category. See ADR 0004.
+	AttributeScope       string           `json:"attributeScope"`
 	CategoryID           *int64           `json:"categoryId,omitempty"`
 	CategoryName         *string          `json:"categoryName,omitempty"`
 	State                string           `json:"state"`
@@ -122,35 +134,53 @@ func (s *Service) GetChecklist(ctx context.Context, productID, connectionID int6
 		return nil, fmt.Errorf("error loading product: %w", err)
 	}
 
+	channel, err := s.channels.FindByID(ctx, connection.ChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
+	}
+	productScope := channel.AttributeScope == mysqlInfra.ChannelAttributeScopeProduct
+
 	out := &ChecklistDTO{
 		ConnectionID:   connectionID,
 		ChannelName:    connection.ChannelName,
 		ConnectionName: connection.Name,
+		AttributeScope: channel.AttributeScope,
 		CategoryID:     general.CategoryID,
 		CategoryName:   general.CategoryName,
 		Items:          make([]ItemDTO, 0),
 		AutoCovered:    make([]AutoCoveredDTO, 0),
 	}
 
-	if general.CategoryID == nil {
+	// slotCategoryID scopes FindApplicable below. For a category-scoped channel
+	// it's the product's category (and a missing category / missing map is a
+	// dead end). For a product-scoped channel (Odoo) it's still passed when
+	// present — a slot may be scoped to it — but its absence is not fatal:
+	// category_id IS NULL slots still apply.
+	var slotCategoryID *int64
+	if general.CategoryID != nil {
+		categoryID := *general.CategoryID
+		slotCategoryID = &categoryID
+
+		categoryMap, mapErr := s.channelCategoryMap.FindByCategoryAndConnection(ctx, categoryID, connectionID)
+		switch {
+		case mapErr == nil:
+			out.ExternalCategoryID = &categoryMap.ExternalCategoryID
+			out.ExternalCategoryName = categoryMap.ExternalCategoryName
+		case errors.Is(mapErr, mysqlInfra.ErrChannelCategoryMapNotFound):
+			if !productScope {
+				out.State = StateCategoryNotMapped
+				return out, nil
+			}
+		default:
+			return nil, fmt.Errorf("error loading category map: %w", mapErr)
+		}
+	} else if !productScope {
 		out.State = StateNoCategory
 		return out, nil
 	}
-	categoryID := *general.CategoryID
-
-	categoryMap, err := s.channelCategoryMap.FindByCategoryAndConnection(ctx, categoryID, connectionID)
-	if err != nil {
-		if errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
-			out.State = StateCategoryNotMapped
-			return out, nil
-		}
-		return nil, fmt.Errorf("error loading category map: %w", err)
-	}
 	out.State = StateOK
-	out.ExternalCategoryID = &categoryMap.ExternalCategoryID
-	out.ExternalCategoryName = categoryMap.ExternalCategoryName
 
-	slots, err := s.channelAttributes.FindApplicable(ctx, connection.ChannelID, &categoryID)
+	slots, err := s.channelAttributes.FindApplicable(ctx, connection.ChannelID, slotCategoryID)
 	if err != nil {
 		return nil, fmt.Errorf("error loading channel attributes: %w", err)
 	}
@@ -200,6 +230,18 @@ func (s *Service) GetChecklist(ctx context.Context, productID, connectionID int6
 		}
 
 		attrID := *m.AttributeID
+
+		// Product-scope (Odoo): the ecom_channel_attributes slots are
+		// channel-wide, not per product, so the full list would be the union of
+		// every attribute ever added on the channel. Only surface the ones this
+		// product actually has a value for — new ones are added through the
+		// "add attribute" form, not by completing a shared list. See ADR 0004.
+		if productScope {
+			if _, hasValue := currentByAttr[attrID]; !hasValue {
+				continue
+			}
+		}
+
 		if existing, ok := itemsByAttr[attrID]; ok {
 			existing.IsRequired = existing.IsRequired || slot.IsRequired
 			if existing.ExternalLabel == nil {

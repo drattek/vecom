@@ -20,6 +20,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"log"
 	"strconv"
 	"strings"
 	"unicode"
@@ -65,6 +66,8 @@ var (
 	ErrInvalidChannelConnection  = errors.New("invalid connectionId")
 	ErrNoPublisherForChannel     = errors.New("no listing publisher registered for this connection's channel")
 	ErrNoRefresherForChannel     = errors.New("no listing refresher registered for this connection's channel")
+	ErrNoFullRefresherForChannel = errors.New("no full resync refresher registered for this connection's channel")
+	ErrInvalidProductID          = errors.New("invalid productId")
 	// ErrChannelListingsNotReady is returned by PublishQueuedProduct, wrapped
 	// with reasonNoStock, when the product has lost its stock between being
 	// enqueued and being processed.
@@ -120,6 +123,20 @@ type Refresher interface {
 // it.
 type StatusSyncer interface {
 	SyncListingStatus(ctx context.Context, connectionID int64) error
+}
+
+// FullRefresher is optionally implemented by a channel's registered
+// Refresher (duck-typed, same as Publisher/Refresher/StatusSyncer — no import
+// cycle) to push, on explicit user request (see ResyncProductListings), every
+// field that channel allows changing on an already-published listing — not
+// just price/stock. Unlike Refresh, Resync is never gated on "did price/stock
+// actually change" — it always calls out when invoked. What counts as
+// "mutable" is channel-specific: MercadoLibre resends attributes/description/
+// pictures but never family_name (title) or category_id, which MercadoLibre
+// rejects changing after creation; Odoo resends title/category/description/
+// attributes/images, all of which it allows changing freely.
+type FullRefresher interface {
+	Resync(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error)
 }
 
 // ListingOutcome reports what happened for one (sku, vehicleFitmentId)
@@ -178,6 +195,7 @@ type Service struct {
 	partNumberSupersessionsRepository     *mysqlInfra.PartNumberSupersessionsRepository
 	publishers                            map[string]Publisher
 	refreshers                            map[string]Refresher
+	fullRefreshers                        map[string]FullRefresher
 }
 
 func NewService(
@@ -207,6 +225,7 @@ func NewService(
 		partNumberSupersessionsRepository:     partNumberSupersessionsRepository,
 		publishers:                            make(map[string]Publisher),
 		refreshers:                            make(map[string]Refresher),
+		fullRefreshers:                        make(map[string]FullRefresher),
 	}
 }
 
@@ -223,6 +242,15 @@ func (s *Service) Register(channelCode string, publisher Publisher) {
 // implement both today.
 func (s *Service) RegisterRefresher(channelCode string, refresher Refresher) {
 	s.refreshers[normalizeChannelCode(channelCode)] = refresher
+}
+
+// RegisterFullRefresher associates a FullRefresher with a channel code
+// (ecom_channels.code, matched case-insensitively) — separate from
+// RegisterRefresher since a plain price/stock refresh and a full resync are
+// independent capabilities, even though MercadoLibre and Odoo's sync
+// services implement both today.
+func (s *Service) RegisterFullRefresher(channelCode string, fullRefresher FullRefresher) {
+	s.fullRefreshers[normalizeChannelCode(channelCode)] = fullRefresher
 }
 
 // CreateListings cleans input.SKUs (trims/strips whitespace, drops
@@ -487,6 +515,99 @@ func (s *Service) refreshOne(ctx context.Context, refresher Refresher, listing *
 	return outcome
 }
 
+// ResyncListingsInput carries the (product, connection) pair whose
+// already-published listings should get every mutable field pushed again —
+// unlike RefreshListingsInput, this is scoped to a single product: it is
+// driven by the "Resincronizar" button on that product's detail page, not a
+// connection-wide batch job.
+type ResyncListingsInput struct {
+	ProductID    int64
+	ConnectionID int64
+}
+
+// ResyncProductListings dispatches every ecom_channel_product_map row
+// already recorded for (input.ProductID, input.ConnectionID) to the
+// FullRefresher registered for that connection's channel (see
+// RegisterFullRefresher), pushing every field that channel allows changing
+// on an already-published listing — not just price/stock, and not gated on
+// whether anything actually changed since the last sync (unlike
+// RefreshListings). One row failing doesn't stop the rest of the batch.
+func (s *Service) ResyncProductListings(ctx context.Context, input ResyncListingsInput) (*RefreshListingsResult, error) {
+	if input.ProductID <= 0 {
+		return nil, ErrInvalidProductID
+	}
+	if input.ConnectionID <= 0 {
+		return nil, ErrInvalidChannelConnection
+	}
+
+	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
+			return nil, ErrInvalidChannelConnection
+		}
+		return nil, fmt.Errorf("error loading connection %d: %w", input.ConnectionID, err)
+	}
+
+	channel, err := s.channelRepository.FindByID(ctx, connection.ChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
+	}
+
+	fullRefresher, ok := s.fullRefreshers[normalizeChannelCode(channel.Code)]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrNoFullRefresherForChannel, channel.Code)
+	}
+
+	listings, err := s.channelProductMapRepository.FindAllByProductAndConnection(ctx, input.ProductID, input.ConnectionID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading channel product map for product %d, connection %d: %w", input.ProductID, input.ConnectionID, err)
+	}
+
+	results := make([]RefreshOutcome, 0, len(listings))
+	for i := range listings {
+		results = append(results, s.resyncOne(ctx, fullRefresher, &listings[i]))
+	}
+
+	return &RefreshListingsResult{Results: results}, nil
+}
+
+// resyncOne loads listing's product and delegates to fullRefresher.Resync —
+// shared by every row ResyncProductListings processes so one bad row
+// (product missing, refresher error) never stops the batch. Mirrors
+// refreshOne exactly, aside from calling Resync instead of Refresh; whether a
+// given listing status (paused/under_review/closed) is worth calling out for
+// at all is left to each channel's own Resync implementation, same as Refresh.
+func (s *Service) resyncOne(ctx context.Context, fullRefresher FullRefresher, listing *mysqlInfra.ChannelProductMapDTO) RefreshOutcome {
+	outcome := RefreshOutcome{ProductID: listing.ProductID}
+
+	externalID := ""
+	if listing.ExternalID != nil {
+		externalID = strings.TrimSpace(*listing.ExternalID)
+	}
+	if externalID == "" {
+		outcome.Skipped = true
+		return outcome
+	}
+	outcome.ExternalID = externalID
+
+	product, err := s.productRepository.FindByID(ctx, listing.ProductID)
+	if err != nil {
+		outcome.Error = fmt.Sprintf("error loading product: %v", err)
+		return outcome
+	}
+	outcome.SKU = product.SKU
+
+	updated, err := fullRefresher.Resync(ctx, product, listing.ConnectionID, listing)
+	if err != nil {
+		outcome.Error = err.Error()
+		return outcome
+	}
+
+	outcome.Updated = updated
+	outcome.Skipped = !updated
+	return outcome
+}
+
 // resolveSuccessionChain returns product and every other product connected
 // to it through ecom_part_number_supersessions, walking the chain in both
 // directions (a part product itself superseded, and any part superseding
@@ -591,17 +712,23 @@ func (s *Service) resolveImageSource(ctx context.Context, member *mysqlInfra.Pro
 func (s *Service) processChainMember(ctx context.Context, publisher Publisher, connection *mysqlInfra.ChannelConnectionDTO, member *mysqlInfra.ProductDTO, chain []*mysqlInfra.ProductDTO, officialStoreID *int64) []ListingOutcome {
 	availableStock, err := s.sumAvailableStock(ctx, member.ID)
 	if err != nil {
-		return []ListingOutcome{{SKU: member.SKU, Error: fmt.Sprintf("error checking product stock: %v", err)}}
+		msg := fmt.Sprintf("error checking product stock: %v", err)
+		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, msg)
+		return []ListingOutcome{{SKU: member.SKU, Error: msg}}
 	}
 	if availableStock <= 0 {
+		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, reasonNoStock)
 		return []ListingOutcome{{SKU: member.SKU, Error: reasonNoStock}}
 	}
 
 	imageSourceProductID, hasImage, err := s.resolveImageSource(ctx, member, chain)
 	if err != nil {
-		return []ListingOutcome{{SKU: member.SKU, Error: fmt.Sprintf("error checking product images: %v", err)}}
+		msg := fmt.Sprintf("error checking product images: %v", err)
+		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, msg)
+		return []ListingOutcome{{SKU: member.SKU, Error: msg}}
 	}
 	if !hasImage {
+		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, reasonNoImage)
 		return []ListingOutcome{{SKU: member.SKU, Error: reasonNoImage}}
 	}
 
@@ -690,13 +817,22 @@ func (s *Service) pooledCompatibilityFitmentIDs(ctx context.Context, chain []*my
 
 // publishOne skips (product, connection, vehicleFitmentID) if it already has
 // a row in ecom_channel_product_map — this flow only ever creates — and
-// otherwise delegates to publisher.Publish.
+// otherwise delegates to publisher.Publish. A failure is recorded on the
+// outcome AND logged: unlike the MercadoLibre Upload path, this one carries
+// errors back only in the JSON response, so without a log line a publish that
+// failed (or whose client disconnected mid-call) leaves no server-side trace.
 func (s *Service) publishOne(ctx context.Context, publisher Publisher, product *mysqlInfra.ProductDTO, connectionID int64, title string, vehicleFitmentID *int64, imageSourceProductID int64, officialStoreID *int64) ListingOutcome {
 	outcome := ListingOutcome{SKU: product.SKU, VehicleFitmentID: vehicleFitmentID, Title: title}
+
+	fitmentLabel := "general"
+	if vehicleFitmentID != nil {
+		fitmentLabel = fmt.Sprintf("fitment %d", *vehicleFitmentID)
+	}
 
 	existing, err := s.channelProductMapRepository.FindByProductConnectionAndFitment(ctx, product.ID, connectionID, vehicleFitmentID)
 	if err != nil && !errors.Is(err, mysqlInfra.ErrChannelProductMapNotFound) {
 		outcome.Error = fmt.Sprintf("error checking existing listing: %v", err)
+		log.Printf("channel_listings: publish sku=%s connection=%d %s failed: %s", product.SKU, connectionID, fitmentLabel, outcome.Error)
 		return outcome
 	}
 	if existing != nil && existing.Status != channelProductMapStatusClosed {
@@ -710,8 +846,10 @@ func (s *Service) publishOne(ctx context.Context, publisher Publisher, product *
 	externalID, missingRequiredAttributes, missingOptionalAttributes, err := publisher.Publish(ctx, product, connectionID, title, vehicleFitmentID, imageSourceProductID, officialStoreID)
 	if err != nil {
 		outcome.Error = err.Error()
+		log.Printf("channel_listings: publish sku=%s connection=%d %s failed: %v", product.SKU, connectionID, fitmentLabel, err)
 		return outcome
 	}
+	log.Printf("channel_listings: publish sku=%s connection=%d %s ok, externalId=%s", product.SKU, connectionID, fitmentLabel, externalID)
 
 	outcome.Success = true
 	outcome.ExternalID = externalID

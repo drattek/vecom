@@ -62,6 +62,12 @@ const (
 var (
 	ErrEmptyMercadoLibreUpload = errors.New("at least one product is required")
 	ErrEmptyMercadoLibreUpdate = errors.New("at least one sku is required")
+	// errMissingRequiredMercadoLibreAttributes is returned by createNewItem
+	// before it calls POST /items when the resolved category has required
+	// custom attributes the product has no value for (or that couldn't be
+	// provisioned). Wrapped with the attribute keys; callers surface it as the
+	// listing outcome's error.
+	errMissingRequiredMercadoLibreAttributes = errors.New("product is missing MercadoLibre-required attribute values")
 )
 
 // UploadItemInput is one {sku, name, vehicleFitmentId} entry from the
@@ -285,15 +291,15 @@ func (s *MercadoLibreProductSyncService) Upload(ctx context.Context, input Uploa
 
 		log.Printf("mercadolibre upload: %s resolved product id=%d, creating item", step, product.ID)
 
-		externalID, missingRequiredAttributes, missingOptionalAttributes, err := s.createItem(ctx, product, input.ConnectionID, name, listingVehicleFitmentID, product.ID, nil, compatDump)
+		// createItem turns a non-empty missingRequiredAttributes into an error
+		// (it would be rejected by MercadoLibre anyway), so only the
+		// non-blocking optional ones come back on the success path.
+		externalID, _, missingOptionalAttributes, err := s.createItem(ctx, product, input.ConnectionID, name, listingVehicleFitmentID, product.ID, nil, compatDump)
 		if err != nil {
 			log.Printf("mercadolibre upload: %s failed: %v", step, err)
 			result.Error = err.Error()
 			results = append(results, result)
 			continue
-		}
-		if len(missingRequiredAttributes) > 0 {
-			log.Printf("mercadolibre upload: %s created with missing required attribute(s): %v", step, missingRequiredAttributes)
 		}
 		if len(missingOptionalAttributes) > 0 {
 			log.Printf("mercadolibre upload: %s created with missing optional attribute(s): %v", step, missingOptionalAttributes)
@@ -324,8 +330,10 @@ func (s *MercadoLibreProductSyncService) Upload(ctx context.Context, input Uploa
 // explicit JSON null, not an omitted field — see CreateItemVals). The
 // returned missingRequiredAttributes/missingOptionalAttributes list any
 // attribute (see resolveCustomAttributes) the product had no value for, split
-// by MercadoLibre's own Tags.Required for that attribute — the item is still
-// created regardless.
+// by MercadoLibre's own Tags.Required for that attribute. A non-empty
+// missingRequiredAttributes fails the publish before the POST /items call
+// (errMissingRequiredMercadoLibreAttributes) — MercadoLibre would reject the
+// item anyway; missingOptionalAttributes never blocks it.
 func (s *MercadoLibreProductSyncService) Publish(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, title string, vehicleFitmentID *int64, imageSourceProductID int64, officialStoreID *int64) (string, []string, []string, error) {
 	// compatDump nil: the channel_listings orchestrator calls Publish once per
 	// (product, fitment); createNewItem's compat push fetches its own dump.
@@ -501,6 +509,137 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 	return true, nil
 }
 
+// Resync implements channel_listings.FullRefresher (duck-typed: no import
+// from that package is needed here) for an already-published MercadoLibre
+// listing. Unlike Refresh, it always calls out (no price/stock-changed gate)
+// and always resends attributes (package dimensions plus category-specific
+// custom attributes — the same building blocks Refresh uses behind
+// mercadoLibreRefreshAttributesEnabled, here unconditional) plus description
+// and pictures. It deliberately never sends FamilyName (title) or
+// CategoryID: MercadoLibre rejects changing either once a listing already
+// exists (title outright on items with sales — see
+// mercadoLibreRefreshFamilyNameEnabled's doc comment; category is treated
+// the same way here, left to RefreshChannelProductMapStatusAndCategory to
+// keep in sync from MercadoLibre's own side instead).
+func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error) {
+	externalID := derefString(listing.ExternalID)
+	if externalID == "" {
+		return false, nil
+	}
+	if listing.Status == mercadoLibreMapStatusPaused || listing.Status == mercadoLibreMapStatusClosed {
+		return false, nil
+	}
+	isUnderReview := listing.Status == mercadoLibreMapStatusUnderReview
+
+	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, mercadoLibreItemCurrencyID)
+	if err != nil {
+		return false, fmt.Errorf("error loading %s currency: %w", mercadoLibreItemCurrencyID, err)
+	}
+
+	basePrice, _, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, product.ID, mxnCurrency.ID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
+			return false, fmt.Errorf("no active price list entry for product %d", product.ID)
+		}
+		return false, fmt.Errorf("error loading effective price for product %d: %w", product.ID, err)
+	}
+
+	stocks, err := s.productStockRepository.FindByProductID(ctx, product.ID)
+	if err != nil {
+		return false, fmt.Errorf("error loading stock for product %d: %w", product.ID, err)
+	}
+
+	finalPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
+	if err != nil {
+		return false, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
+	}
+	finalPrice = applyPinnedSKUPriceOverride(product.SKU, finalPrice)
+
+	qtyAvailable := 0
+	for _, stock := range stocks {
+		qtyAvailable += stock.AvailableQty
+	}
+
+	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
+	if err != nil {
+		return false, fmt.Errorf("error getting mercadolibre access token for connection %d: %w", connectionID, err)
+	}
+
+	externalCategoryID := derefString(listing.ExternalCategoryID)
+
+	attributes := s.resolvePackageAttributes(ctx, product.ID)
+	if externalCategoryID != "" {
+		customAttributes, _, _, err := s.resolveCustomAttributes(ctx, product, connectionID, externalCategoryID)
+		if err != nil {
+			return false, fmt.Errorf("error resolving custom attributes for product %d: %w", product.ID, err)
+		}
+		attributes = append(attributes, customAttributes...)
+	}
+
+	if err := s.itemsHandler.UpdateItem(ctx, mercadoLibreInfra.UpdateItemRequest{
+		AccessToken: accessToken,
+		ExternalID:  externalID,
+		Vals: mercadoLibreInfra.UpdateItemVals{
+			Price:             finalPrice,
+			AvailableQuantity: qtyAvailable,
+			Attributes:        attributes,
+		},
+	}); err != nil {
+		if isUnderReview {
+			log.Printf("mercadolibre: resync — listing %s still under review, leaving status unchanged: %v", externalID, err)
+			return false, nil
+		}
+		return false, fmt.Errorf("error updating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
+	}
+
+	if product.Description != nil && strings.TrimSpace(*product.Description) != "" {
+		if err := s.itemsHandler.UpdateItemDescription(ctx, mercadoLibreInfra.UpdateItemDescriptionRequest{
+			AccessToken: accessToken,
+			ExternalID:  externalID,
+			PlainText:   *product.Description,
+		}); err != nil {
+			return false, fmt.Errorf("error updating mercadolibre item description %s for product %d: %w", externalID, product.ID, err)
+		}
+	}
+
+	images, err := s.productImagesRepository.FindAllByProductID(ctx, product.ID)
+	if err != nil {
+		return false, fmt.Errorf("error loading images for product %d: %w", product.ID, err)
+	}
+	if len(images) > 0 {
+		pictures := make([]mercadoLibreInfra.ItemPicture, 0, len(images))
+		for _, image := range images {
+			file, err := s.filesRepository.FindByID(ctx, image.FileID)
+			if err != nil {
+				return false, fmt.Errorf("error loading file %d for product %d: %w", image.FileID, product.ID, err)
+			}
+			pictures = append(pictures, mercadoLibreInfra.ItemPicture{Source: file.Path})
+		}
+		if err := s.itemsHandler.UpdateItemPictures(ctx, mercadoLibreInfra.UpdateItemPicturesRequest{
+			AccessToken: accessToken,
+			ExternalID:  externalID,
+			Pictures:    pictures,
+		}); err != nil {
+			return false, fmt.Errorf("error updating mercadolibre item pictures %s for product %d: %w", externalID, product.ID, err)
+		}
+	}
+
+	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
+		ProductID:          product.ID,
+		ConnectionID:       connectionID,
+		VehicleFitmentID:   listing.VehicleFitmentID,
+		ListingTitle:       derefString(listing.ListingTitle),
+		ExternalID:         externalID,
+		ExternalCategoryID: externalCategoryID,
+		Status:             mercadoLibreMapStatusSynced,
+		ActorID:            systemMercadoLibreSyncActorID,
+	}); err != nil {
+		return false, fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)
+	}
+
+	return true, nil
+}
+
 // hasExistingFitmentListing reports whether existing already contains a row
 // for fitmentID — nil matching nil (the general listing) or an equal
 // non-nil id (the same vehicle compatibility).
@@ -634,11 +773,11 @@ const omnipartsBrandID int64 = 36
 // Omniparts Official Store in this deployment.
 const omnipartsOfficialStoreID int64 = 71022
 
-// nissanOfficialStoreID is the MercadoLibre official_store_id for the Nissan
-// Official Store in this deployment. Like Omniparts, brand-new Nissan-branded
-// listings are forced onto this store regardless of the official_store_id the
-// publish request carried. See nissanBrandID.
-const nissanOfficialStoreID int64 = 342646
+// Nissan no longer has an Official Store in this deployment: the store that
+// used to back Nissan-branded listings was removed on MercadoLibre's side.
+// Brand-new Nissan listings must now be created with official_store_id = null,
+// so createNewItem forces officialStoreID back to nil for this brand,
+// overriding whatever the publish request carried. See nissanBrandID.
 
 // nissanOriginalSuffix is appended to the title portion of Nissan-branded
 // listings' MercadoLibre family_name — producing "<title> Original <brand>"
@@ -913,10 +1052,12 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 	}
 	log.Printf("mercadolibre upload: product %d — brand resolved: %s", product.ID, brand.Name)
 
-	// Certain brands always go to their own Official Store, regardless of the
-	// official_store_id the publish request carried (nil by default). Any other
-	// brand keeps the request's value (nil = no store). See omnipartsBrandID /
-	// omnipartsOfficialStoreID and nissanBrandID / nissanOfficialStoreID.
+	// Certain brands are pinned to a specific Official Store, regardless of the
+	// official_store_id the publish request carried (nil by default). Nissan is
+	// pinned the other way: its Official Store no longer exists, so its listings
+	// must always go out with official_store_id = null even if the request
+	// carried a value. Any other brand keeps the request's value (nil = no
+	// store). See omnipartsBrandID / omnipartsOfficialStoreID and nissanBrandID.
 	if product.BrandID != nil {
 		switch *product.BrandID {
 		case omnipartsBrandID:
@@ -924,9 +1065,8 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 			officialStoreID = &storeID
 			log.Printf("mercadolibre upload: product %d — brand is Omniparts, forcing official_store_id=%d", product.ID, omnipartsOfficialStoreID)
 		case nissanBrandID:
-			storeID := nissanOfficialStoreID
-			officialStoreID = &storeID
-			log.Printf("mercadolibre upload: product %d — brand is Nissan, forcing official_store_id=%d", product.ID, nissanOfficialStoreID)
+			officialStoreID = nil
+			log.Printf("mercadolibre upload: product %d — brand is Nissan, forcing official_store_id=null (no Official Store)", product.ID)
 		}
 	}
 
@@ -970,6 +1110,17 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		return "", nil, nil, err
 	}
 	attributes = append(attributes, customAttributes...)
+
+	// Stop before the POST when a required custom attribute has no value (or
+	// couldn't be provisioned): MercadoLibre rejects the item with
+	// item.attributes.missing_required anyway, and failing here names exactly
+	// which attributes to fill in (via the product's Atributos checklist or
+	// POST /api/marketplaces/mercadolibre/product-attributes) instead of
+	// surfacing MercadoLibre's opaque 400.
+	if len(missingRequiredAttributes) > 0 {
+		return "", missingRequiredAttributes, missingOptionalAttributes,
+			fmt.Errorf("%w for category %s: %s", errMissingRequiredMercadoLibreAttributes, externalCategoryID, strings.Join(missingRequiredAttributes, ", "))
+	}
 
 	vals := mercadoLibreInfra.CreateItemVals{
 		Price:             finalPrice,
@@ -1056,12 +1207,14 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 // SELLER_SKU, SELLER_PACKAGE_*) are skipped here — createNewItem's caller
 // already sends those directly from product/brand/ecom_product_dimensions
 // data, so adding them again would just duplicate the same key. A
-// custom_attribute slot with no ecom_product_attributes value yet is left out
-// of the payload and reported back in missingRequiredAttributes or
-// missingOptionalAttributes instead (split by outcome.IsRequired, i.e.
-// MercadoLibre's own Tags.Required for that attribute) — MercadoLibre itself
-// decides whether to reject the item over a missing required one; this never
-// blocks publishing.
+// custom_attribute slot with no ecom_product_attributes value yet — and a slot
+// whose provisioning errored (e.g. a data-type conflict), which is otherwise
+// unsendable — is left out of the payload and reported back in
+// missingRequiredAttributes or missingOptionalAttributes instead (split by
+// outcome.IsRequired, i.e. MercadoLibre's own Tags.Required for that
+// attribute). createNewItem then refuses to publish when
+// missingRequiredAttributes is non-empty, since MercadoLibre would reject the
+// item with item.attributes.missing_required anyway.
 func (s *MercadoLibreProductSyncService) resolveCustomAttributes(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, externalCategoryID string) (attributes []mercadoLibreInfra.ItemAttribute, missingRequiredAttributes []string, missingOptionalAttributes []string, err error) {
 	provisioned, err := s.channelAttributeValuesService.ProvisionCategoryAttributes(ctx, channelAttributeValuesApp.ProvisionCategoryAttributesInput{
 		SKU:          product.SKU,
@@ -1074,7 +1227,19 @@ func (s *MercadoLibreProductSyncService) resolveCustomAttributes(ctx context.Con
 	}
 
 	for _, outcome := range provisioned.Results {
-		if outcome.Skipped || outcome.SourceType != "custom_attribute" || outcome.AttributeID == nil {
+		if outcome.Skipped || outcome.SourceType == "system_field" {
+			continue
+		}
+
+		// A slot that didn't resolve to a usable custom_attribute (provisioning
+		// errored — e.g. ErrAttributeDataTypeConflict) can't be sent. Don't drop
+		// it silently: if MercadoLibre marks it required, report it so the
+		// publish is blocked with a message that names it, instead of surfacing
+		// MercadoLibre's opaque 400.
+		if outcome.SourceType != "custom_attribute" || outcome.AttributeID == nil {
+			if outcome.IsRequired {
+				missingRequiredAttributes = append(missingRequiredAttributes, outcome.ExternalKey)
+			}
 			continue
 		}
 

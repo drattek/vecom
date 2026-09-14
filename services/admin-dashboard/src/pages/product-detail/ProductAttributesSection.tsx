@@ -18,7 +18,9 @@ import {
 } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Textarea } from "@/components/ui/textarea"
+import { getServerErrorMessage } from "@/lib/api"
 import {
+    useAddChannelAttributeValue,
     useAttributeChecklist,
     useCardEditor,
     useChannelConnections,
@@ -31,6 +33,7 @@ import {
 import {
     productAttributesSectionSchema,
     productDimensionsPatchSchema,
+    productGeneralSchema,
     productSeoPatchSchema,
     type AttributeChecklistItem,
     type ProductAttributeValue,
@@ -143,6 +146,7 @@ function AttributesChecklistCard({
     assigned: ProductAttributeValue[]
 }) {
     const connections = useChannelConnections()
+    const general = useProductSection(productId, "general", productGeneralSchema)
     const [pickedConnectionId, setPickedConnectionId] = useState<number | null>(readStoredConnectionId)
 
     // Si el usuario no eligió nada, usar la primera conexión disponible.
@@ -226,7 +230,12 @@ function AttributesChecklistCard({
                 />
             ) : (
                 <div className="flex flex-col gap-4">
-                    {checklist.data.requiredMissing > 0 ? (
+                    {checklist.data.attributeScope === "product" ? (
+                        <p className="text-sm text-muted-foreground">
+                            Atributos de este producto para {checklist.data.channelName}. Agregá los que necesites — cada
+                            producto tiene los suyos.
+                        </p>
+                    ) : checklist.data.requiredMissing > 0 ? (
                         <p className="text-sm font-medium text-destructive">
                             {checklist.data.requiredMissing} atributo(s) requerido(s) sin completar
                         </p>
@@ -235,7 +244,14 @@ function AttributesChecklistCard({
                     )}
 
                     {checklist.data.items.length === 0 ? (
-                        <SectionState state="empty" message="El canal no define atributos personalizados para esta categoría." />
+                        <SectionState
+                            state="empty"
+                            message={
+                                checklist.data.attributeScope === "product"
+                                    ? "Este producto todavía no tiene atributos. Agregá el primero abajo."
+                                    : "El canal no define atributos personalizados aplicables a este producto."
+                            }
+                        />
                     ) : (
                         <Table containerClassName="overflow-x-auto">
                             <TableHeader>
@@ -254,6 +270,14 @@ function AttributesChecklistCard({
                         </Table>
                     )}
 
+                    {checklist.data.attributeScope === "product" && connectionId != null && general.data?.sku ? (
+                        <AddCustomAttributeForm
+                            productId={productId}
+                            sku={general.data.sku}
+                            connectionId={connectionId}
+                        />
+                    ) : null}
+
                     {otherAssigned.length > 0 ? (
                         <div className="flex flex-col gap-2">
                             <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -265,6 +289,167 @@ function AttributesChecklistCard({
                 </div>
             )}
         </SectionCard>
+    )
+}
+
+const addAttributeDataTypes = [
+    { value: "text", label: "Texto" },
+    { value: "number", label: "Número" },
+    { value: "boolean", label: "Booleano" },
+    { value: "date", label: "Fecha" },
+] as const
+
+type AddAttributeDataType = (typeof addAttributeDataTypes)[number]["value"]
+
+// Sentinel para "sin elegir" en el <Select> booleano (base-ui no maneja bien "").
+const PICK_NONE = "__pick_none__"
+
+const addAttributeBooleanItems = [
+    { label: "— Elegí —", value: PICK_NONE },
+    { label: "Sí", value: "true" },
+    { label: "No", value: "false" },
+]
+
+/**
+ * Alta libre de un atributo para canales `attributeScope = 'product'` (Odoo):
+ * clave + tipo + valor. Crea toda la cadena (atributo, slot dynamic_field,
+ * mapeo, valor) en una sola llamada y el checklist se refresca solo.
+ */
+function AddCustomAttributeForm({
+    productId,
+    sku,
+    connectionId,
+}: {
+    productId?: string
+    sku: string
+    connectionId: number
+}) {
+    const mutation = useAddChannelAttributeValue(productId)
+    const [key, setKey] = useState("")
+    const [dataType, setDataType] = useState<AddAttributeDataType>("text")
+    const [value, setValue] = useState("")
+    const [error, setError] = useState<string | null>(null)
+
+    const trimmedKey = key.trim()
+    const trimmedValue = value.trim()
+    const canSubmit =
+        trimmedKey !== "" && (dataType === "boolean" ? value !== "" : trimmedValue !== "") && !mutation.isPending
+
+    function submit() {
+        setError(null)
+
+        let typedValue: string | number | boolean
+        switch (dataType) {
+            case "number": {
+                const parsed = Number(trimmedValue)
+                if (!Number.isFinite(parsed)) {
+                    setError("Número inválido")
+                    return
+                }
+                typedValue = parsed
+                break
+            }
+            case "boolean":
+                typedValue = value === "true"
+                break
+            default:
+                typedValue = trimmedValue
+        }
+
+        mutation.mutate(
+            { sku, connectionId, externalKey: trimmedKey, dataType, value: typedValue },
+            {
+                onSuccess: () => {
+                    setKey("")
+                    setValue("")
+                    setDataType("text")
+                },
+                onError: (err) => setError(getServerErrorMessage(err, "No se pudo agregar el atributo.")),
+            },
+        )
+    }
+
+    const valueControl =
+        dataType === "boolean" ? (
+            <Select
+                value={value === "" ? PICK_NONE : value}
+                onValueChange={(next) => setValue(next === PICK_NONE ? "" : (next ?? ""))}
+                items={addAttributeBooleanItems}
+                disabled={mutation.isPending}
+            >
+                <SelectTrigger className="w-full" aria-label="Valor">
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                    <SelectGroup>
+                        {addAttributeBooleanItems.map((option) => (
+                            <SelectItem key={option.value} value={option.value}>
+                                {option.label}
+                            </SelectItem>
+                        ))}
+                    </SelectGroup>
+                </SelectContent>
+            </Select>
+        ) : (
+            <Input
+                type={dataType === "number" ? "number" : dataType === "date" ? "date" : "text"}
+                value={value}
+                onChange={(event) => setValue(event.target.value)}
+                disabled={mutation.isPending}
+                aria-label="Valor"
+                placeholder="Valor"
+            />
+        )
+
+    return (
+        <div className="flex flex-col gap-3 rounded-lg border border-dashed border-border p-3">
+            <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Agregar atributo</p>
+            <div className="grid gap-3 sm:grid-cols-[1fr_10rem_1fr_auto] sm:items-end">
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    Clave
+                    <Input
+                        value={key}
+                        onChange={(event) => setKey(event.target.value)}
+                        disabled={mutation.isPending}
+                        aria-label="Clave del atributo"
+                        placeholder="Ej. Material"
+                    />
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    Tipo
+                    <Select
+                        value={dataType}
+                        onValueChange={(next) => {
+                            setDataType((next as AddAttributeDataType) ?? "text")
+                            setValue("")
+                        }}
+                        items={addAttributeDataTypes.map((option) => ({ label: option.label, value: option.value }))}
+                        disabled={mutation.isPending}
+                    >
+                        <SelectTrigger className="w-full" aria-label="Tipo">
+                            <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent align="start">
+                            <SelectGroup>
+                                {addAttributeDataTypes.map((option) => (
+                                    <SelectItem key={option.value} value={option.value}>
+                                        {option.label}
+                                    </SelectItem>
+                                ))}
+                            </SelectGroup>
+                        </SelectContent>
+                    </Select>
+                </label>
+                <label className="flex flex-col gap-1 text-xs text-muted-foreground">
+                    Valor
+                    {valueControl}
+                </label>
+                <Button size="sm" onClick={submit} disabled={!canSubmit}>
+                    {mutation.isPending ? "Agregando…" : "Agregar"}
+                </Button>
+            </div>
+            <FieldError message={error} />
+        </div>
     )
 }
 

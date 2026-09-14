@@ -138,6 +138,7 @@ func main() {
 	)
 	productAttributeChecklistService := productAttributeChecklistApp.NewService(
 		mysqlRepos.ProductDetailsRepository,
+		mysqlRepos.ChannelRepository,
 		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelCategoryMapRepository,
 		mysqlRepos.ChannelAttributesRepository,
@@ -206,6 +207,7 @@ func main() {
 		db,
 		mysqlRepos.ProductRepository,
 		mysqlRepos.ChannelRepository,
+		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.AttributesRepository,
 		mysqlRepos.AttributeOptionsRepository,
 		mysqlRepos.ChannelAttributesRepository,
@@ -330,6 +332,11 @@ func main() {
 		mysqlRepos.CategoriesRepository,
 		mysqlRepos.ChannelCategoryMapRepository,
 		mysqlRepos.ChannelProductMapRepository,
+		mysqlRepos.ChannelRepository,
+		mysqlRepos.ChannelAttributesRepository,
+		mysqlRepos.ChannelAttributeMapRepository,
+		mysqlRepos.ProductAttributesRepository,
+		mysqlRepos.AttributeOptionsRepository,
 		odooRateLimiter,
 		pricingFormulaCalculator,
 		effectivePriceResolver,
@@ -361,6 +368,8 @@ func main() {
 	channelListingsService.Register("ODOO", odooProductSyncService)
 	channelListingsService.RegisterRefresher("MERCADOLIBRE", mercadoLibreProductSyncService)
 	channelListingsService.RegisterRefresher("ODOO", odooProductSyncService)
+	channelListingsService.RegisterFullRefresher("MERCADOLIBRE", mercadoLibreProductSyncService)
+	channelListingsService.RegisterFullRefresher("ODOO", odooProductSyncService)
 
 	// Listing discovery: once a day scans every product that is ready to
 	// publish (stock, effective price > 0, cover image, category, brand) and

@@ -202,14 +202,21 @@ func (h *ProductsHandler) CreateProduct(ctx context.Context, req CreateProductRe
 // ecom_product_dimensions correction also reaches products already synced
 // to Odoo, not just new ones, and PublicCategIDs (omitempty: left unset,
 // leaving the Odoo category untouched, when the caller has no local category
-// to resolve one from — see OdooProductSyncService.update).
+// to resolve one from — see OdooProductSyncService.update). Image1920 (the
+// cover photo) and DescriptionEcommerce are only populated by a full resync
+// (OdooProductSyncService.Resync) — Image1920 stays omitempty since a
+// failed re-download must never blank out an existing cover, while
+// DescriptionEcommerce is sent as-is (including empty) so clearing
+// ecom_products.description actually clears it in Odoo too.
 type UpdateProductVals struct {
-	QtyAvailable   float64 `json:"qty_available"`
-	ListPrice      float64 `json:"list_price"`
-	Name           string  `json:"name"`
-	Weight         float64 `json:"weight"`
-	Volume         float64 `json:"volume"`
-	PublicCategIDs [][]any `json:"public_categ_ids,omitempty"`
+	QtyAvailable         float64 `json:"qty_available"`
+	ListPrice            float64 `json:"list_price"`
+	Name                 string  `json:"name"`
+	Weight               float64 `json:"weight"`
+	Volume               float64 `json:"volume"`
+	PublicCategIDs       [][]any `json:"public_categ_ids,omitempty"`
+	Image1920            string  `json:"image_1920,omitempty"`
+	DescriptionEcommerce string  `json:"description_ecommerce"`
 }
 
 type UpdateProductRequest struct {

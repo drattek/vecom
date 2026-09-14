@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -22,6 +23,17 @@ import (
 // writes made by this background flow, since there is no authenticated user
 // behind an automated sync (mirrors product_image_import's systemImportUserID).
 const systemOdooSyncActorID int64 = 1
+
+// odooChannelCode is ecom_channels.code for Odoo — used to load the channel's
+// custom-attribute vocabulary (ecom_channel_attributes) when building the
+// website.sale.product.info rows. Mirrors the literal main.go registers the
+// Publisher/Refresher under and channel_attribute_values.mercadoLibreChannelCode.
+const odooChannelCode = "ODOO"
+
+// odooProductInfoSequenceStep spaces out website.sale.product.info.sequence
+// values (10, 20, 30…) so an admin can later slot a manual row between two
+// synced ones in Odoo without renumbering.
+const odooProductInfoSequenceStep = 10
 
 const (
 	odooProductType   = "consu"
@@ -61,10 +73,32 @@ type OdooProductSyncService struct {
 	categoriesRepository         *mysqlInfra.CategoriesRepository
 	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository
 	channelProductMapRepository  *mysqlInfra.ChannelProductMapRepository
-	rateLimiter                  *odooInfra.RateLimiter
-	httpClient                   *http.Client
-	formulaCalculator            *pricingApp.PricingFormulaCalculator
-	effectivePriceResolver       *pricingApp.EffectivePriceResolver
+	// channelRepository/channelAttributesRepository/channelAttributeMapRepository/
+	// productAttributesRepository/attributeOptionsRepository back
+	// resolveProductInfoEntries: reading the custom attributes the ODOO channel
+	// exposes (ecom_channel_attributes with category_id NULL — see ADR 0004) and
+	// whatever value the product already has for each, to push them into Odoo's
+	// website.sale.product.info key/value model.
+	channelRepository             *mysqlInfra.ChannelRepository
+	channelAttributesRepository   *mysqlInfra.ChannelAttributesRepository
+	channelAttributeMapRepository *mysqlInfra.ChannelAttributeMapRepository
+	productAttributesRepository   *mysqlInfra.ProductAttributesRepository
+	attributeOptionsRepository    *mysqlInfra.AttributeOptionsRepository
+	rateLimiter                   *odooInfra.RateLimiter
+	// httpClient downloads image files from wherever ecom_files.path points
+	// (this integration's own storage, not Odoo) — see downloadImageAsBase64.
+	httpClient *http.Client
+	// odooAPIClient is handed to every odooInfra.NewClient(...) call in this
+	// file instead of nil, so every Odoo API call (product.template create/
+	// write, product.image create/search_read/unlink,
+	// website.sale.product.info create/write/unlink) gets a longer timeout
+	// than odooInfra.NewClient's own 15s default — Resync in particular can
+	// chain several of these sequentially (update, search, unlink, N image
+	// creates), and Odoo has been observed taking longer than 15s on a plain
+	// product.image.unlink under load.
+	odooAPIClient          *http.Client
+	formulaCalculator      *pricingApp.PricingFormulaCalculator
+	effectivePriceResolver *pricingApp.EffectivePriceResolver
 }
 
 func NewOdooProductSyncService(
@@ -80,27 +114,38 @@ func NewOdooProductSyncService(
 	categoriesRepository *mysqlInfra.CategoriesRepository,
 	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository,
 	channelProductMapRepository *mysqlInfra.ChannelProductMapRepository,
+	channelRepository *mysqlInfra.ChannelRepository,
+	channelAttributesRepository *mysqlInfra.ChannelAttributesRepository,
+	channelAttributeMapRepository *mysqlInfra.ChannelAttributeMapRepository,
+	productAttributesRepository *mysqlInfra.ProductAttributesRepository,
+	attributeOptionsRepository *mysqlInfra.AttributeOptionsRepository,
 	rateLimiter *odooInfra.RateLimiter,
 	formulaCalculator *pricingApp.PricingFormulaCalculator,
 	effectivePriceResolver *pricingApp.EffectivePriceResolver,
 ) *OdooProductSyncService {
 	return &OdooProductSyncService{
-		credentialsRepository:        credentialsRepository,
-		settingsRepository:           settingsRepository,
-		productRepository:            productRepository,
-		productPricesRepository:      productPricesRepository,
-		productStockRepository:       productStockRepository,
-		productDimensionsRepository:  productDimensionsRepository,
-		productImagesRepository:      productImagesRepository,
-		filesRepository:              filesRepository,
-		currenciesRepository:         currenciesRepository,
-		categoriesRepository:         categoriesRepository,
-		channelCategoryMapRepository: channelCategoryMapRepository,
-		channelProductMapRepository:  channelProductMapRepository,
-		rateLimiter:                  rateLimiter,
-		httpClient:                   &http.Client{Timeout: 20 * time.Second},
-		formulaCalculator:            formulaCalculator,
-		effectivePriceResolver:       effectivePriceResolver,
+		credentialsRepository:         credentialsRepository,
+		settingsRepository:            settingsRepository,
+		productRepository:             productRepository,
+		productPricesRepository:       productPricesRepository,
+		productStockRepository:        productStockRepository,
+		productDimensionsRepository:   productDimensionsRepository,
+		productImagesRepository:       productImagesRepository,
+		filesRepository:               filesRepository,
+		currenciesRepository:          currenciesRepository,
+		categoriesRepository:          categoriesRepository,
+		channelCategoryMapRepository:  channelCategoryMapRepository,
+		channelProductMapRepository:   channelProductMapRepository,
+		channelRepository:             channelRepository,
+		channelAttributesRepository:   channelAttributesRepository,
+		channelAttributeMapRepository: channelAttributeMapRepository,
+		productAttributesRepository:   productAttributesRepository,
+		attributeOptionsRepository:    attributeOptionsRepository,
+		rateLimiter:                   rateLimiter,
+		httpClient:                    &http.Client{Timeout: 20 * time.Second},
+		odooAPIClient:                 &http.Client{Timeout: 60 * time.Second},
+		formulaCalculator:             formulaCalculator,
+		effectivePriceResolver:        effectivePriceResolver,
 	}
 }
 
@@ -117,9 +162,10 @@ func NewOdooProductSyncService(
 // (product, connection, vehicleFitmentID) has no listing yet before calling
 // Publish. officialStoreID is a MercadoLibre-only concept and is ignored
 // here — it exists solely to satisfy channel_listings.Publisher's signature.
-// The returned missingRequiredAttributes/missingOptionalAttributes are always
-// nil: Odoo has no equivalent of ecom_channel_attributes-tracked attributes
-// today.
+// The returned missingRequiredAttributes/missingOptionalAttributes list the
+// ODOO channel's custom attributes (ecom_channel_attributes) the product has no
+// value for; a non-empty missingRequiredAttributes also aborts the publish
+// before the product.template is created (see create / ADR 0004).
 func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, title string, vehicleFitmentID *int64, imageSourceProductID int64, officialStoreID *int64) (string, []string, []string, error) {
 	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
 	if err != nil {
@@ -137,10 +183,11 @@ func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfr
 	database := values["x-odoo-database"]
 	credentials := odooInfra.Credentials{APIKey: apiKey, Database: database}
 
-	client := odooInfra.NewClient(nil, odooURL, s.rateLimiter)
+	client := odooInfra.NewClient(s.odooAPIClient, odooURL, s.rateLimiter)
 	productsHandler := odooInfra.NewProductsHandler(client)
 	imagesHandler := odooInfra.NewImagesHandler(client)
 	categoriesHandler := odooInfra.NewCategoriesHandler(client)
+	productInfoHandler := odooInfra.NewProductInfoHandler(client)
 
 	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
 	if err != nil {
@@ -164,8 +211,7 @@ func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfr
 		return "", nil, nil, fmt.Errorf("error summing stock for product %d: %w", product.ID, err)
 	}
 
-	externalID, err := s.create(ctx, productsHandler, imagesHandler, categoriesHandler, credentials, product, connectionID, title, vehicleFitmentID, listPrice, qtyAvailable, imageSourceProductID)
-	return externalID, nil, nil, err
+	return s.create(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, credentials, product, connectionID, title, vehicleFitmentID, listPrice, qtyAvailable, imageSourceProductID)
 }
 
 // Refresh implements channel_listings.Refresher (duck-typed: no import from
@@ -224,7 +270,7 @@ func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfr
 	database := values["x-odoo-database"]
 	credentials := odooInfra.Credentials{APIKey: apiKey, Database: database}
 
-	client := odooInfra.NewClient(nil, odooURL, s.rateLimiter)
+	client := odooInfra.NewClient(s.odooAPIClient, odooURL, s.rateLimiter)
 	productsHandler := odooInfra.NewProductsHandler(client)
 
 	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
@@ -238,6 +284,80 @@ func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfr
 	}
 
 	if err := s.updatePriceAndStock(ctx, productsHandler, credentials, connectionID, listing, listPrice, qtyAvailable); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// Resync implements channel_listings.FullRefresher (duck-typed: no import
+// from that package is needed here) for an already-published Odoo listing.
+// Unlike Refresh, it always calls out (no price/stock-changed gate) and
+// delegates to update — the full-field push (title, category, weight/
+// volume, description, images, custom attributes) that already existed for
+// the now-removed channel-agnostic Sync/queue flow, revived here instead of
+// being duplicated. Odoo, unlike MercadoLibre, allows changing every one of
+// these fields on an already-created product.template, so nothing here is
+// held back the way MercadoLibre's Resync holds back title/category.
+func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error) {
+	externalIDStr := derefString(listing.ExternalID)
+	if externalIDStr == "" {
+		return false, nil
+	}
+
+	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
+	if err != nil {
+		return false, fmt.Errorf("error loading %s currency: %w", odooSyncCurrency, err)
+	}
+
+	basePrice, _, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, product.ID, mxnCurrency.ID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
+			return false, fmt.Errorf("no active price list entry for product %d", product.ID)
+		}
+		return false, fmt.Errorf("error loading effective price for product %d: %w", product.ID, err)
+	}
+
+	stocks, err := s.productStockRepository.FindByProductID(ctx, product.ID)
+	if err != nil {
+		return false, fmt.Errorf("error loading stock for product %d: %w", product.ID, err)
+	}
+
+	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
+	if err != nil {
+		return false, fmt.Errorf("error loading odoo connection %d: %w", connectionID, err)
+	}
+
+	odooURL, ok := values["odoo_url"]
+	if !ok || odooURL == "" {
+		return false, fmt.Errorf("%w: odoo_url", ErrMissingOdooSettings)
+	}
+	apiKey, ok := values["apikey"]
+	if !ok || apiKey == "" {
+		return false, fmt.Errorf("%w: ApiKey", ErrMissingOdooCredentials)
+	}
+	database := values["x-odoo-database"]
+	credentials := odooInfra.Credentials{APIKey: apiKey, Database: database}
+
+	client := odooInfra.NewClient(s.odooAPIClient, odooURL, s.rateLimiter)
+	productsHandler := odooInfra.NewProductsHandler(client)
+	imagesHandler := odooInfra.NewImagesHandler(client)
+	categoriesHandler := odooInfra.NewCategoriesHandler(client)
+	productInfoHandler := odooInfra.NewProductInfoHandler(client)
+
+	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
+	if err != nil {
+		return false, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
+	}
+
+	qtyAvailable := 0.0
+	for _, stock := range stocks {
+		qtyAvailable += float64(stock.AvailableQty)
+	}
+
+	title := resolveOdooRefreshTitle(listing, product)
+
+	if err := s.update(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, credentials, connectionID, product, listing, title, listPrice, qtyAvailable); err != nil {
 		return false, err
 	}
 
@@ -315,7 +435,9 @@ func (s *OdooProductSyncService) updatePriceAndStock(
 func (s *OdooProductSyncService) update(
 	ctx context.Context,
 	productsHandler *odooInfra.ProductsHandler,
+	imagesHandler *odooInfra.ImagesHandler,
 	categoriesHandler *odooInfra.CategoriesHandler,
+	productInfoHandler *odooInfra.ProductInfoHandler,
 	credentials odooInfra.Credentials,
 	connectionID int64,
 	product *mysqlInfra.ProductDTO,
@@ -333,12 +455,21 @@ func (s *OdooProductSyncService) update(
 
 	weight, volume := s.resolveDimensions(ctx, productID)
 
+	// DescriptionEcommerce mirrors create's own rule: an empty
+	// ecom_products.description clears the field in Odoo too (UpdateProductVals
+	// sends it with no omitempty), rather than leaving a stale one behind.
+	var descriptionEcommerce string
+	if product.Description != nil && strings.TrimSpace(*product.Description) != "" {
+		descriptionEcommerce = *product.Description
+	}
+
 	vals := odooInfra.UpdateProductVals{
-		QtyAvailable: qtyAvailable,
-		ListPrice:    listPrice,
-		Name:         title,
-		Weight:       weight,
-		Volume:       volume,
+		QtyAvailable:         qtyAvailable,
+		ListPrice:            listPrice,
+		Name:                 title,
+		Weight:               weight,
+		Volume:               volume,
+		DescriptionEcommerce: descriptionEcommerce,
 	}
 
 	externalCategoryID := derefString(existingMap.ExternalCategoryID)
@@ -351,12 +482,72 @@ func (s *OdooProductSyncService) update(
 		externalCategoryID = strconv.FormatInt(resolvedCategoryID, 10)
 	}
 
+	// Images are reloaded from product.ID's current ecom_product_images —
+	// resync only ever targets a product's own already-published listing, so
+	// there's no image-source borrowing to consider here (unlike create/
+	// channel_listings.resolveImageSource). A missing cover image is left
+	// alone (Image1920 stays unset — omitempty) rather than blanking out
+	// whatever cover Odoo already has; extra images are always resynced when
+	// there is a cover to key them to.
+	images, err := s.productImagesRepository.FindAllByProductID(ctx, productID)
+	if err != nil {
+		return fmt.Errorf("error loading images for product %d: %w", productID, err)
+	}
+
+	var coverImage *mysqlInfra.ProductImageDTO
+	extraImages := make([]mysqlInfra.ProductImageDTO, 0, len(images))
+	for i := range images {
+		if images[i].IsFirst && coverImage == nil {
+			coverImage = &images[i]
+			continue
+		}
+		extraImages = append(extraImages, images[i])
+	}
+
+	if coverImage != nil {
+		coverImageBase64, err := s.downloadImageAsBase64(ctx, coverImage.FileID)
+		if err != nil {
+			return fmt.Errorf("error downloading cover image for product %d: %w", productID, err)
+		}
+		vals.Image1920 = coverImageBase64
+	}
+
 	if err := productsHandler.UpdateProduct(ctx, odooInfra.UpdateProductRequest{
 		Credentials: credentials,
 		ExternalID:  externalID,
 		Vals:        vals,
 	}); err != nil {
 		return fmt.Errorf("error updating odoo product %d (local product %d): %w", externalID, productID, err)
+	}
+
+	if coverImage != nil {
+		// Clear out every product.image row already attached to this template
+		// before recreating them from ecom_product_images' current state — the
+		// simplest way to keep a repeated resync idempotent (no duplicate
+		// photos accumulating across runs) without diffing old vs new.
+		existingImageIDs, err := imagesHandler.SearchProductImageIDs(ctx, credentials, externalID)
+		if err != nil {
+			return fmt.Errorf("error listing existing odoo images for product %d (odoo template %d): %w", productID, externalID, err)
+		}
+		if err := imagesHandler.DeleteProductImages(ctx, credentials, existingImageIDs); err != nil {
+			return fmt.Errorf("error deleting existing odoo images for product %d (odoo template %d): %w", productID, externalID, err)
+		}
+		for i, image := range extraImages {
+			imageBase64, err := s.downloadImageAsBase64(ctx, image.FileID)
+			if err != nil {
+				return fmt.Errorf("error downloading image %d for product %d: %w", image.ID, productID, err)
+			}
+			if err := imagesHandler.CreateProductImage(ctx, odooInfra.CreateProductImageRequest{
+				Credentials: credentials,
+				Vals: odooInfra.CreateProductImageVals{
+					ProductTemplateID: externalID,
+					Image1920:         imageBase64,
+					Name:              fmt.Sprintf("%s_%d", product.SKU, i+1),
+				},
+			}); err != nil {
+				return fmt.Errorf("error uploading image %d for odoo product %d: %w", image.ID, externalID, err)
+			}
+		}
 	}
 
 	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
@@ -370,6 +561,20 @@ func (s *OdooProductSyncService) update(
 		ActorID:            systemOdooSyncActorID,
 	}); err != nil {
 		return fmt.Errorf("error recording channel product map for product %d: %w", productID, err)
+	}
+
+	// Re-sync website.sale.product.info on a full update, same as the category is
+	// re-resolved above. Unlike create this never aborts on a missing required
+	// attribute — the listing already exists; a cleared value just drops its row.
+	infoEntries, managedInfoKeys, missingRequired, _, err := s.resolveProductInfoEntries(ctx, product, connectionID)
+	if err != nil {
+		return fmt.Errorf("error resolving odoo custom attributes for product %d: %w", productID, err)
+	}
+	if len(missingRequired) > 0 {
+		log.Printf("odoo update: product %d (odoo template %d) — missing required attributes not sent: %s", productID, externalID, strings.Join(missingRequired, ", "))
+	}
+	if err := s.syncProductInfo(ctx, productInfoHandler, credentials, externalID, infoEntries, managedInfoKeys); err != nil {
+		return fmt.Errorf("error syncing odoo product info for product %d (odoo template %d): %w", productID, externalID, err)
 	}
 
 	return nil
@@ -401,11 +606,19 @@ func resolveOdooRefreshTitle(existingMap *mysqlInfra.ChannelProductMapDTO, produ
 // can point this at a different product in product's succession chain
 // (ecom_part_number_supersessions) when product itself has no cover image of
 // its own.
+//
+// Custom attributes: the ODOO channel's ecom_channel_attributes are resolved
+// against the product's values (resolveProductInfoEntries) and, once the
+// product.template exists, written into Odoo's website.sale.product.info
+// key/value model (syncProductInfo). A required attribute with no value aborts
+// the whole publish before the product.template is created — same criterion as
+// MercadoLibre's createNewItem. See ADR 0004.
 func (s *OdooProductSyncService) create(
 	ctx context.Context,
 	productsHandler *odooInfra.ProductsHandler,
 	imagesHandler *odooInfra.ImagesHandler,
 	categoriesHandler *odooInfra.CategoriesHandler,
+	productInfoHandler *odooInfra.ProductInfoHandler,
 	credentials odooInfra.Credentials,
 	product *mysqlInfra.ProductDTO,
 	connectionID int64,
@@ -413,12 +626,21 @@ func (s *OdooProductSyncService) create(
 	vehicleFitmentID *int64,
 	listPrice, qtyAvailable float64,
 	imageSourceProductID int64,
-) (string, error) {
+) (string, []string, []string, error) {
 	title = normalizeOdooTitle(title, product.PartNumber)
+
+	infoEntries, managedInfoKeys, missingRequired, missingOptional, err := s.resolveProductInfoEntries(ctx, product, connectionID)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("error resolving odoo custom attributes for product %d: %w", product.ID, err)
+	}
+	if len(missingRequired) > 0 {
+		return "", missingRequired, missingOptional,
+			fmt.Errorf("%w for product %d: %s", ErrMissingRequiredOdooAttributes, product.ID, strings.Join(missingRequired, ", "))
+	}
 
 	images, err := s.productImagesRepository.FindAllByProductID(ctx, imageSourceProductID)
 	if err != nil {
-		return "", fmt.Errorf("error loading images for product %d: %w", imageSourceProductID, err)
+		return "", missingRequired, missingOptional, fmt.Errorf("error loading images for product %d: %w", imageSourceProductID, err)
 	}
 
 	var coverImage *mysqlInfra.ProductImageDTO
@@ -432,21 +654,21 @@ func (s *OdooProductSyncService) create(
 	}
 
 	if coverImage == nil {
-		return "", fmt.Errorf("%w: product %d has no cover image (is_first) (image source product %d)", workers.ErrSyncNotReady, product.ID, imageSourceProductID)
+		return "", missingRequired, missingOptional, fmt.Errorf("%w: product %d has no cover image (is_first) (image source product %d)", workers.ErrSyncNotReady, product.ID, imageSourceProductID)
 	}
 
 	coverImageBase64, err := s.downloadImageAsBase64(ctx, coverImage.FileID)
 	if err != nil {
-		return "", fmt.Errorf("error downloading cover image for product %d: %w", product.ID, err)
+		return "", missingRequired, missingOptional, fmt.Errorf("error downloading cover image for product %d: %w", product.ID, err)
 	}
 
 	if product.CategoryID == nil {
-		return "", fmt.Errorf("%w: product %d has no category", workers.ErrSyncNotReady, product.ID)
+		return "", missingRequired, missingOptional, fmt.Errorf("%w: product %d has no category", workers.ErrSyncNotReady, product.ID)
 	}
 
 	externalCategoryID, err := s.resolveOdooCategory(ctx, categoriesHandler, credentials, *product.CategoryID, connectionID)
 	if err != nil {
-		return "", fmt.Errorf("error resolving odoo category for product %d: %w", product.ID, err)
+		return "", missingRequired, missingOptional, fmt.Errorf("error resolving odoo category for product %d: %w", product.ID, err)
 	}
 
 	weight, volume := s.resolveDimensions(ctx, product.ID)
@@ -481,7 +703,7 @@ func (s *OdooProductSyncService) create(
 
 	externalID, err := productsHandler.CreateProduct(ctx, odooInfra.CreateProductRequest{Credentials: credentials, Vals: vals})
 	if err != nil {
-		return "", fmt.Errorf("error creating odoo product for %d: %w", product.ID, err)
+		return "", missingRequired, missingOptional, fmt.Errorf("error creating odoo product for %d: %w", product.ID, err)
 	}
 	externalIDStr := strconv.FormatInt(externalID, 10)
 
@@ -494,13 +716,21 @@ func (s *OdooProductSyncService) create(
 		Status:           odooSyncedStatus,
 		ActorID:          systemOdooSyncActorID,
 	}); err != nil {
-		return "", fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)
+		return "", missingRequired, missingOptional, fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)
+	}
+
+	// website.sale.product.info is synced after the map row is recorded (like the
+	// extra-images loop below): a failure here is reported so the queue row is
+	// marked failed, but the listing itself already exists — the next full Sync
+	// (update) re-syncs the key/value rows.
+	if err := s.syncProductInfo(ctx, productInfoHandler, credentials, externalID, infoEntries, managedInfoKeys); err != nil {
+		return "", missingRequired, missingOptional, fmt.Errorf("error syncing odoo product info for product %d (odoo template %d): %w", product.ID, externalID, err)
 	}
 
 	for i, image := range extraImages {
 		imageBase64, err := s.downloadImageAsBase64(ctx, image.FileID)
 		if err != nil {
-			return "", fmt.Errorf("error downloading image %d for product %d: %w", image.ID, product.ID, err)
+			return "", missingRequired, missingOptional, fmt.Errorf("error downloading image %d for product %d: %w", image.ID, product.ID, err)
 		}
 
 		if err := imagesHandler.CreateProductImage(ctx, odooInfra.CreateProductImageRequest{
@@ -511,11 +741,11 @@ func (s *OdooProductSyncService) create(
 				Name:              fmt.Sprintf("%s_%d", product.SKU, i+1),
 			},
 		}); err != nil {
-			return "", fmt.Errorf("error uploading image %d for odoo product %d: %w", image.ID, externalID, err)
+			return "", missingRequired, missingOptional, fmt.Errorf("error uploading image %d for odoo product %d: %w", image.ID, externalID, err)
 		}
 	}
 
-	return externalIDStr, nil
+	return externalIDStr, missingRequired, missingOptional, nil
 }
 
 // normalizeOdooTitle applies Odoo's own naming convention to a listing
@@ -641,6 +871,209 @@ func (s *OdooProductSyncService) resolveOdooCategory(
 	}
 
 	return externalID, nil
+}
+
+// odooProductInfoEntry is one resolved website.sale.product.info key/value pair
+// ready to push to Odoo.
+type odooProductInfoEntry struct {
+	Key   string
+	Value string
+}
+
+// resolveProductInfoEntries reads every custom attribute the ODOO channel
+// exposes (ecom_channel_attributes — channel-wide category_id NULL slots, plus
+// any scoped to product's own category — see ADR 0004) and builds the
+// website.sale.product.info rows to push:
+//
+//   - source_type 'custom_attribute' → the product's own ecom_product_attributes
+//     value, rendered as text; a slot the product has no value for is simply
+//     skipped (the slots are channel-wide, so this is expected), unless it's
+//     explicitly is_required, which goes to missingRequired and aborts.
+//   - source_type 'static_value'     → the fixed value, same for every product.
+//   - source_type 'system_field'     → skipped: that data already reaches Odoo
+//     through product.template fields (default_code, name, category, dimensions),
+//     matching resolveCustomAttributes on the MercadoLibre side.
+//
+// managedKeys is the set of external_key values across every applicable slot —
+// syncProductInfo only ever deletes rows whose key is in this set, so keys added
+// by hand in Odoo survive.
+func (s *OdooProductSyncService) resolveProductInfoEntries(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64) (entries []odooProductInfoEntry, managedKeys map[string]bool, missingRequired, missingOptional []string, err error) {
+	channel, err := s.channelRepository.FindByCode(ctx, odooChannelCode)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("error loading %s channel: %w", odooChannelCode, err)
+	}
+
+	slots, err := s.channelAttributesRepository.FindApplicable(ctx, channel.ID, product.CategoryID)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("error loading %s channel attributes: %w", odooChannelCode, err)
+	}
+
+	productAttrs, err := s.productAttributesRepository.FindByProductID(ctx, product.ID)
+	if err != nil {
+		return nil, nil, nil, nil, fmt.Errorf("error loading attributes for product %d: %w", product.ID, err)
+	}
+	valueByAttr := make(map[int64]mysqlInfra.ProductAttributeDTO, len(productAttrs))
+	for _, pa := range productAttrs {
+		valueByAttr[pa.AttributeID] = pa
+	}
+
+	managedKeys = make(map[string]bool)
+	entries = make([]odooProductInfoEntry, 0, len(slots))
+	seenKey := make(map[string]bool)
+
+	for _, slot := range slots {
+		if slot.ExternalKey == nil {
+			continue
+		}
+		key := strings.TrimSpace(*slot.ExternalKey)
+		if key == "" || seenKey[key] {
+			// FindApplicable returns category-specific rows before channel-wide
+			// ones; the first slot seen for a key wins, mirroring the checklist.
+			continue
+		}
+		seenKey[key] = true
+		managedKeys[key] = true
+
+		m, mapErr := s.channelAttributeMapRepository.FindByChannelAttributeAndConnection(ctx, slot.ID, connectionID)
+		if mapErr != nil {
+			if errors.Is(mapErr, mysqlInfra.ErrChannelAttributeMapNotFound) {
+				continue
+			}
+			return nil, nil, nil, nil, fmt.Errorf("error resolving channel attribute map for slot %d: %w", slot.ID, mapErr)
+		}
+
+		switch m.SourceType {
+		case "static_value":
+			if m.StaticValue != nil && strings.TrimSpace(*m.StaticValue) != "" {
+				entries = append(entries, odooProductInfoEntry{Key: key, Value: strings.TrimSpace(*m.StaticValue)})
+			}
+		case "custom_attribute":
+			if m.AttributeID == nil {
+				continue
+			}
+			rendered := ""
+			if value, ok := valueByAttr[*m.AttributeID]; ok {
+				r, renderErr := s.renderProductAttributeValue(ctx, value)
+				if renderErr != nil {
+					return nil, nil, nil, nil, fmt.Errorf("error rendering attribute %d for product %d: %w", *m.AttributeID, product.ID, renderErr)
+				}
+				rendered = r
+			}
+			if strings.TrimSpace(rendered) == "" {
+				// The slots are channel-wide, not per product (ADR 0004): a
+				// product simply not having a value for one is the norm, not a
+				// gap to report. Only a slot explicitly flagged is_required (rare;
+				// SetValue never sets it) blocks the publish.
+				if slot.IsRequired {
+					missingRequired = append(missingRequired, key)
+				}
+				continue
+			}
+			entries = append(entries, odooProductInfoEntry{Key: key, Value: rendered})
+		default:
+			// system_field (and anything else): not pushed to website.sale.product.info.
+			continue
+		}
+	}
+
+	return entries, managedKeys, missingRequired, missingOptional, nil
+}
+
+// renderProductAttributeValue renders whichever typed column an
+// ecom_product_attributes row has set as the plain text Odoo's
+// website.sale.product.info.info_value (a Char) expects — mirrors
+// product_attributes_checklist.renderAttributeValue. An enum option is sent by
+// its display value: Odoo's key/value model has no closed lists or value ids.
+func (s *OdooProductSyncService) renderProductAttributeValue(ctx context.Context, pa mysqlInfra.ProductAttributeDTO) (string, error) {
+	switch {
+	case pa.OptionID != nil:
+		option, err := s.attributeOptionsRepository.FindByID(ctx, *pa.OptionID)
+		if err != nil {
+			if errors.Is(err, mysqlInfra.ErrAttributeOptionNotFound) {
+				return "", nil
+			}
+			return "", err
+		}
+		return strings.TrimSpace(option.Value), nil
+	case pa.ValueText != nil:
+		return strings.TrimSpace(*pa.ValueText), nil
+	case pa.ValueNumber != nil:
+		return strconv.FormatFloat(*pa.ValueNumber, 'f', -1, 64), nil
+	case pa.ValueBool != nil:
+		if *pa.ValueBool {
+			return "Sí", nil
+		}
+		return "No", nil
+	case pa.ValueDate != nil:
+		return pa.ValueDate.Format(time.DateOnly), nil
+	}
+	return "", nil
+}
+
+// syncProductInfo reconciles Odoo's website.sale.product.info rows for
+// productTmplID against entries: values that changed are written, missing keys
+// are created, and rows whose key is in managedKeys but no longer in entries (a
+// cleared attribute value) are deleted. Rows with keys outside managedKeys —
+// added by hand in Odoo — are never touched. The unique (product_tmpl_id,
+// info_key) in the Odoo plugin makes the create/write split safe. See ADR 0004.
+func (s *OdooProductSyncService) syncProductInfo(
+	ctx context.Context,
+	handler *odooInfra.ProductInfoHandler,
+	credentials odooInfra.Credentials,
+	productTmplID int64,
+	entries []odooProductInfoEntry,
+	managedKeys map[string]bool,
+) error {
+	current, err := handler.SearchReadByProductTemplate(ctx, credentials, productTmplID)
+	if err != nil {
+		return fmt.Errorf("error loading website.sale.product.info for template %d: %w", productTmplID, err)
+	}
+
+	currentByKey := make(map[string]odooInfra.ProductInfoRecord, len(current))
+	for _, row := range current {
+		currentByKey[string(row.InfoKey)] = row
+	}
+
+	desiredKeys := make(map[string]bool, len(entries))
+	toCreate := make([]odooInfra.CreateProductInfoVals, 0)
+
+	for i, entry := range entries {
+		desiredKeys[entry.Key] = true
+		sequence := (i + 1) * odooProductInfoSequenceStep
+
+		existing, ok := currentByKey[entry.Key]
+		if !ok {
+			toCreate = append(toCreate, odooInfra.CreateProductInfoVals{
+				ProductTmplID: productTmplID,
+				InfoKey:       entry.Key,
+				InfoValue:     entry.Value,
+				Sequence:      sequence,
+			})
+			continue
+		}
+		if string(existing.InfoValue) != entry.Value {
+			if err := handler.WriteProductInfo(ctx, credentials, existing.ID, odooInfra.UpdateProductInfoVals{InfoValue: entry.Value}); err != nil {
+				return fmt.Errorf("error updating website.sale.product.info %q for template %d: %w", entry.Key, productTmplID, err)
+			}
+		}
+	}
+
+	if _, err := handler.CreateProductInfo(ctx, credentials, toCreate); err != nil {
+		return fmt.Errorf("error creating website.sale.product.info rows for template %d: %w", productTmplID, err)
+	}
+
+	staleIDs := make([]int64, 0)
+	for _, row := range current {
+		key := string(row.InfoKey)
+		if managedKeys[key] && !desiredKeys[key] {
+			staleIDs = append(staleIDs, row.ID)
+		}
+	}
+	if err := handler.UnlinkProductInfo(ctx, credentials, staleIDs); err != nil {
+		return fmt.Errorf("error deleting stale website.sale.product.info rows for template %d: %w", productTmplID, err)
+	}
+
+	return nil
 }
 
 func (s *OdooProductSyncService) sumAvailableStock(ctx context.Context, productID int64) (float64, error) {
