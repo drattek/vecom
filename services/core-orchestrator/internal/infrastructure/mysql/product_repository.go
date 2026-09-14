@@ -159,8 +159,11 @@ func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize 
 	}
 	if pendingOnly {
 		// Pending = ready to be prepared for a channel sync: has stock and at
-		// least one image. Not tied to any particular connection or mapping
-		// status.
+		// least one image, and isn't already live somewhere — a product with
+		// an active/under_review/paused listing on any connection is excluded
+		// even if it could still gain more listings on other connections; a
+		// 'pending' or 'error' listing doesn't count as "already live", so the
+		// product still shows up here to be retried.
 		filterClause += ` AND COALESCE((
 			SELECT SUM(ps2.available_qty) FROM ecom_product_stock ps2
 			WHERE ps2.product_id = ecom_products.id
@@ -168,6 +171,11 @@ func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize 
 		AND EXISTS (
 			SELECT 1 FROM ecom_product_images pi2
 			WHERE pi2.product_id = ecom_products.id AND pi2.deleted_at IS NULL
+		)
+		AND NOT EXISTS (
+			SELECT 1 FROM ecom_channel_product_map cpm3
+			WHERE cpm3.product_id = ecom_products.id AND cpm3.deleted_at IS NULL
+			  AND cpm3.status IN ('synced', 'under_review', 'paused')
 		)`
 	}
 

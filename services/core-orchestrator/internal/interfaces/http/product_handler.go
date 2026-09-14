@@ -72,9 +72,9 @@ func (h *ProductHandler) GetProducts(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// pending selects products that are stocked and have at least one image
-	// but aren't necessarily mapped to a channel connection yet — the ones
-	// ready to be prepared for a marketplace sync.
+	// pending selects products that are stocked, have at least one image, and
+	// have no active/under_review/paused listing on any channel connection
+	// yet — the ones ready to be prepared for a marketplace sync.
 	pendingOnly := r.URL.Query().Get("pending") == "true"
 
 	// Get products from service
