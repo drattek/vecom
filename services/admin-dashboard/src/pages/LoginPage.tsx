@@ -2,6 +2,9 @@ import { useState, type FormEvent } from 'react'
 import { Navigate, useLocation, useNavigate } from 'react-router-dom'
 import { useAuth } from '../auth/AuthContext.tsx'
 import { apiClient, getServerErrorMessage } from '../lib/api.ts'
+import { Button } from '../components/ui/button.tsx'
+import { Input } from '../components/ui/input.tsx'
+import { Label } from '../components/ui/label.tsx'
 import type { LoginResponse } from '../types/auth.ts'
 
 interface LoginRequest {
@@ -17,6 +20,8 @@ export function LoginPage() {
   const location = useLocation()
   const [username, setUsername] = useState('')
   const [password, setPassword] = useState('')
+  // Sin funcionalidad por el momento: solo se conserva el control visual.
+  const [rememberMe, setRememberMe] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
   const [errorMessage, setErrorMessage] = useState('')
 
@@ -60,49 +65,105 @@ export function LoginPage() {
   }
 
   return (
-    <main className="page-shell">
-      <section className="auth-card" aria-labelledby="login-title">
-        <p className="eyebrow">Admins Dashboard</p>
-        <h1 id="login-title" className="title">
-          Iniciar sesion
-        </h1>
-        <p className="subtitle">Accede con tu credenciales para administrar productos.</p>
-
-        <form onSubmit={handleSubmit} noValidate>
-          <div className="field">
-            <label htmlFor="username">Usuario</label>
-            <input
-              id="username"
-              autoComplete="username"
-              value={username}
-              onChange={(event) => setUsername(event.target.value)}
-              disabled={isLoading}
-            />
+    <main className="grid min-h-svh w-full bg-[var(--bg)] p-4 lg:p-6">
+      <div className="mx-auto grid w-full max-w-6xl overflow-hidden rounded-xl border border-[var(--line)] bg-[var(--surface)] shadow-[var(--shadow)] lg:grid-cols-2">
+        {/* Panel del formulario */}
+        <div className="flex flex-col px-6 py-10 sm:px-12 lg:px-16 lg:py-14">
+          {/* Espacio reservado para el logo (pendiente) */}
+          <div className="mb-12 flex h-10 items-center">
+            <div
+              className="flex h-10 w-36 items-center justify-center rounded-md border border-dashed border-[var(--line)] text-xs font-medium text-muted-foreground"
+              aria-label="Espacio reservado para el logo"
+            >
+              Logo
+            </div>
           </div>
 
-          <div className="field">
-            <label htmlFor="password">Contrasena</label>
-            <input
-              id="password"
-              type="password"
-              autoComplete="current-password"
-              value={password}
-              onChange={(event) => setPassword(event.target.value)}
-              disabled={isLoading}
-            />
+          <div className="flex flex-1 flex-col justify-center">
+            <div className="mx-auto w-full max-w-sm">
+              <h1
+                className="text-2xl font-bold tracking-tight text-[var(--text)]"
+                style={{ fontFamily: 'var(--font-heading)' }}
+              >
+                Inicia sesion en tu cuenta
+              </h1>
+              <p className="mt-1.5 text-sm text-muted-foreground">
+                Ingresa tus datos para continuar.
+              </p>
+
+              <form onSubmit={handleSubmit} noValidate className="mt-8 space-y-5">
+                <div className="space-y-2">
+                  <Label htmlFor="username">Usuario</Label>
+                  <Input
+                    id="username"
+                    autoComplete="username"
+                    placeholder="Ingresa tu usuario"
+                    value={username}
+                    onChange={(event) => setUsername(event.target.value)}
+                    disabled={isLoading}
+                    className="h-10"
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="password">Contrasena</Label>
+                  <Input
+                    id="password"
+                    type="password"
+                    autoComplete="current-password"
+                    placeholder="Ingresa tu contrasena"
+                    value={password}
+                    onChange={(event) => setPassword(event.target.value)}
+                    disabled={isLoading}
+                    className="h-10"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between">
+                  <label className="flex items-center gap-2 text-sm text-[var(--text)] select-none">
+                    <input
+                      type="checkbox"
+                      checked={rememberMe}
+                      onChange={(event) => setRememberMe(event.target.checked)}
+                      className="size-4 rounded border-[var(--line)] accent-[var(--brand)]"
+                    />
+                    Recordarme
+                  </label>
+
+                  <button
+                    type="button"
+                    className="text-sm font-medium text-[var(--brand)] hover:underline"
+                    onClick={(event) => event.preventDefault()}
+                  >
+                    Olvide mi contrasena
+                  </button>
+                </div>
+
+                {errorMessage && (
+                  <p className="text-sm text-[var(--danger)]" role="alert">
+                    {errorMessage}
+                  </p>
+                )}
+
+                <Button
+                  type="submit"
+                  size="lg"
+                  disabled={isLoading}
+                  className="h-10 w-full"
+                >
+                  {isLoading ? 'Ingresando...' : 'Iniciar sesion'}
+                </Button>
+              </form>
+            </div>
           </div>
+        </div>
 
-          {errorMessage && (
-            <p className="error-text" role="alert">
-              {errorMessage}
-            </p>
-          )}
-
-          <button className="submit" type="submit" disabled={isLoading}>
-            {isLoading ? 'Ingresando...' : 'Entrar'}
-          </button>
-        </form>
-      </section>
+        {/* Espacio reservado para la imagen lateral (pendiente) */}
+        <div
+          className="hidden bg-muted lg:block"
+          aria-hidden="true"
+        />
+      </div>
     </main>
   )
 }
