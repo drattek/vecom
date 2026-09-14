@@ -3,8 +3,14 @@
 // showing whatever ecom_channel_product_map already has for that product on
 // that connection — plus, on connections where allows_multiple_listings is
 // true, which of the product's vehicle compatibilities still have no listing
-// at all (shown as pending). Nothing here writes; publishing/republishing
-// stays in internal/application/channel_listings.
+// at all (shown as pending). The one exception is a Nissan-branded product:
+// channel_listings.publishReady never fans it out per vehicle fitment (it
+// always publishes a single general listing, even on an
+// allows_multiple_listings connection), so this view mirrors that — a Nissan
+// product is reported as if the connection were single-listing, with no
+// per-fitment pending rows, so the UI doesn't promise publications that will
+// never be created. Nothing here writes; publishing/republishing stays in
+// internal/application/channel_listings.
 package product_sync
 
 import (
@@ -25,6 +31,13 @@ var (
 // loaded per product when computing pending publications, mirroring
 // channel_listings.maxCompatibilitiesPerSKU.
 const maxCompatibilitiesForSync = 500
+
+// nissanBrandID is ecom_brands.id for "Nissan" in this deployment's seed data
+// — hardcoded rather than resolved by name/code, mirroring the identically
+// named constants in application/sync and application/channel_listings. A
+// Nissan product never fans out into per-fitment listings (see
+// channel_listings.publishReady), so this view treats it as single-listing.
+const nissanBrandID int64 = 1
 
 type Service struct {
 	products                    *mysqlInfra.ProductRepository
@@ -102,12 +115,18 @@ func (s *Service) GetSync(ctx context.Context, productID int64) (*ProductSyncDTO
 		return nil, ErrInvalidInput
 	}
 
-	if _, err := s.products.FindByID(ctx, productID); err != nil {
+	product, err := s.products.FindByID(ctx, productID)
+	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 			return nil, ErrProductNotFound
 		}
 		return nil, fmt.Errorf("error loading product: %w", err)
 	}
+
+	// A Nissan product publishes a single general listing regardless of the
+	// connection's allows_multiple_listings (see channel_listings.publishReady),
+	// so it is never fanned out per vehicle fitment here either.
+	isNissan := product.BrandID != nil && *product.BrandID == nissanBrandID
 
 	connections, err := s.channelConnections.FindAllActive(ctx)
 	if err != nil {
@@ -122,7 +141,7 @@ func (s *Service) GetSync(ctx context.Context, productID int64) (*ProductSyncDTO
 	out := &ProductSyncDTO{Connections: make([]ConnectionSyncDTO, 0, len(connections))}
 
 	for _, connection := range connections {
-		connectionSync, err := s.buildConnectionSync(ctx, productID, connection, fitmentIDs, compatByFitment)
+		connectionSync, err := s.buildConnectionSync(ctx, productID, connection, isNissan, fitmentIDs, compatByFitment)
 		if err != nil {
 			return nil, err
 		}
@@ -159,15 +178,22 @@ func (s *Service) buildConnectionSync(
 	ctx context.Context,
 	productID int64,
 	connection mysqlInfra.ChannelConnectionDTO,
+	isNissan bool,
 	fitmentIDs []int64,
 	compatByFitment map[int64]mysqlInfra.ProductVehicleCompatibilityDTO,
 ) (*ConnectionSyncDTO, error) {
+	// A Nissan product is reported as single-listing even on an
+	// allows_multiple_listings connection, so both the flag the UI branches on
+	// and the per-fitment pending computation below use this instead of
+	// connection.AllowsMultipleListings directly.
+	fansOutPerFitment := connection.AllowsMultipleListings && !isNissan
+
 	out := &ConnectionSyncDTO{
 		ConnectionID:           connection.ID,
 		ChannelName:            connection.ChannelName,
 		ConnectionName:         connection.Name,
 		Environment:            connection.Environment,
-		AllowsMultipleListings: connection.AllowsMultipleListings,
+		AllowsMultipleListings: fansOutPerFitment,
 		Listings:               make([]ListingDTO, 0),
 		Pending:                make([]CompatibilityDTO, 0),
 	}
@@ -189,7 +215,7 @@ func (s *Service) buildConnectionSync(
 		}
 	}
 
-	if connection.AllowsMultipleListings {
+	if fansOutPerFitment {
 		for _, fitmentID := range fitmentIDs {
 			if publishedFitments[fitmentID] {
 				continue
