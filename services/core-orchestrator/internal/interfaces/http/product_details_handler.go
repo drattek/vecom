@@ -189,6 +189,21 @@ func (h *ProductDetailsHandler) GetAttributes(w http.ResponseWriter, r *http.Req
 	writeJSONResponse(w, attributes)
 }
 
+func (h *ProductDetailsHandler) GetCompatibilities(w http.ResponseWriter, r *http.Request) {
+	productID, ok := parseDetailProductID(w, r)
+	if !ok {
+		return
+	}
+
+	compatibilities, err := h.service.GetCompatibilities(r.Context(), productID)
+	if err != nil {
+		writeProductDetailsError(w, err)
+		return
+	}
+
+	writeJSONResponse(w, compatibilities)
+}
+
 // PatchDimensions hace un upsert de la sección Dimensiones (crea la fila si no
 // existe) y devuelve la sección Atributos completa refrescada.
 func (h *ProductDetailsHandler) PatchDimensions(w http.ResponseWriter, r *http.Request) {

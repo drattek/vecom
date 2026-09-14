@@ -264,6 +264,10 @@ func NewRouter(
 		protected.Get("/api/products/{productId}/details/inventory/movements", productDetailsHandler.GetStockMovements)
 		protected.Get("/api/products/{productId}/details/part-numbers", productDetailsHandler.GetPartNumbers)
 		protected.Get("/api/products/{productId}/details/attributes", productDetailsHandler.GetAttributes)
+		// Vista de Compatibilidades: las compatibilidades de vehículo del
+		// producto (fitment resuelto a marca/modelo/años) con motor/posición/
+		// lado. Solo lectura.
+		protected.Get("/api/products/{productId}/details/compatibilities", productDetailsHandler.GetCompatibilities)
 		// Checklist de atributos que un canal espera para la categoría del producto
 		// (requerido/opcional + valor actual). ?connectionId=N obligatorio.
 		protected.Get("/api/products/{productId}/details/attributes/checklist", productAttributeChecklistHandler.GetChecklist)

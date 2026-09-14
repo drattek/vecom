@@ -968,6 +968,77 @@ func (r *ProductDetailsRepository) FindAttributes(ctx context.Context, productID
 	return section, rows.Err()
 }
 
+// --- Compatibilidades ----------------------------------------------------------
+
+// ProductVehicleCompatibilityDetailDTO is one vehicle fitment the product is
+// compatible with, with the fitment's brand/model/year already resolved and the
+// per-product qualifiers (motor/position/side) from the join table.
+type ProductVehicleCompatibilityDetailDTO struct {
+	ID               int64     `json:"id"`
+	VehicleFitmentID int64     `json:"vehicleFitmentId"`
+	BrandName        *string   `json:"brandName,omitempty"`
+	Model            string    `json:"model"`
+	YearStart        int       `json:"yearStart"`
+	YearEnd          *int      `json:"yearEnd,omitempty"`
+	Motor            *string   `json:"motor,omitempty"`
+	Position         *string   `json:"position,omitempty"`
+	Side             *string   `json:"side,omitempty"`
+	CreatedAt        time.Time `json:"createdAt"`
+}
+
+type ProductCompatibilitiesSectionDTO struct {
+	Vehicles []ProductVehicleCompatibilityDetailDTO `json:"vehicles"`
+}
+
+func (r *ProductDetailsRepository) FindCompatibilities(ctx context.Context, productID int64) (*ProductCompatibilitiesSectionDTO, error) {
+	section := &ProductCompatibilitiesSectionDTO{
+		Vehicles: make([]ProductVehicleCompatibilityDetailDTO, 0),
+	}
+
+	const query = `
+		SELECT pvc.id, pvc.vehicle_fitment_id, b.name AS brand_name,
+		       vf.model, vf.year_start, vf.year_end,
+		       pvc.motor, pvc.position, pvc.side, pvc.created_at
+		FROM ecom_product_vehicle_compatibility pvc
+		JOIN ecom_vehicle_fitments vf ON vf.id = pvc.vehicle_fitment_id AND vf.deleted_at IS NULL
+		LEFT JOIN ecom_brands b ON b.id = vf.brand_id AND b.deleted_at IS NULL
+		WHERE pvc.product_id = ? AND pvc.deleted_at IS NULL
+		ORDER BY b.name ASC, vf.model ASC, vf.year_start ASC
+	`
+	rows, err := r.db.QueryContext(ctx, query, productID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying product vehicle compatibilities: %w", err)
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var (
+			c                     ProductVehicleCompatibilityDetailDTO
+			brandName             sql.NullString
+			yearEnd               sql.NullInt64
+			motor, position, side sql.NullString
+		)
+		if err := rows.Scan(
+			&c.ID, &c.VehicleFitmentID, &brandName,
+			&c.Model, &c.YearStart, &yearEnd,
+			&motor, &position, &side, &c.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning product vehicle compatibility: %w", err)
+		}
+		c.BrandName = nullStringPtr(brandName)
+		c.Motor = nullStringPtr(motor)
+		c.Position = nullStringPtr(position)
+		c.Side = nullStringPtr(side)
+		if yearEnd.Valid {
+			year := int(yearEnd.Int64)
+			c.YearEnd = &year
+		}
+		section.Vehicles = append(section.Vehicles, c)
+	}
+
+	return section, rows.Err()
+}
+
 // nullStringPtr returns nil for a NULL/empty column and a pointer to its value
 // otherwise, so optional text fields serialize as absent instead of "".
 func nullStringPtr(value sql.NullString) *string {

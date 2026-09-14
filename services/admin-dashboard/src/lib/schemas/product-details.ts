@@ -405,6 +405,32 @@ export type SyncListing = z.infer<typeof syncListingSchema>
 export type SyncConnection = z.infer<typeof syncConnectionSchema>
 export type ProductSyncSection = z.infer<typeof productSyncSectionSchema>
 
+// --- Compatibilidades ------------------------------------------------------
+// GET /api/products/{id}/details/compatibilities — solo lectura: las
+// compatibilidades de vehículo del producto, con el fitment ya resuelto a
+// marca/modelo/años y los calificadores motor/posición/lado de la tabla de
+// enlace.
+
+export const productVehicleCompatibilitySchema = z.object({
+  id: z.number(),
+  vehicleFitmentId: z.number(),
+  brandName: z.string().nullish(),
+  model: z.string(),
+  yearStart: z.number(),
+  yearEnd: z.number().nullish(),
+  motor: z.string().nullish(),
+  position: z.string().nullish(),
+  side: z.string().nullish(),
+  createdAt: z.string(),
+})
+
+export const productCompatibilitiesSectionSchema = z.object({
+  vehicles: z.array(productVehicleCompatibilitySchema),
+})
+
+export type ProductVehicleCompatibility = z.infer<typeof productVehicleCompatibilitySchema>
+export type ProductCompatibilitiesSection = z.infer<typeof productCompatibilitiesSectionSchema>
+
 // Publicar el producto en una conexión sin sincronización todavía (botón
 // "Publicar" de la vista Sincronización) — POST /api/channel-listings/publish
 // con { connectionId, skus: [sku] }. Puede devolver más de un resultado si la

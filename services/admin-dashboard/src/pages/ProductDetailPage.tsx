@@ -22,6 +22,7 @@ const sections = [
     { label: "Inventario", path: "inventory" },
     { label: "Números de parte", path: "part-numbers" },
     { label: "Atributos", path: "attributes" },
+    { label: "Compatibilidades", path: "compatibilities" },
     { label: "Sincronización", path: "sync" },
 ]
 

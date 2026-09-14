@@ -254,6 +254,17 @@ func (s *Service) GetAttributes(ctx context.Context, productID int64) (*mysqlInf
 	return s.repository.FindAttributes(ctx, productID)
 }
 
+// GetCompatibilities devuelve, en solo lectura, las compatibilidades de
+// vehículo del producto (fitment resuelto a marca/modelo/años) junto con los
+// calificadores motor/posición/lado de la tabla de enlace.
+func (s *Service) GetCompatibilities(ctx context.Context, productID int64) (*mysqlInfra.ProductCompatibilitiesSectionDTO, error) {
+	if productID <= 0 {
+		return nil, ErrInvalidProductID
+	}
+
+	return s.repository.FindCompatibilities(ctx, productID)
+}
+
 // UpdateDimensionsInput lleva las medidas editables de la sección Dimensiones,
 // tal como llegan del formulario (texto). Todas son obligatorias: la edición
 // manda la sección completa. El volumen no se recibe: lo calcula el repositorio
