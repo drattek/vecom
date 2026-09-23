@@ -61,62 +61,44 @@ func findOrCreateDynamicsSource(ctx context.Context, repo *mysqlRepo.SourcesRepo
 	})
 }
 
-// ProcessERPProduct crea o actualiza el producto en ecom_products a partir de un
-// EcomProductDTO leído de Redis. A diferencia del sync de Nissan, este evento no trae
-// sucursal/almacén: no hay stock ni precio que sincronizar, solo el producto.
+// ProcessERPProduct crea el producto en ecom_products a partir de un EcomProductDTO leído
+// de Redis la primera vez que aparece un SKU. Si el SKU ya existe, esta fila nunca se toca
+// (mismo criterio que el sync de Nissan, ver nissanSyncTx.run): no se pisa curación manual
+// hecha desde el admin-dashboard (marca, categoría, status, descripción, e incluso
+// name/part_number/product_type, que antes se resincronizaban desde el ERP en cada corrida).
+// A diferencia del sync de Nissan, este evento no trae sucursal/almacén: no hay stock ni
+// precio que sincronizar, solo el producto — el stock/precio de un SKU existente se
+// sincroniza aparte, vía ProcessERPStock (stock.sync.completed).
 func (s *SyncService) ProcessERPProduct(ctx context.Context, product *domain.Product, cache *erpSyncCache) error {
 	productRepo := mysqlRepo.NewProductRepository(s.db)
-	productType := erpProductType(product.Group)
 
-	existing, err := productRepo.FindBySKU(ctx, product.Code)
-	if errors.Is(err, mysqlRepo.ErrProductNotFound) {
-		log.Printf("Creating product %s in MySQL (partNumber=%s, name=%q, type=%s, source=%s)", product.Code, product.PartNumber, product.Description, productType, dynamicsSourceCode)
-
-		created, err := productRepo.Create(ctx, mysqlRepo.CreateProductInput{
-			SKU:         product.Code,
-			PartNumber:  product.PartNumber,
-			Name:        product.Description,
-			ProductType: productType,
-			IsSellable:  true,
-			IsStockable: true,
-			SourceID:    cache.sourceID,
-			CreatedBy:   systemUserID,
-		})
-		if err != nil {
-			return fmt.Errorf("creating product %s: %w", product.Code, err)
-		}
-
-		log.Printf("Created product %s in MySQL (id=%d)", product.Code, created.ID)
+	_, err := productRepo.FindBySKU(ctx, product.Code)
+	if err == nil {
 		return nil
 	}
-	if err != nil {
+	if !errors.Is(err, mysqlRepo.ErrProductNotFound) {
 		return fmt.Errorf("looking up product %s: %w", product.Code, err)
 	}
 
-	log.Printf("Updating product %s in MySQL (id=%d, partNumber=%s, name=%q, type=%s, source=%s)", product.Code, existing.ID, product.PartNumber, product.Description, productType, dynamicsSourceCode)
+	productType := erpProductType(product.Group)
 
-	// Preserva campos que no pertenecen a este sync (marca, categoría, status, descripción
-	// larga) para no pisar curación manual hecha desde el admin-dashboard.
-	_, err = productRepo.Update(ctx, existing.ID, mysqlRepo.UpdateProductInput{
-		SKU:              product.Code,
-		PartNumber:       product.PartNumber,
-		Name:             product.Description,
-		Description:      existing.Description,
-		ShortDescription: existing.ShortDescription,
-		BrandID:          existing.BrandID,
-		CategoryID:       existing.CategoryID,
-		ProductType:      productType,
-		Status:           existing.Status,
-		IsSellable:       existing.IsSellable,
-		IsStockable:      existing.IsStockable,
-		SourceID:         cache.sourceID,
-		UpdatedBy:        systemUserID,
+	log.Printf("Creating product %s in MySQL (partNumber=%s, name=%q, type=%s, source=%s)", product.Code, product.PartNumber, product.Description, productType, dynamicsSourceCode)
+
+	created, err := productRepo.Create(ctx, mysqlRepo.CreateProductInput{
+		SKU:         product.Code,
+		PartNumber:  product.PartNumber,
+		Name:        product.Description,
+		ProductType: productType,
+		IsSellable:  true,
+		IsStockable: true,
+		SourceID:    cache.sourceID,
+		CreatedBy:   systemUserID,
 	})
 	if err != nil {
-		return fmt.Errorf("updating product %s: %w", product.Code, err)
+		return fmt.Errorf("creating product %s: %w", product.Code, err)
 	}
 
-	log.Printf("Updated product %s in MySQL (id=%d)", product.Code, existing.ID)
+	log.Printf("Created product %s in MySQL (id=%d)", product.Code, created.ID)
 	return nil
 }
 
