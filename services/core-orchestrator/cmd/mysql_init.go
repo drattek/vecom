@@ -55,6 +55,7 @@ type MySQLRepositories struct {
 	MeliNotificationRepository                *mysqlInfra.MeliNotificationRepository
 	ProductDetailsRepository                  *mysqlInfra.ProductDetailsRepository
 	ChannelProductCategorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository
+	UsersRepository                           *mysqlInfra.UsersRepository
 }
 
 func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
@@ -107,6 +108,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 	meliNotificationRepository := mysqlInfra.NewMeliNotificationRepository(db)
 	productDetailsRepository := mysqlInfra.NewProductDetailsRepository(db)
 	channelProductCategorySelectionRepository := mysqlInfra.NewChannelProductCategorySelectionRepository(db)
+	usersRepository := mysqlInfra.NewUsersRepository(db)
 
 	return &MySQLRepositories{
 		ProductRepository:                         productRepository,
@@ -156,5 +158,6 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 		MeliNotificationRepository:                meliNotificationRepository,
 		ProductDetailsRepository:                  productDetailsRepository,
 		ChannelProductCategorySelectionRepository: channelProductCategorySelectionRepository,
+		UsersRepository:                           usersRepository,
 	}
 }

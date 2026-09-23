@@ -44,6 +44,7 @@ import (
 	stockMovementsApp "core-orchestrator/internal/application/stock_movements"
 	storageDisksService "core-orchestrator/internal/application/storage_disks"
 	syncApp "core-orchestrator/internal/application/sync"
+	usersApp "core-orchestrator/internal/application/users"
 	"core-orchestrator/internal/config"
 	banxicoInfra "core-orchestrator/internal/infrastructure/banxico"
 	mercadoLibreInfra "core-orchestrator/internal/infrastructure/marketplace/mercadolibre"
@@ -105,6 +106,7 @@ func main() {
 		cfg.JWTTTLMinutes,
 	)
 	brandService := brandsApp.NewBrandService(db, mysqlRepos.BrandsRepository, mysqlRepos.ProductRepository)
+	userService := usersApp.NewUserService(db, mysqlRepos.UsersRepository)
 	categoryService := categoriesApp.NewCategoryService(
 		db,
 		mysqlRepos.CategoriesRepository,
@@ -425,6 +427,7 @@ func main() {
 	authHandler := httpHandler.NewAuthHandler(authService)
 	authMiddleware := httpHandler.NewJWTMiddleware(authService)
 	brandHandler := httpHandler.NewBrandHandler(brandService)
+	userHandler := httpHandler.NewUserHandler(userService)
 	categoryHandler := httpHandler.NewCategoryHandler(categoryService)
 	categoryImportHandler := httpHandler.NewCategoryImportHandler(categoryImportService)
 	currencyHandler := httpHandler.NewCurrencyHandler(currencyService)
@@ -608,6 +611,7 @@ func main() {
 		mercadoLibreCategoriesDebugHandler,
 		mercadoLibreMigrateSyncItemMeliHandler,
 		productCategorySelectionHandler,
+		userHandler,
 		mercadoLibreImageDownloadHandler,
 	)
 

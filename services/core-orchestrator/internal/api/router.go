@@ -70,6 +70,7 @@ func NewRouter(
 	mercadoLibreCategoriesDebugHandler *httpHandler.MercadoLibreCategoriesDebugHandler,
 	mercadoLibreMigrateSyncItemMeliHandler *httpHandler.MercadoLibreMigrateSyncItemMeliHandler,
 	productCategorySelectionHandler *httpHandler.ProductCategorySelectionHandler,
+	userHandler *httpHandler.UserHandler,
 	mercadoLibreImageDownloadHandler *httpHandler.MercadoLibreImageDownloadHandler,
 ) http.Handler {
 
@@ -151,6 +152,12 @@ func NewRouter(
 		// Bulk brand assignment by SKU (creates missing brands, name always
 		// uppercased) — see brands.BrandService.BulkAssignBrands.
 		protected.Post("/api/brands/bulk-assign", brandHandler.BulkAssignBrands)
+
+		// Users endpoints (admin "Usuarios" page). No role gating yet — same
+		// RequireAuth-only criterion as every other route here; see
+		// application/users package doc.
+		protected.Get("/api/users", userHandler.GetUsers)
+		protected.Post("/api/users", userHandler.CreateUser)
 
 		// Categories endpoints
 		protected.Get("/api/categories", categoryHandler.GetCategories)
