@@ -10,6 +10,8 @@ import (
 	"strings"
 
 	migrationApp "core-orchestrator/internal/application/migration"
+	syncApp "core-orchestrator/internal/application/sync"
+	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
 
 // MigrationHandler exposes one-off data-completion endpoints under
@@ -17,20 +19,23 @@ import (
 // integration endpoints and are expected to be removed once the underlying
 // data migration is complete.
 type MigrationHandler struct {
-	odooCategoryMigrationService     *migrationApp.OdooCategoryMigrationService
-	vecomSyncProductMigrationService *migrationApp.VecomSyncProductMigrationService
-	vecomImagesMigrationService      *migrationApp.VecomImagesMigrationService
+	odooCategoryMigrationService      *migrationApp.OdooCategoryMigrationService
+	vecomSyncProductMigrationService  *migrationApp.VecomSyncProductMigrationService
+	vecomImagesMigrationService       *migrationApp.VecomImagesMigrationService
+	mercadoLibreListingsImportService *migrationApp.MercadoLibreListingsImportService
 }
 
 func NewMigrationHandler(
 	odooCategoryMigrationService *migrationApp.OdooCategoryMigrationService,
 	vecomSyncProductMigrationService *migrationApp.VecomSyncProductMigrationService,
 	vecomImagesMigrationService *migrationApp.VecomImagesMigrationService,
+	mercadoLibreListingsImportService *migrationApp.MercadoLibreListingsImportService,
 ) *MigrationHandler {
 	return &MigrationHandler{
-		odooCategoryMigrationService:     odooCategoryMigrationService,
-		vecomSyncProductMigrationService: vecomSyncProductMigrationService,
-		vecomImagesMigrationService:      vecomImagesMigrationService,
+		odooCategoryMigrationService:      odooCategoryMigrationService,
+		vecomSyncProductMigrationService:  vecomSyncProductMigrationService,
+		vecomImagesMigrationService:       vecomImagesMigrationService,
+		mercadoLibreListingsImportService: mercadoLibreListingsImportService,
 	}
 }
 
@@ -177,6 +182,84 @@ func (h *MigrationHandler) MigrateVecomImages(w http.ResponseWriter, r *http.Req
 	if err != nil {
 		log.Printf("vecom images migration failed: %v", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}
+
+// importMercadoLibreListingsProductRequest is one MercadoLibre listing to
+// import — field names match what MercadoLibre itself calls them
+// (meli_id, category_id), since that's the shape the caller has on hand.
+type importMercadoLibreListingsProductRequest struct {
+	SKU         string   `json:"sku"`
+	Name        string   `json:"name"`
+	MeliID      string   `json:"meli_id"`
+	CategoryID  string   `json:"category_id"`
+	PartNumber  string   `json:"part_number"`
+	Description string   `json:"description"`
+	Images      []string `json:"images"`
+}
+
+type importMercadoLibreListingsRequest struct {
+	ConnectionID int64                                      `json:"connectionId"`
+	Products     []importMercadoLibreListingsProductRequest `json:"products"`
+}
+
+// ImportMercadoLibreListings is a TEMPORARY one-off endpoint: given
+// connectionId and a batch of listings that already exist on MercadoLibre
+// but have no local ecom_products row, it resolves/creates the product by
+// sku, replaces its images, records the listing's MercadoLibre category for
+// this connection (ADR 0005) and copies its vehicle compatibilities from
+// MercadoLibre by meli_id. See
+// migration.MercadoLibreListingsImportService for the per-item detail.
+// Remove this handler and its route once the backlog it's for has been
+// imported.
+func (h *MigrationHandler) ImportMercadoLibreListings(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req importMercadoLibreListingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	items := make([]migrationApp.ImportListingItemInput, 0, len(req.Products))
+	for _, p := range req.Products {
+		items = append(items, migrationApp.ImportListingItemInput{
+			SKU:         p.SKU,
+			Name:        p.Name,
+			MeliID:      p.MeliID,
+			CategoryID:  p.CategoryID,
+			PartNumber:  p.PartNumber,
+			Description: p.Description,
+			Images:      p.Images,
+		})
+	}
+
+	result, err := h.mercadoLibreListingsImportService.Import(r.Context(), migrationApp.ImportListingsInput{
+		ConnectionID: req.ConnectionID,
+		Items:        items,
+		ActorID:      user.ID,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, migrationApp.ErrInvalidListingsImportInput):
+			writeJSONError(w, http.StatusBadRequest, "connectionId and products are required")
+		case errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound):
+			writeJSONError(w, http.StatusNotFound, "connection not found")
+		case errors.Is(err, syncApp.ErrNotMercadoLibreConnection):
+			writeJSONError(w, http.StatusBadRequest, "connection's channel is not MERCADOLIBRE")
+		default:
+			log.Printf("mercadolibre listings import failed: %v", err)
+			writeJSONError(w, http.StatusInternalServerError, "internal error")
+		}
 		return
 	}
 

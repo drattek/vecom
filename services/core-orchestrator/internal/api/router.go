@@ -70,6 +70,7 @@ func NewRouter(
 	mercadoLibreCategoriesDebugHandler *httpHandler.MercadoLibreCategoriesDebugHandler,
 	mercadoLibreMigrateSyncItemMeliHandler *httpHandler.MercadoLibreMigrateSyncItemMeliHandler,
 	productCategorySelectionHandler *httpHandler.ProductCategorySelectionHandler,
+	mercadoLibreImageDownloadHandler *httpHandler.MercadoLibreImageDownloadHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -418,6 +419,20 @@ func NewRouter(
 		// anterior) a ecom_files / ecom_product_images. Eliminar junto con
 		// esta ruta al terminar.
 		protected.Post("/api/migration/vecom-images", migrationHandler.MigrateVecomImages)
+		// TEMPORARY one-off import endpoint — importa localmente listings que
+		// ya existen en MercadoLibre (connectionId + array de
+		// sku/name/meli_id/category_id/part_number/description/images) pero no
+		// tienen producto local: crea el producto si falta, reemplaza sus
+		// imágenes, asigna la categoría MercadoLibre para la conexión (ADR
+		// 0005) y copia las compatibilidades de vehículo desde MercadoLibre por
+		// meli_id. Eliminar junto con esta ruta al terminar la importación.
+		protected.Post("/api/migration/mercadolibre-listings-import", migrationHandler.ImportMercadoLibreListings)
+		// TEMPORARY one-off endpoint — given connectionId + an array of
+		// MercadoLibre item ids, downloads every picture of each item, converts
+		// it to lossless WebP and saves it locally under
+		// <dir>/<sku>/<sku>_API_<n>.webp. Does not touch the database. See
+		// MercadoLibreImageDownloadHandler. Remove once no longer needed.
+		protected.Post("/api/marketplaces/mercadolibre/temp-download-images", mercadoLibreImageDownloadHandler.Run)
 
 		// Equipment Types endpoints (machinery compatibility taxonomy)
 		protected.Get("/api/equipment-types", equipmentTypeHandler.GetEquipmentTypes)

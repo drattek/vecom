@@ -444,6 +444,9 @@ type ItemDetail struct {
 	// sync.MercadoLibreListingsAuditService to fall back to the catalog
 	// product's short_description when the per-item description endpoint 404s.
 	CatalogProductID string `json:"catalog_product_id"`
+	// Pictures is the item's picture list, read by the (temporary)
+	// MercadoLibreImageDownloadHandler to bulk-download a listing's images.
+	Pictures []ItemPicture `json:"pictures"`
 }
 
 // GetItem calls GET /items/{id} and returns the fields ItemDetail needs.

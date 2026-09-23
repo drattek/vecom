@@ -104,6 +104,11 @@ type Config struct {
 	// day).
 	ExchangeRateRunAtHour   int
 	ExchangeRateRunAtMinute int
+
+	// MercadoLibreImageDownloadDir is the local folder the TEMPORARY
+	// MercadoLibreImageDownloadHandler saves downloaded listing images under
+	// (one subfolder per sku). See MERCADOLIBRE_IMAGE_DOWNLOAD_DIR.
+	MercadoLibreImageDownloadDir string
 }
 
 func Load() Config {
@@ -284,6 +289,11 @@ func Load() Config {
 		}
 	}
 
+	mercadoLibreImageDownloadDir := os.Getenv("MERCADOLIBRE_IMAGE_DOWNLOAD_DIR")
+	if mercadoLibreImageDownloadDir == "" {
+		mercadoLibreImageDownloadDir = "./downloads/mercadolibre-images"
+	}
+
 	sieAPIToken := os.Getenv("SIE_API_TOKEN")
 
 	exchangeRateRunAtHour := 8
@@ -341,5 +351,7 @@ func Load() Config {
 		SIEAPIToken:             sieAPIToken,
 		ExchangeRateRunAtHour:   exchangeRateRunAtHour,
 		ExchangeRateRunAtMinute: exchangeRateRunAtMinute,
+
+		MercadoLibreImageDownloadDir: mercadoLibreImageDownloadDir,
 	}
 }

@@ -335,6 +335,20 @@ func main() {
 		mysqlRepos.FilesRepository,
 		mysqlRepos.ProductImagesRepository,
 	)
+	// TEMPORARY one-off import service — importa localmente listings que ya
+	// existen en MercadoLibre pero no tienen producto local (sku/nombre/
+	// número de parte/descripción/imágenes/categoría/compatibilidades).
+	// Eliminar junto con su handler y su ruta al terminar la importación.
+	mercadoLibreListingsImportService := migrationApp.NewMercadoLibreListingsImportService(
+		mysqlRepos.ProductRepository,
+		mysqlRepos.ProductImagesRepository,
+		productImageImportService,
+		productCategorySelectionService,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelRepository,
+		mercadoLibreCompatibilityService,
+		mercadoLibreTokenService,
+	)
 	odooProductSyncService := syncApp.NewOdooProductSyncService(
 		mysqlRepos.ConnectionCredentialsRepository,
 		mysqlRepos.ConnectionSettingsRepository,
@@ -454,7 +468,7 @@ func main() {
 	mercadoLibreCategoriesDebugHandler := httpHandler.NewMercadoLibreCategoriesDebugHandler(mercadoLibreCategoryPredictorService)
 	meliNotificationHandler := httpHandler.NewMeliNotificationHandler(meliNotificationService)
 	odooHandler := httpHandler.NewOdooHandler(odooConnectionService)
-	migrationHandler := httpHandler.NewMigrationHandler(odooCategoryMigrationService, vecomSyncProductMigrationService, vecomImagesMigrationService)
+	migrationHandler := httpHandler.NewMigrationHandler(odooCategoryMigrationService, vecomSyncProductMigrationService, vecomImagesMigrationService, mercadoLibreListingsImportService)
 	equipmentTypeHandler := httpHandler.NewEquipmentTypeHandler(equipmentTypeService)
 	vehicleFitmentHandler := httpHandler.NewVehicleFitmentHandler(vehicleFitmentService)
 	equipmentFitmentHandler := httpHandler.NewEquipmentFitmentHandler(equipmentFitmentService)
@@ -479,6 +493,10 @@ func main() {
 	// MercadoLibreMigrateSyncItemMeliHandler. Meant to be run once, then
 	// removed.
 	mercadoLibreMigrateSyncItemMeliHandler := httpHandler.NewMercadoLibreMigrateSyncItemMeliHandler(db, mercadoLibreTokenService, mysqlRepos.ProductRepository, mysqlRepos.ChannelProductMapRepository, mercadoLibreRateLimiter)
+	// TEMPORARY one-off endpoint — see MercadoLibreImageDownloadHandler.
+	// Downloads a batch of MercadoLibre listings' pictures to local disk as
+	// WebP, grouped by sku. Remove once no longer needed.
+	mercadoLibreImageDownloadHandler := httpHandler.NewMercadoLibreImageDownloadHandler(mercadoLibreTokenService, mercadoLibreRateLimiter, mysqlRepos.ChannelProductMapRepository, mysqlRepos.ProductRepository, cfg.MercadoLibreImageDownloadDir)
 
 	// Initialize Redis and sync service
 	redisClient := redisInfra.NewClient(cfg)
@@ -590,6 +608,7 @@ func main() {
 		mercadoLibreCategoriesDebugHandler,
 		mercadoLibreMigrateSyncItemMeliHandler,
 		productCategorySelectionHandler,
+		mercadoLibreImageDownloadHandler,
 	)
 
 	server := &http.Server{
