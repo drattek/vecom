@@ -370,6 +370,7 @@ func main() {
 		mysqlRepos.ChannelAttributeMapRepository,
 		mysqlRepos.ProductAttributesRepository,
 		mysqlRepos.AttributeOptionsRepository,
+		mysqlRepos.ProductFitmentsExportRepository,
 		odooRateLimiter,
 		pricingFormulaCalculator,
 		effectivePriceResolver,

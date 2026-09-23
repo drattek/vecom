@@ -35,6 +35,22 @@ const odooChannelCode = "ODOO"
 // synced ones in Odoo without renumbering.
 const odooProductInfoSequenceStep = 10
 
+// odooVehicleMachineTypeName is the machine.type every vehicle fitment is
+// filed under in Odoo: vehicles have no type table in core-orchestrator (unlike
+// ecom_equipment_types), so this fixed name — flagged is_vehicle, which makes
+// the storefront require a year — stands in for it. See ADR 0006.
+const odooVehicleMachineTypeName = "Vehículo"
+
+// Prefixes of Fitment/FitmentBrand/FitmentType.EcomRef: the identifier of each
+// record in core-orchestrator, stamped on the Odoo record so later syncs match
+// it without relying on names.
+const (
+	odooBrandRefPrefix            = "brand:"
+	odooEquipmentTypeRefPrefix    = "equipment_type:"
+	odooVehicleFitmentRefPrefix   = "vehicle_fitment:"
+	odooEquipmentFitmentRefPrefix = "equipment_fitment:"
+)
+
 const (
 	odooProductType   = "consu"
 	odooTaxID         = int64(19)
@@ -88,7 +104,10 @@ type OdooProductSyncService struct {
 	channelAttributeMapRepository *mysqlInfra.ChannelAttributeMapRepository
 	productAttributesRepository   *mysqlInfra.ProductAttributesRepository
 	attributeOptionsRepository    *mysqlInfra.AttributeOptionsRepository
-	rateLimiter                   *odooInfra.RateLimiter
+	// fitmentsRepository backs syncProductFitments: the machine/vehicle
+	// compatibilities pushed to the website_sale_machine_catalog module (ADR 0006).
+	fitmentsRepository *mysqlInfra.ProductFitmentsExportRepository
+	rateLimiter        *odooInfra.RateLimiter
 	// httpClient downloads image files from wherever ecom_files.path points
 	// (this integration's own storage, not Odoo) — see downloadImageAsBase64.
 	httpClient *http.Client
@@ -124,6 +143,7 @@ func NewOdooProductSyncService(
 	channelAttributeMapRepository *mysqlInfra.ChannelAttributeMapRepository,
 	productAttributesRepository *mysqlInfra.ProductAttributesRepository,
 	attributeOptionsRepository *mysqlInfra.AttributeOptionsRepository,
+	fitmentsRepository *mysqlInfra.ProductFitmentsExportRepository,
 	rateLimiter *odooInfra.RateLimiter,
 	formulaCalculator *pricingApp.PricingFormulaCalculator,
 	effectivePriceResolver *pricingApp.EffectivePriceResolver,
@@ -147,6 +167,7 @@ func NewOdooProductSyncService(
 		channelAttributeMapRepository: channelAttributeMapRepository,
 		productAttributesRepository:   productAttributesRepository,
 		attributeOptionsRepository:    attributeOptionsRepository,
+		fitmentsRepository:            fitmentsRepository,
 		rateLimiter:                   rateLimiter,
 		httpClient:                    &http.Client{Timeout: 20 * time.Second},
 		odooAPIClient:                 &http.Client{Timeout: 60 * time.Second},
@@ -194,6 +215,7 @@ func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfr
 	imagesHandler := odooInfra.NewImagesHandler(client)
 	categoriesHandler := odooInfra.NewCategoriesHandler(client)
 	productInfoHandler := odooInfra.NewProductInfoHandler(client)
+	fitmentsHandler := odooInfra.NewFitmentsHandler(client)
 
 	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
 	if err != nil {
@@ -217,7 +239,7 @@ func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfr
 		return "", nil, nil, fmt.Errorf("error summing stock for product %d: %w", product.ID, err)
 	}
 
-	return s.create(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, credentials, product, connectionID, title, vehicleFitmentID, listPrice, qtyAvailable, imageSourceProductID)
+	return s.create(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, fitmentsHandler, credentials, product, connectionID, title, vehicleFitmentID, listPrice, qtyAvailable, imageSourceProductID)
 }
 
 // Refresh implements channel_listings.Refresher (duck-typed: no import from
@@ -350,6 +372,7 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 	imagesHandler := odooInfra.NewImagesHandler(client)
 	categoriesHandler := odooInfra.NewCategoriesHandler(client)
 	productInfoHandler := odooInfra.NewProductInfoHandler(client)
+	fitmentsHandler := odooInfra.NewFitmentsHandler(client)
 
 	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
 	if err != nil {
@@ -363,7 +386,7 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 
 	title := resolveOdooRefreshTitle(listing, product)
 
-	if err := s.update(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, credentials, connectionID, product, listing, title, listPrice, qtyAvailable); err != nil {
+	if err := s.update(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, fitmentsHandler, credentials, connectionID, product, listing, title, listPrice, qtyAvailable); err != nil {
 		return false, err
 	}
 
@@ -444,6 +467,7 @@ func (s *OdooProductSyncService) update(
 	imagesHandler *odooInfra.ImagesHandler,
 	categoriesHandler *odooInfra.CategoriesHandler,
 	productInfoHandler *odooInfra.ProductInfoHandler,
+	fitmentsHandler *odooInfra.FitmentsHandler,
 	credentials odooInfra.Credentials,
 	connectionID int64,
 	product *mysqlInfra.ProductDTO,
@@ -587,6 +611,10 @@ func (s *OdooProductSyncService) update(
 		return fmt.Errorf("error syncing odoo product info for product %d (odoo template %d): %w", productID, externalID, err)
 	}
 
+	if err := s.syncProductFitments(ctx, fitmentsHandler, credentials, externalID, productID); err != nil {
+		return err
+	}
+
 	return nil
 }
 
@@ -629,6 +657,7 @@ func (s *OdooProductSyncService) create(
 	imagesHandler *odooInfra.ImagesHandler,
 	categoriesHandler *odooInfra.CategoriesHandler,
 	productInfoHandler *odooInfra.ProductInfoHandler,
+	fitmentsHandler *odooInfra.FitmentsHandler,
 	credentials odooInfra.Credentials,
 	product *mysqlInfra.ProductDTO,
 	connectionID int64,
@@ -739,6 +768,12 @@ func (s *OdooProductSyncService) create(
 	// (update) re-syncs the key/value rows.
 	if err := s.syncProductInfo(ctx, productInfoHandler, credentials, externalID, infoEntries, managedInfoKeys); err != nil {
 		return "", missingRequired, missingOptional, fmt.Errorf("error syncing odoo product info for product %d (odoo template %d): %w", product.ID, externalID, err)
+	}
+
+	// Same failure semantics as website.sale.product.info above: the listing
+	// already exists, the next full Sync (update) retries the fitments.
+	if err := s.syncProductFitments(ctx, fitmentsHandler, credentials, externalID, product.ID); err != nil {
+		return "", missingRequired, missingOptional, err
 	}
 
 	for i, image := range extraImages {
@@ -1041,6 +1076,90 @@ func (s *OdooProductSyncService) renderProductAttributeValue(ctx context.Context
 		return pa.ValueDate.Format(time.DateOnly), nil
 	}
 	return "", nil
+}
+
+// resolveProductFitments builds the complete list of machine/vehicle
+// compatibilities of productID as Odoo's machine.model rows: one per distinct
+// vehicle fitment (years included; motor/position/side stay out) and one per
+// equipment fitment. See ADR 0006.
+func (s *OdooProductSyncService) resolveProductFitments(ctx context.Context, productID int64) ([]odooInfra.Fitment, error) {
+	vehicleFitments, err := s.fitmentsRepository.FindVehicleFitmentsByProductID(ctx, productID)
+	if err != nil {
+		return nil, err
+	}
+	equipmentFitments, err := s.fitmentsRepository.FindEquipmentFitmentsByProductID(ctx, productID)
+	if err != nil {
+		return nil, err
+	}
+
+	fitments := make([]odooInfra.Fitment, 0, len(vehicleFitments)+len(equipmentFitments))
+
+	for _, vehicle := range vehicleFitments {
+		yearEnd := 0
+		if vehicle.YearEnd != nil {
+			yearEnd = *vehicle.YearEnd
+		}
+		fitments = append(fitments, odooInfra.Fitment{
+			EcomRef:   odooVehicleFitmentRefPrefix + strconv.FormatInt(vehicle.FitmentID, 10),
+			Name:      vehicle.Model,
+			YearStart: vehicle.YearStart,
+			YearEnd:   yearEnd,
+			Brand: odooInfra.FitmentBrand{
+				EcomRef: odooBrandRefPrefix + strconv.FormatInt(vehicle.BrandID, 10),
+				Name:    vehicle.BrandName,
+			},
+			Type: odooInfra.FitmentType{Name: odooVehicleMachineTypeName, IsVehicle: true},
+		})
+	}
+
+	for _, equipment := range equipmentFitments {
+		fitments = append(fitments, odooInfra.Fitment{
+			EcomRef: odooEquipmentFitmentRefPrefix + strconv.FormatInt(equipment.FitmentID, 10),
+			// ecom_equipment_fitment requires a model or a serie (or both); Odoo has
+			// a single name column.
+			Name: strings.TrimSpace(equipment.Model + " " + equipment.Serie),
+			Brand: odooInfra.FitmentBrand{
+				EcomRef: odooBrandRefPrefix + strconv.FormatInt(equipment.BrandID, 10),
+				Name:    equipment.BrandName,
+			},
+			Type: odooInfra.FitmentType{
+				EcomRef: odooEquipmentTypeRefPrefix + strconv.FormatInt(equipment.EquipmentTypeID, 10),
+				Name:    equipment.EquipmentTypeName,
+			},
+		})
+	}
+
+	return fitments, nil
+}
+
+// syncProductFitments pushes productID's compatibilities to Odoo's
+// website_sale_machine_catalog module for template productTmplID. It always
+// sends the complete list, an empty one included, so a compatibility removed
+// in core-orchestrator is removed from Odoo too; the module only ever removes
+// models it previously received (those with an ecom_ref), never ones loaded by
+// hand. Requires the module to be upgraded to 1.1.0 first. See ADR 0006.
+func (s *OdooProductSyncService) syncProductFitments(
+	ctx context.Context,
+	handler *odooInfra.FitmentsHandler,
+	credentials odooInfra.Credentials,
+	productTmplID int64,
+	productID int64,
+) error {
+	fitments, err := s.resolveProductFitments(ctx, productID)
+	if err != nil {
+		return fmt.Errorf("error resolving fitments for product %d: %w", productID, err)
+	}
+
+	result, err := handler.SyncProductFitments(ctx, credentials, productTmplID, fitments)
+	if err != nil {
+		return fmt.Errorf("error syncing odoo fitments for product %d (odoo template %d): %w", productID, productTmplID, err)
+	}
+
+	if result.Linked > 0 || result.Unlinked > 0 {
+		log.Printf("odoo fitments: product %d (odoo template %d) — %d linked, %d unlinked", productID, productTmplID, result.Linked, result.Unlinked)
+	}
+
+	return nil
 }
 
 // syncProductInfo reconciles Odoo's website.sale.product.info rows for
