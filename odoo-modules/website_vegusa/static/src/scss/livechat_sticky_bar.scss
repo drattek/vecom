@@ -1,0 +1,236 @@
+// This file is compiled both for the website frontend page and for the
+// im_livechat shadow-DOM embed bundle (which does not load the website
+// theme's color palette map), so the vegusa brand colors are hardcoded
+// here instead of read from $o-color-palettes.
+// Also mirrors the website theme's primary brand color (o-color-1 in
+// website_vegusa/static/src/scss/primary_variables.scss) — used for the
+// "reopen conversation" state and the "Solicitar cotización" CTA.
+$o-vegusa-sticky-bar-accent: #C51733;
+$o-vegusa-sticky-bar-dark: #343A40;
+$o-vegusa-sticky-bar-icon: #5C5E62;
+$o-vegusa-sticky-bar-pill-bg: #f2f2f2;
+$o-vegusa-sticky-bar-bg: #ffffff;
+$o-vegusa-sticky-bar-whatsapp: #25D366;
+// Height reserved above the sticky bar so an opened chat window never
+// visually overlaps it. Matches the bar's actual rendered height (12px
+// top/bottom padding + ~40px content row + 1px border) so the window
+// sits flush against the bar instead of leaving a gap.
+$o-vegusa-sticky-bar-clearance: 65px;
+
+.o-vegusa-StickyBar {
+    // Stays below the chat window itself (see the .o-mail-ChatWindow
+    // override below, which is what actually needs to render above this
+    // bar) but above regular page content.
+    z-index: 1000;
+    bottom: 0;
+    padding: 12px 16px;
+    background-color: $o-vegusa-sticky-bar-bg;
+    border-top: 1px solid rgba(0, 0, 0, 0.08);
+    box-shadow: 0 -4px 16px rgba(0, 0, 0, 0.08);
+}
+
+// ChatWindow is positioned with bootstrap's .fixed-bottom (bottom: 0),
+// completely independent from the chat bubbles row, so it sits flush
+// with the viewport bottom by default — exactly where our sticky bar
+// also lives. Lift it above the bar (desktop only: on mobile the window
+// goes fullscreen via .o-mobile and must keep bottom: 0).
+.o-mail-ChatWindow:not(.o-mobile) {
+    bottom: $o-vegusa-sticky-bar-clearance !important;
+}
+
+// The window's default "right" offset (set inline via chat_window.js)
+// reserves space for the old round bubble it used to sit next to, which
+// no longer exists in this layout — it leaves a large, unwanted gap on
+// desktop. Pin it close to the edge instead (desktop only).
+@media (min-width: 992px) {
+    .o-mail-ChatWindow:not(.o-mobile) {
+        right: 20px !important;
+    }
+}
+
+.o-vegusa-StickyBar-inner {
+    // Mobile and tablet: full width. Desktop only (>= lg): 50%, centered
+    // (the parent is a d-flex justify-content-center container).
+    width: 100%;
+    gap: 12px;
+
+    @media (min-width: 992px) {
+        width: 50%;
+    }
+}
+
+.o-vegusa-StickyBar-pill {
+    flex: 0 0 auto;
+    min-width: 0;
+    align-items: center;
+    border: none;
+    border-radius: 6px;
+    background-color: $o-vegusa-sticky-bar-pill-bg;
+    padding: 8px 10px;
+    gap: 10px;
+    cursor: pointer;
+    text-align: left;
+    transition: filter 0.15s ease-in-out, transform 0.15s ease-in-out;
+
+    &:hover {
+        filter: brightness(96%);
+        transform: translateY(-1px);
+    }
+
+    &:active {
+        transform: translateY(0);
+    }
+}
+
+// Solid pill in the theme's primary brand color, linking to the quote
+// request page.
+.o-vegusa-StickyBar-quote {
+    flex: 0 0 auto;
+    border-radius: 6px;
+    background-color: $o-vegusa-sticky-bar-accent;
+    padding: 8px 14px;
+    gap: 8px;
+    cursor: pointer;
+    transition: filter 0.15s ease-in-out, transform 0.15s ease-in-out;
+
+    &:hover {
+        filter: brightness(92%);
+        transform: translateY(-1px);
+        color: $o-vegusa-sticky-bar-bg;
+    }
+
+    &:active {
+        transform: translateY(0);
+    }
+
+    .o-vegusa-StickyBar-driveText {
+        color: $o-vegusa-sticky-bar-bg;
+    }
+}
+
+.o-vegusa-StickyBar-quoteIcon {
+    flex: 0 0 auto;
+    font-size: 16px;
+    color: $o-vegusa-sticky-bar-bg;
+}
+
+// Icon-only, solid WhatsApp-green square button (no label, no pill bg).
+.o-vegusa-StickyBar-whatsapp {
+    flex: 0 0 auto;
+    width: 44px;
+    border: none;
+    border-radius: 6px;
+    background-color: $o-vegusa-sticky-bar-whatsapp;
+    color: $o-vegusa-sticky-bar-bg;
+    font-size: 20px;
+    cursor: pointer;
+    transition: filter 0.15s ease-in-out, transform 0.15s ease-in-out;
+
+    &:hover {
+        filter: brightness(95%);
+        transform: translateY(-1px);
+    }
+
+    &:active {
+        transform: translateY(0);
+    }
+}
+
+// Real input group / reopen button: this is the section that should
+// absorb all the extra space when the bar is wide, while the quote and
+// WhatsApp CTAs next to it stay a fixed, compact size.
+.o-vegusa-StickyBar-chat,
+.o-vegusa-StickyBar-reopen {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.o-vegusa-StickyBar-chat {
+    border-radius: 6px;
+    background-color: $o-vegusa-sticky-bar-pill-bg;
+    padding: 6px 6px 6px 10px;
+    gap: 8px;
+    cursor: text;
+}
+
+.o-vegusa-StickyBar-icon {
+    flex: 0 0 auto;
+    font-size: 18px;
+    color: $o-vegusa-sticky-bar-icon;
+}
+
+.o-vegusa-StickyBar-driveText {
+    flex: 0 0 auto;
+    font-weight: 700;
+    font-size: 14px;
+    color: $o-vegusa-sticky-bar-dark;
+    white-space: nowrap;
+}
+
+.o-vegusa-StickyBar-input {
+    flex: 1 1 auto;
+    min-width: 0;
+    width: 100%;
+    border: none;
+    background: transparent;
+    color: $o-vegusa-sticky-bar-dark;
+    font-size: 14px;
+    font-weight: 500;
+
+    &::placeholder {
+        color: #8a8d91;
+        font-weight: 400;
+    }
+
+    &:focus {
+        outline: none;
+    }
+}
+
+.o-vegusa-StickyBar-arrow {
+    flex: 0 0 auto;
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background-color: $o-vegusa-sticky-bar-dark;
+    color: $o-vegusa-sticky-bar-bg;
+    font-size: 13px;
+    cursor: pointer;
+    transition: background-color 0.15s ease-in-out;
+}
+
+.o-vegusa-StickyBar-arrow-disabled {
+    background-color: #c9cbce;
+    cursor: default;
+    pointer-events: none;
+}
+
+// Plain dot sitting right on the corner of the reopen button, to signal
+// there is already an active conversation (no unread count, just a flag).
+.o-vegusa-StickyBar-badgeDot {
+    top: -3px;
+    right: -3px;
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    background-color: $o-vegusa-sticky-bar-accent;
+    border: 2px solid $o-vegusa-sticky-bar-bg;
+}
+
+// Mobile (below tablet): the quote CTA is dropped entirely, everything
+// else stays but spans the full width of the bar.
+@media (max-width: 767.98px) {
+    .o-vegusa-StickyBar-quote {
+        display: none;
+    }
+}
+
+@media (max-width: 480px) {
+    .o-vegusa-StickyBar-driveText {
+        display: none;
+    }
+
+    .o-vegusa-StickyBar-input {
+        min-width: 60px;
+    }
+}

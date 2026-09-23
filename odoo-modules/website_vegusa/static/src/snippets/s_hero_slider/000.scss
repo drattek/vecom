@@ -1,0 +1,75 @@
+.s_hero_slider {
+    // No "100vw" / negative-margin breakout here on purpose. Page-level
+    // sections are already direct children of "#wrap", which has no default
+    // container or side padding, so a plain block already spans the full
+    // page width edge to edge. Viewport units behaved unpredictably both on
+    // mobile Safari (touch swipe getting swallowed) and in the "Insert a
+    // block" preview panel (the thumbnail measured against the real page
+    // viewport instead of its small preview box, rendering it huge).
+
+    // Let Bootstrap's swipe helper (which adds ".pointer-event" and relies
+    // on "touch-action: pan-y" from _carousel.scss) own horizontal gestures
+    // on the slider, instead of the browser's native panning/back-swipe.
+    .carousel {
+        touch-action: pan-y;
+    }
+
+    // The core carousel styling pads the slides so their content doesn't
+    // sit under the prev/next buttons. The hero slider wants the image
+    // to touch the edges instead, with the buttons floating on top of it.
+    //
+    // It also sets ".carousel-inner"/".carousel-item" to "height: 100%",
+    // which in weird sizing contexts (see below) resolves against the
+    // wrong ancestor and inflates the reserved height. On top of that,
+    // website's carousel_slider.js measures each slide and writes an
+    // inline "min-height" style, which beats any plain CSS rule (including
+    // "height: fit-content"). Between the two, the carousel could grow
+    // taller than the image itself. Force everything back down to the
+    // image's own natural (aspect-ratio driven) height as the single
+    // source of truth: "!important" here is required to win over that
+    // inline style.
+    .carousel-item {
+        padding: 0 !important;
+        min-height: 0 !important;
+    }
+    .carousel,
+    .carousel-inner,
+    .carousel-inner > .carousel-item {
+        height: fit-content !important;
+    }
+
+    // On mobile the arrows/dots don't fit the shorter (41:14) image well.
+    // Hide them and rely on native touch swipe (enabled by default on the
+    // Bootstrap carousel) to navigate between slides instead.
+    @include media-breakpoint-down(md) {
+        .carousel-control-prev,
+        .carousel-control-next,
+        .carousel-indicators {
+            display: none !important;
+        }
+    }
+
+    .s_hero_slide_img {
+        width: 100%;
+        object-fit: cover;
+        touch-action: pan-y;
+        // Unlike the native carousel (a plain <div> with a background-image),
+        // our slides use real <img> elements. On real touchscreens those get
+        // extra native gesture handling (long-press callout, drag-to-save)
+        // that can swallow the touch sequence before Bootstrap's pointerup
+        // handler fires, effectively blocking the swipe. Strip it out.
+        -webkit-touch-callout: none;
+        -webkit-user-drag: none;
+        user-select: none;
+    }
+
+    // Mobile: aspect ratio 41:14
+    .s_hero_slide_img_mobile {
+        aspect-ratio: 41 / 14;
+    }
+
+    // Desktop: aspect ratio 96:25
+    .s_hero_slide_img_desktop {
+        aspect-ratio: 96 / 25;
+    }
+}

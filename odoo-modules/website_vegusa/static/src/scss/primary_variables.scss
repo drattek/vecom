@@ -1,0 +1,25 @@
+$o-website-values-palettes: (
+    (
+        // Templates
+        // Colors
+        // Fonts
+        // Buttons
+        'color-palettes-name': 'vegusa',
+        'header-template': 'vegusa',
+        'footer-template': 'vegusa',
+    ),
+);
+
+$o-color-palettes: map-merge($o-color-palettes,
+   (
+      'vegusa': (
+         'o-color-1':                    #C51733,
+         'o-color-2':                    #343A40,
+         'o-color-3':                    #f2f2f2,
+         'o-color-4':                    #ffffff,
+         'o-color-5':                    #000000,
+      ),
+   )
+);
+
+$o-selected-color-palettes-names: append($o-selected-color-palettes-names, 'vegusa');

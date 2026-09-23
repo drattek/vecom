@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo noupdate="1">
+   <record id="website.default_website" model="website">
+      <field name="name">Vegusa</field>
+      <field name="logo" type="base64" file="website_vegusa/static/src/img/content/logo_vegusa.png"/>
+      <field name="favicon" type="base64" file="website_vegusa/static/description/favicon.webp" />
+      <field name="shop_ppg">18</field>
+      <field name="shop_ppr">3</field>
+      <field name="shop_gap">16px</field>
+      <field name="shop_opt_products_design_classes">
+            o_wsale_products_opt_layout_catalog
+            o_wsale_products_opt_design_cards
+            o_wsale_products_opt_name_color_regular
+            o_wsale_products_opt_thumb_cover
+            o_wsale_products_opt_img_hover_zoom_out_light
+            o_wsale_products_opt_has_cta
+            o_wsale_products_opt_actions_onhover
+            o_wsale_products_opt_wishlist_fixed
+            o_wsale_products_opt_cc
+            o_wsale_products_opt_cc1
+            o_wsale_products_opt_rounded_2
+            o_wsale_products_opt_actions_promote
+            o_wsale_products_opt_actions_subtle
+            o_wsale_products_opt_name_weight_bold
+      </field>
+      <field name="cookies_bar" eval="True" />
+      <field name="contact_us_button_url">/contact-us</field>
+      <field name="social_facebook">https://www.facebook.com/Airproof</field>
+      <field name="social_instagram">https://www.instagram.com/airproof</field>
+      <field name="social_linkedin">https://www.linkedin.com/company/airproof</field>
+      <field name="social_youtube">https://www.youtube.com/c/airproof</field>
+   </record>
+</odoo>

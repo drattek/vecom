@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<templates xml:space="preserve">
+
+<t t-name="website_vegusa.LivechatButton">
+    <div t-if="isShown" part="openChatButton" class="o-vegusa-StickyBar position-fixed bottom-0 start-0 end-0 d-flex justify-content-center">
+        <div class="o-vegusa-StickyBar-inner d-flex align-items-stretch">
+            <div
+                t-if="!hasActiveLivechat"
+                class="o-vegusa-StickyBar-chat d-flex align-items-center"
+                t-on-click="() => this.inputRef.el?.focus()"
+            >
+                <i class="fa fa-commenting o-vegusa-StickyBar-icon"/>
+                <input
+                    t-ref="chatInput"
+                    class="o-vegusa-StickyBar-input"
+                    type="text"
+                    placeholder="¿En qué podemos ayudarte?"
+                    t-model="state.text"
+                    t-on-keydown="onKeydown"
+                />
+                <div
+                    class="o-vegusa-StickyBar-arrow d-flex align-items-center justify-content-center"
+                    t-att-class="{ 'o-vegusa-StickyBar-arrow-disabled': !canSubmit }"
+                    t-on-click.stop="onSubmit"
+                    title="Enviar"
+                >
+                    <i class="fa fa-arrow-up"/>
+                </div>
+            </div>
+            <button
+                t-else=""
+                class="o-vegusa-StickyBar-pill o-vegusa-StickyBar-reopen d-flex align-items-center position-relative"
+                t-on-click="onReopen"
+                title="Continuar conversación"
+            >
+                <span class="o-vegusa-StickyBar-badgeDot position-absolute"/>
+                <i class="fa fa-comments o-vegusa-StickyBar-icon"/>
+                <span class="o-vegusa-StickyBar-driveText">Continuar conversación</span>
+            </button>
+            <a
+                href="/contactus"
+                class="o-vegusa-StickyBar-quote text-decoration-none d-flex align-items-center"
+                title="Solicitar cotización"
+            >
+                <i class="fa fa-tags o-vegusa-StickyBar-quoteIcon"/>
+                <span class="o-vegusa-StickyBar-driveText">Solicitar cotización</span>
+            </a>
+            <button
+                class="o-vegusa-StickyBar-whatsapp d-flex align-items-center justify-content-center"
+                t-on-click="onWhatsappClick"
+                title="Hablar por WhatsApp"
+            >
+                <i class="fa fa-whatsapp"/>
+            </button>
+        </div>
+    </div>
+</t>
+
+</templates>

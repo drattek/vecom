@@ -1,0 +1,192 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <template id="header" inherit_id="website.layout" name="Vegusa - Header" active="True">
+        <xpath expr="//header" position="replace">
+            <header class="o_header_fixed o_top_fixed_element">
+                <div class="container-fluid ps-4 pe-4 flex-column d-none d-lg-block bg-o-color-4">
+                    <div class="d-flex align-items-center justify-content-between gap-4 py-2">
+                        <div class="d-flex align-items-center gap-4 justify-content-start">
+                            <t t-call="website.placeholder_header_brand" _link_class.f="vegusa-brand" />
+                            <xpath expr="//t[@t-call='website.placeholder_header_search_box']" position="replace">
+                                <div class="d-none d-xl-block vegusa-search-box">
+                                    <t t-call="website.website_search_box_input">
+                                        <t t-set="search_type" t-valuef="all"/>
+                                        <t t-set="action" t-valuef="/website/search"/>
+                                        <t t-set="limit" t-value="limit or '5'"/>
+                                        <t t-set="display_image" t-valuef="true"/>
+                                        <t t-set="display_description" t-valuef="true"/>
+                                        <t t-set="display_extra_link" t-valuef="true"/>
+                                        <t t-set="display_detail" t-valuef="true"/>
+                                    </t>
+                                </div>
+                            </xpath>
+                        </div>
+                        <div class="d-flex align-items-center gap-2 justify-content-end">
+                            <t t-call="website.placeholder_header_language_selector"
+                                _div_classes.f="d-flex align-items-center h-100"
+                                _btn_class.f="btn btn-sm btn-outline-secondary border-0"
+                            />
+                            <a href="/contactus" t-attf-class="o_navlink_background btn position-relative rounded-circle p-1 text-center text-reset" aria-label="eCommerce contact us">
+                                <div t-attf-class="#{_icon_wrap_class}">
+                                    <i class="fa fa-envelope fa-stack"/>
+                                </div>
+                            </a>
+                            <t t-call="website_vegusa.vegusa_header_wishlist_button" />
+                            <a href="/shop/cart" t-attf-class="o_navlink_background btn position-relative rounded-circle p-1 text-center text-reset" aria-label="eCommerce cart">
+                                <div t-attf-class="#{_icon_wrap_class}">
+                                    <i class="fa fa-shopping-cart fa-stack"/>
+                                    <sup t-attf-class="my_cart_quantity badge bg-primary position-absolute top-0 end-0 mt-n1 me-n1 rounded-pill #{'d-none' if (website_sale_cart_quantity == 0) else ''}" t-out="website_sale_cart_quantity" t-att-data-order-id="request.session.get('sale_order_id', '')"/>
+                                </div>
+                            </a>
+                        </div>
+                    </div>
+                    <div class="d-flex align-items-center justify-content-between gap-4 bg-o-color-5 pe-3 vegusa-navigation">
+                        <div class="d-flex align-items-center gap-2 justify-content-start">
+                            <div class="vegusa-category-dropdown bg-o-color-1 ps-3">
+                                <div class="dropdown d-none d-xl-block w-100 h-100">
+                                    <button class="w-100 h-100 py-2 gap-2" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown" aria-expanded="false">
+                                        <i class="fa fa-bars"></i>
+                                        <span>Nuestras categorías</span>
+                                    </button>
+                                    <div class="dropdown-menu vw-100 px-4 py-0 margin-0 border-0 shadow-none bg-transparent" aria-labelledby="dropdownMenuButton1">
+                                        <div class="d-flex flex-row gap-3 p-4 border rounded-bottom-3 bg-white vegusa-megamenu">
+                                            <t t-set="parent_categories" t-value="request.env['product.public.category'].search([('parent_id', '=', False)])"/>
+                                            <t t-set="total_cols" t-value="4"/>
+                                            <t t-set="cols_per_category" t-value="(total_cols + len(parent_categories) - 1) // len(parent_categories) if parent_categories else 4"/>
+                                            <t t-foreach="parent_categories" t-as="category">
+                                                <div t-attf-class="border-right w-100 d-flex flex-column gap-2">
+                                                    <h5 class="vegusa-category-title"><t t-out="category.name"/></h5>
+                                                    <div class="d-grid gap-1" t-attf-style="grid-template-columns: repeat(#{cols_per_category}, 1fr);">
+                                                        <t t-foreach="category.child_id" t-as="child_category">
+                                                            <a class="dropdown_item" t-attf-title="#{child_category.name}" t-attf-href="/shop?category=#{child_category.id}">
+                                                                <img class="vegusa-category-image" t-attf-src="/web/image/product.public.category/#{child_category.id}/image_128"/>
+                                                                <t t-out="child_category.name"/>
+                                                            </a>
+                                                        </t>
+                                                    </div>
+                                                </div>
+                                            </t>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                            <nav class="navbar navbar-expand-lg p-0 d-none d-lg-block">
+                                <ul class="navbar-nav">
+                                    <t t-foreach="website.menu_id.child_id" t-as="submenu">
+                                        <t t-call="website.submenu"
+                                            item_class.f="nav-item"
+                                            link_class.f="nav-link text-o-color-4" />
+                                    </t>
+                                </ul>
+                            </nav>
+                        </div>
+                        <ul class="list-unstyled list-group">
+                            <t t-call="portal.placeholder_user_sign_in"
+                                _item_class.f="nav-item vg-signup-item ml-lg-3"
+                                _link_class.f="nav-link"
+                            />
+                            <t t-call="portal.user_dropdown"
+                                _user_name="true"
+                                _icon="false"
+                                _avatar="false"
+                                _item_class.f="nav-item dropdown ml-lg-3"
+                                _link_class.f="nav-link font-weight-bold"
+                                _dropdown_menu_class.f="" 
+                            />
+                        </ul>
+                    </div>
+                </div>
+            </header>
+            <t t-call="website_vegusa.template_header_mobile"/>
+        </xpath>
+    </template>
+
+    <template id="template_header_mobile" inherit_id="website.template_header_mobile" name="Vegusa - Template Header Mobile">
+        <xpath expr="//t[@t-call='website.placeholder_header_brand']" position="replace">
+            <t t-call="website.placeholder_header_brand" _link_class.f="vegusa-mobile-logo"/>
+        </xpath>
+    </template>
+
+    <template id="footer" inherit_id="website.layout" name="Vegusa - Footer" active="True">
+        <xpath expr="//div[@id='footer']" position="replace">
+            <div id="footer" class="oe_structure oe_structure_solo footer-vegusa" t-ignore="true" t-if="not no_footer">
+                <div class="row p-4 vw-100 me-0 ms-0">
+                    <div class="col-12 col-lg-9 row pe-0 ps-0">
+                        <article class="col-12 col-lg-4 d-flex flex-column gap-2 px-3 me-4 mb-4">
+                            <h5>Atención al cliente</h5>
+                            <div class="d-flex flex-column gap-1">
+                                <a href="">Sobre nosotros</a>
+                                <a href="mailto:holamaq@vegusa.com">holamaq@vegusa.com</a>
+                                <a href="tel:4778134999">477 813 4999</a>
+                                <a href="tel:4779801648">477 980 1648</a>
+                                <span>Blvd. Aeropuerto 1401, San Carlos la Roncha, 37544 León de los Aldama, Gto.</span>
+                                <span>Abierto de 9:00 a 18:00 hrs.</span>
+                            </div>
+                        </article>
+                        <article class="col-12 col-lg-4 d-flex flex-column gap-2 px-3 me-4 mb-4">
+                            <h5>Políticas y legal</h5>
+                            <div class="d-flex flex-column gap-1">
+                                <a href="">Política de devoluciones</a>
+                                <a href="">Términos y condiciones</a>
+                                <a href="">Aviso de privacidad</a>
+                            </div>
+                        </article>
+                    </div>
+                    <div class="col-12 col-lg-3 d-flex flex-column gap-2 ps-0 pe-0">
+                        <img 
+                            src="website_vegusa/static/src/img/content/logo_vegusa_white.webp"
+                            alt="Vegusa"
+                            class="vegusa-footer-logo"
+                        />
+                        <div class="s_social_media text-start o_not_editable" data-snippet="s_social_media" data-name="Social Media" contenteditable="false">
+                            <h5 class="s_social_media_title d-none mb-2" contenteditable="true">Follow us</h5>
+                            <a href="/website/social/facebook" class="s_social_media_facebook" target="_blank" aria-label="Facebook">
+                                <i class="fa fa-facebook rounded-circle shadow-sm o_editable_media"/>
+                            </a>
+                            <a href="/website/social/twitter" class="s_social_media_twitter" target="_blank" aria-label="X">
+                                <i class="fa fa-twitter rounded-circle shadow-sm o_editable_media"/>
+                            </a>
+                            <a href="/website/social/linkedin" class="s_social_media_linkedin" target="_blank" aria-label="LinkedIn">
+                                <i class="fa fa-linkedin rounded-circle shadow-sm o_editable_media"/>
+                            </a>
+                            <a href="/" class="text-800" aria-label="Extra page">
+                                <i class="fa fa-home rounded-circle shadow-sm o_editable_media"/>
+                            </a>
+                        </div>
+                    </div>
+                </div>
+                <div class="row p-4 vw-100 me-0 ms-0">
+                    <div class="col-12 col-lg-6 d-flex justify-content-center justify-content-lg-start align-items-center gap-1 mb-4 mb-lg-0">
+                        <img class="rounded-1 vegusa-payment-logo" src="/website_vegusa/static/src/img/content/americanexpress.svg" />
+                        <img class="rounded-1 vegusa-payment-logo" src="/website_vegusa/static/src/img/content/mastercard.svg" />
+                        <img class="rounded-1 vegusa-payment-logo" src="/website_vegusa/static/src/img/content/visa.svg" />
+                        <img class="rounded-1 vegusa-payment-logo" src="/website_vegusa/static/src/img/content/paypal.svg" />
+                        <img class="rounded-1 vegusa-payment-logo" src="/website_vegusa/static/src/img/content/mercadopago.svg" />
+                    </div>
+                    <div class="col-12 col-lg-6 d-flex justify-content-center justify-content-lg-end align-items-center">
+                        <span>© 2024 Vegusa. Todos los derechos reservados.</span>
+                    </div>
+                </div>
+            </div>
+        </xpath>
+    </template>
+
+    <template id="copyright" inherit_id="website.layout">
+        <xpath expr="//div[hasclass('o_footer_copyright')]" position="replace">
+            <div class="o_footer_copyright" data-name="Copyright">
+                <img class="img-fluid" src="/website_vegusa/static/src/img/content/vegusa_footer_under.png" />
+            </div>
+        </xpath>
+    </template>
+
+    <template id="vegusa_header_wishlist_button" name="Vegusa Header Wishlist Button">
+        <t t-set="wishcount" t-value="len(request.env['product.wishlist'].current())"/>
+        <t t-set="show_wishes" t-value="website.has_ecommerce_access()"/>
+        <a t-if="show_wishes" href="/shop/wishlist" class="o_navlink_background btn position-relative rounded-circle p-1 text-center text-reset" aria-label="eCommerce wishlist">
+            <div class="#{_icon_wrap_class or ''}">
+                <i class="fa fa-heart fa-stack"/>
+                <sup t-out="wishcount" t-attf-class="my_wish_quantity badge bg-primary position-absolute top-0 end-0 mt-n1 me-n1 rounded-pill #{'d-none' if (wishcount == 0) else ''}" />
+            </div>
+        </a>
+    </template>
+</odoo>

@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<odoo>
+    <!-- Desactivar templates por defecto -->
+    <record id="website.template_header_default" model="ir.ui.view">
+        <field name="active" eval="False" />
+    </record>
+
+    <record id="website.footer_custom" model="ir.ui.view">
+        <field name="active" eval="False" />
+    </record>
+</odoo>

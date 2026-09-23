@@ -1,0 +1,15 @@
+<odoo>
+    <template id="website_vegusa_snippets" inherit_id="website.snippets" name="Website Vegusa Snippets">
+        <!-- Add the custom snippet to the group -->
+        <xpath expr="//snippets[@id='snippet_content']/*[1]" position="before">
+            <t t-snippet="website_vegusa.s_dynamic_wrapper" string="Dynamic Wrapper">
+                <keywords>Dynamic Products</keywords>
+            </t>
+        </xpath>
+        <xpath expr="//snippets[@id='snippet_structure']/*[1]" position="before">
+            <t t-snippet="website_vegusa.s_hero_slider" string="Hero Slider" group="intro" label="Vegusa">
+                <keywords>hero, jumbotron, headline, header, intro, home, gallery, carousel, slider, slideshow, picture, photo, image-slider, banner, top, main</keywords>
+            </t>
+        </xpath>
+    </template>
+</odoo>

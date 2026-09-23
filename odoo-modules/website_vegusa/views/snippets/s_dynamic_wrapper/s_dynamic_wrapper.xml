@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8" ?>
+<odoo>
+    <template id="s_dynamic_wrapper" name="Dynamic Wrapper">
+        <section
+            class="w-100 pe-3 ps-3 py-5"
+            data-name="Vegusa Dynamic Wrapper"
+            data-snippet="website_vegusa.s_dynamic_wrapper"
+        >
+            <t t-call="website_sale.s_dynamic_snippet_products" />
+        </section>
+    </template>
+</odoo>

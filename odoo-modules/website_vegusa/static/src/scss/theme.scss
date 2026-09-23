@@ -1,0 +1,107 @@
+body {
+    max-width: 100vw !important;
+    overflow-x: hidden !important;
+}
+
+header {
+    z-index: 999999 !important;
+}
+
+.before-header {
+    width: 100%;
+    height: 0px;
+    background: #f5f5f5;
+}
+
+.vegusa-navigation {
+    border-top-left-radius: 6px;
+    border-top-right-radius: 6px;
+}
+
+.vegusa-category-dropdown {
+    min-width: 350px;
+    border-top-left-radius: 6px;
+
+    button {
+        width: 100%;
+        padding: 0;
+        border: none;
+        background: none;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+        text-align: inherit;
+
+        &:hover,
+        &:focus,
+        &:active {
+            background: none;
+            box-shadow: none;
+            outline: none;
+            color: inherit;
+        }
+    }
+}
+
+.vegusa-category-title::after {
+    content: '';
+    display: block;
+    width: 150px;
+    height: 3px;
+    background-color: map-get(map-get($o-color-palettes, 'vegusa'), 'o-color-1');
+    margin-top: 5px;
+}
+
+.vegusa-search-box {
+    min-width: 400px;
+}
+
+.vegusa-category-image {
+    width: 30px;
+    height: 30px;
+    margin-right: 8px;
+}
+
+.vegusa-footer-logo {
+    width: 100%;
+    margin-inline: auto;
+}
+
+.vegusa-mobile-logo {
+    max-width: 150px;
+    width: 100%;
+}
+
+.footer-vegusa {
+    background-image: url('/website_vegusa/static/src/img/content/footer-background.webp');
+}
+
+.footer-vegusa {
+    * {
+        color: map-get(map-get($o-color-palettes, 'vegusa'), 'o-color-4') !important;
+    }
+
+    h5::after {
+        content: "";
+        display: block;
+        width: 100px;
+        height: 3px;
+        background: map-get(map-get($o-color-palettes, 'vegusa'), 'o-color-1');;
+        margin-top: 0.5rem;
+    }
+
+    .s_social_media_title {
+
+        &::after {
+            display: none;
+        }
+    }
+}
+
+.vegusa-megamenu {
+    max-width: calc(100% - 1rem);
+}
+
+.vegusa-payment-logo {
+    max-width: 55px;
+}

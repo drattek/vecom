@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<templates xml:space="preserve">
+    <t t-name="website_vegusa.HeaderTemplateOption" t-inherit="website.HeaderTemplateOption" t-inherit-mode="extension">
+        <xpath expr="//BuilderRow[@label.translate='Template']//BuilderSelect" position="inside">
+            <BuilderSelectItem
+                id="'header_vegusa_opt'"
+                title.translate="Vegusa"
+                actionParam="[
+                    {
+                        action: 'websiteConfig',
+                        actionParam: {
+                            views: ['website_vegusa.header'],
+                            vars: { 'header-template': 'vegusa' },
+                            checkVars: false,
+                        },
+                    },
+                ]">
+                <Img src="'/website_vegusa/static/src/img/wbuilder/header_template_vegusa.svg'" attrs="{ style: 'width: calc(100% - 0.5rem);' }" />
+            </BuilderSelectItem>
+        </xpath>
+    </t>
+</templates>
