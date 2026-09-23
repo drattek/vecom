@@ -32,7 +32,7 @@ publicWidget.registry.MachineCatalogSearchSnippet = publicWidget.Widget.extend({
     async _init() {
         this.uid = ++widgetCounter;
         this.requestToken = 0;
-        this.catalog = await rpc("/website_sale_machine_catalog/search_types", {});
+        this.catalog = await rpc("/website_vegusa/machine_catalog/search_types", {});
         this._build();
     },
 
@@ -190,7 +190,7 @@ publicWidget.registry.MachineCatalogSearchSnippet = publicWidget.Widget.extend({
 
     async _loadBrands() {
         const token = ++this.requestToken;
-        const brands = await rpc("/website_sale_machine_catalog/search_brands", {
+        const brands = await rpc("/website_vegusa/machine_catalog/search_brands", {
             machine_type_id: this.machineTypeId,
         });
         if (token !== this.requestToken) {
@@ -214,7 +214,7 @@ publicWidget.registry.MachineCatalogSearchSnippet = publicWidget.Widget.extend({
             return;
         }
         const token = ++this.requestToken;
-        const result = await rpc("/website_sale_machine_catalog/models", {
+        const result = await rpc("/website_vegusa/machine_catalog/models", {
             brand_id: brandId,
             machine_type_id: this.machineTypeId,
         });

@@ -674,7 +674,7 @@ class WebsiteSaleMachineCatalog(WebsiteSale):
             return request.redirect(f'/web/login?redirect={request.httprequest.path}')
 
         brands = request.env['machine.brand'].search([('website_published', '=', True)])
-        return request.render('website_sale_machine_catalog.website_sale_brand_listing', {
+        return request.render('website_vegusa.website_sale_brand_listing', {
             'brands': brands,
         })
 
@@ -691,12 +691,12 @@ class WebsiteSaleMachineCatalog(WebsiteSale):
             return request.redirect(f'/web/login?redirect={request.httprequest.path}')
 
         machine_types = request.env['machine.type'].search([('website_published', '=', True)])
-        return request.render('website_sale_machine_catalog.website_sale_type_listing', {
+        return request.render('website_vegusa.website_sale_type_listing', {
             'machine_types': machine_types,
         })
 
     @http.route(
-        ['/website_sale_machine_catalog/models'],
+        ['/website_vegusa/machine_catalog/models'],
         type='json',
         auth='public',
         website=True,
@@ -717,7 +717,7 @@ class WebsiteSaleMachineCatalog(WebsiteSale):
         }
 
     @http.route(
-        ['/website_sale_machine_catalog/search_types'],
+        ['/website_vegusa/machine_catalog/search_types'],
         type='json',
         auth='public',
         website=True,
@@ -743,7 +743,7 @@ class WebsiteSaleMachineCatalog(WebsiteSale):
         }
 
     @http.route(
-        ['/website_sale_machine_catalog/search_brands'],
+        ['/website_vegusa/machine_catalog/search_brands'],
         type='json',
         auth='public',
         website=True,
@@ -778,7 +778,7 @@ class WebsiteSaleMachineCatalog(WebsiteSale):
         garage_records = request.env['machine.garage'].sudo().search([
             ('partner_id', '=', partner.id),
         ], order='create_date desc, id desc')
-        return request.render('website_sale_machine_catalog.machine_garage_page', {
+        return request.render('website_vegusa.machine_garage_page', {
             'garage_records': garage_records,
         })
 

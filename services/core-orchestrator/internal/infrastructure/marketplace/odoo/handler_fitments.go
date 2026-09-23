@@ -6,7 +6,7 @@ import (
 )
 
 // FitmentsHandler pushes a product's machine/vehicle compatibilities to the
-// website_sale_machine_catalog module through its ecom_sync_fitments method
+// website_vegusa module through its ecom_sync_fitments method
 // on product.template (Odoo's External JSON-2 API). See ADR 0006.
 type FitmentsHandler struct {
 	client *Client

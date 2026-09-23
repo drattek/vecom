@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <templates xml:space="preserve">
-    <t t-name="website_sale_machine_catalog.MachineCatalogSearchSnippetOption">
+    <t t-name="website_vegusa.MachineCatalogSearchSnippetOption">
         <BuilderRow label.translate="Search for">
             <BuilderSelect action="'setMachineCatalogMode'" dataAttributeAction="'searchMode'" preview="false">
                 <BuilderSelectItem actionValue="'both'">Vehicles and machinery</BuilderSelectItem>

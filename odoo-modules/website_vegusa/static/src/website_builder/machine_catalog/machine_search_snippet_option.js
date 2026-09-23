@@ -7,7 +7,7 @@ import { BuilderAction } from "@html_builder/core/builder_action";
 import { onWillStart, useState } from "@odoo/owl";
 
 export class MachineCatalogSearchSnippetOption extends BaseOptionComponent {
-    static template = "website_sale_machine_catalog.MachineCatalogSearchSnippetOption";
+    static template = "website_vegusa.MachineCatalogSearchSnippetOption";
     static selector = ".o_machine_catalog_search_snippet";
     static dependencies = ["machineCatalogSearchSnippetOptionPlugin"];
 

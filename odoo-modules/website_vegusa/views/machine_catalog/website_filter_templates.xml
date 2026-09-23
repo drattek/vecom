@@ -54,7 +54,7 @@
     <template id="website_sale_machine_filters_desktop" inherit_id="website_sale.products" name="Machine filters in shop" priority="20">
         <xpath expr="//div[contains(@t-attf-class, 'products_attributes_filters')]" position="inside">
             <div class="o_wsale_machine_filters mt-3">
-                <t t-call="website_sale_machine_catalog.machine_catalog_filter_block">
+                <t t-call="website_vegusa.machine_catalog_filter_block">
                     <t t-set="filter_suffix" t-value="'desktop'"/>
                 </t>
             </div>
@@ -66,7 +66,7 @@
             <t t-if="isMobile">
                 <div class="accordion-item o_wsale_machine_filters">
                     <div class="accordion-body">
-                        <t t-call="website_sale_machine_catalog.machine_catalog_filter_block">
+                        <t t-call="website_vegusa.machine_catalog_filter_block">
                             <t t-set="filter_suffix" t-value="'mobile'"/>
                         </t>
                     </div>

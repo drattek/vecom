@@ -2,8 +2,8 @@
 
 - **Estado:** aceptado — implementación COMPLETA en código (2026-09-23); pendiente actualizar el módulo en Odoo (ver "Puesta en marcha") y validarlo contra una instancia Odoo 19 (el módulo no se ejecutó en esta sesión)
 - **Fecha:** 2026-09-23
-- **Servicio:** `services/core-orchestrator`, `odoo-modules/website_sale_machine_catalog`
-- **Origen:** el módulo `website_sale_machine_catalog` solo modelaba maquinaria (`machine.brand` →
+- **Servicio:** `services/core-orchestrator`, `odoo-modules/website_vegusa` (antes `website_sale_machine_catalog`, ver "Fusión en `website_vegusa`")
+- **Origen:** el módulo `website_sale_machine_catalog` (hoy parte de `website_vegusa`) solo modelaba maquinaria (`machine.brand` →
   `machine.type` → `machine.model`, vinculados a `product.template` por tres many2many) y se
   cargaba a mano en Odoo. core-orchestrator ya tiene dos taxonomías de compatibilidad:
   `ecom_equipment_fitment` (maquinaria: marca, tipo, modelo o serie) y `ecom_vehicle_fitments`
@@ -25,7 +25,7 @@ no se renombran (la tienda está en producción); solo cambian etiquetas visible
   **una fila de `ecom_vehicle_fitments`** (marca + modelo + rango). `year_end = 0` en un vehículo
   significa "desde `year_start` en adelante" (`year_end` NULL en MySQL). Maquinaria deja ambos en 0.
   La unicidad pasa a `(marca, tipo, nombre, año_inicio, año_fin)` (constraint Python; el SQL
-  anterior sobre `(marca, tipo, nombre)` se elimina en la migración 19.0.1.1.0).
+  anterior sobre `(marca, tipo, nombre)` se elimina en la migración 19.0.1.0.0 de `website_vegusa`).
 - `machine.model` con el mismo nombre y varios rangos de años es un solo "modelo" para el cliente:
   la tienda lo lista una vez y ofrece los años que cubre la unión de sus rangos.
 
@@ -131,16 +131,41 @@ fitment, ignorando motor/position/side).
   Odoo: se refleja en el siguiente `update` completo del listing (resincronización).
 - Un producto sin compatibilidades genera igualmente una llamada por sync (barata; necesaria para
   propagar el borrado de la última).
-- Orden de despliegue: **actualizar el módulo en Odoo a 1.1.0 antes** de desplegar este cambio de
+- Orden de despliegue: **actualizar `website_vegusa` (19.0.1.0.0) en Odoo antes** de desplegar este cambio de
   core-orchestrator; sin `ecom_sync_fitments` cada publicación/update de Odoo falla en ese paso.
 - Marcas y modelos con el mismo nombre en `ecom_brands` y en catálogo manual (mayúsculas
   distintas) se adoptan con `=ilike`; nombres divergentes crean registros nuevos.
 
+## Fusión en `website_vegusa`
+
+El catálogo se fusionó en el módulo del tema (`website_vegusa`, ya en producción) porque los
+cambios de diseño de la tienda afectan a ambos y conviene mantenerlos juntos. Estructura dentro de
+`website_vegusa`: `models/`, `controllers/`, `security/`, `views/machine_catalog/`,
+`static/src/js/machine_catalog/`, `static/src/scss/machine_catalog.scss` y el plugin del editor en
+`static/src/website_builder/machine_catalog/` (ya cubierto por el glob del manifest). Se agregaron
+las dependencias `portal` y `product`.
+
+- **Nombres que no cambian** (para no romper datos ni páginas guardadas): los modelos `machine.*`,
+  los ids externos de registros y vistas (solo cambia su módulo) y las clases CSS
+  `o_machine_catalog_*` del snippet (su HTML está guardado en las páginas).
+- **Nombres que sí cambian:** los prefijos de ids externos (`website_sale_machine_catalog.x` →
+  `website_vegusa.x`, en `t-call`, `t-snippet`, `request.render` y la plantilla OWL de la opción del
+  editor), las rutas JSON (`/website_sale_machine_catalog/...` →
+  `/website_vegusa/machine_catalog/...`) y el grupo de snippets.
+- **Migración de datos** (`migrations/19.0.1.0.0/pre-migration.py`): desinstalar el módulo viejo
+  borraría las tablas `machine_*` y sus datos, así que no se desinstala: se **transfiere la
+  propiedad**. Los registros de `ir_model_data`, `ir_model_constraint` e `ir_model_relation` pasan
+  al módulo nuevo con el mismo nombre; las claves (`key`) de las vistas se renombran; y el módulo
+  viejo se marca como desinstalado sin ejecutar su desinstalación. Al cargar sus archivos de datos,
+  `website_vegusa` actualiza esos registros en su sitio. Si el módulo viejo nunca se instaló, solo
+  elimina las restricciones únicas antiguas y los modelos se crean nuevos. Incluye la migración
+  1.1.0 del módulo viejo.
+
 ## Puesta en marcha
 
-1. Copiar `odoo-modules/website_sale_machine_catalog` al addons path y actualizar el módulo
-   (`-u website_sale_machine_catalog`): corre `migrations/19.0.1.1.0/pre-migration.py`, agrega
-   columnas y recalcula.
+1. Desplegar `odoo-modules/website_vegusa` y **quitar `website_sale_machine_catalog` del addons
+   path** (la carpeta ya no existe en el repo). Actualizar con `-u website_vegusa`: corre la
+   migración, transfiere la propiedad, agrega columnas y recalcula.
 2. Ejecutar una resincronización completa de los listings de Odoo para poblar/adoptar el catálogo.
 3. Revisar en Odoo que ningún producto quedó con marca asignada a mano sin modelo que se quiera
    conservar (no se toca, pero conviene confirmarlo tras el primer sync).

@@ -1,18 +1,29 @@
 {
     'name': 'Vegusa Theme',
-    'description': 'Vegusa Theme for Odoo',
+    'description': 'Vegusa Theme for Odoo. Includes the machine/vehicle catalog (brands, types, models with years, garage, shop filters, search snippet and the ecom_sync_fitments entry point used by core-orchestrator).',
     'category': 'Website/Theme',
-    'version': '19.0.0',
+    'version': '19.0.1.0.0',
     'author': 'Vegusa',
     'license': 'LGPL-3',
-    'depends': ['website', 'web', 'website_sale', 'im_livechat'],
+    'depends': ['website', 'web', 'website_sale', 'im_livechat', 'portal', 'product'],
     'data': [
+        'security/ir.model.access.csv',
         'data/website.xml',
         'data/presets.xml',
         'views/website_templates.xml',
         'views/snippets/s_dynamic_wrapper/s_dynamic_wrapper.xml',
         'views/snippets/s_hero_slider/s_hero_slider.xml',
         'views/snippets.xml',
+        # Machine / vehicle catalog (ADR 0006)
+        'views/machine_catalog/product_brand_views.xml',
+        'views/machine_catalog/product_type_views.xml',
+        'views/machine_catalog/product_model_views.xml',
+        'views/machine_catalog/website_brand_templates.xml',
+        'views/machine_catalog/website_type_templates.xml',
+        'views/machine_catalog/machine_search_snippet_templates.xml',
+        'views/machine_catalog/website_filter_templates.xml',
+        'views/machine_catalog/website_sale_inherit_templates.xml',
+        'views/machine_catalog/machine_garage_templates.xml',
     ],
     'assets': {
         'web.assets_frontend': [
@@ -20,6 +31,9 @@
             'website_vegusa/static/src/scss/theme.scss',
             'website_vegusa/static/src/js/s_dynamic_wrapper/s_dynamic_wrapper.js',
             'website_vegusa/static/src/snippets/s_hero_slider/000.scss',
+            'website_vegusa/static/src/js/machine_catalog/machine_search_snippet.js',
+            'website_vegusa/static/src/js/machine_catalog/machine_filter_checkbox.js',
+            'website_vegusa/static/src/scss/machine_catalog.scss',
         ],
         'web._assets_primary_variables': [
             'website_vegusa/static/src/scss/primary_variables.scss',

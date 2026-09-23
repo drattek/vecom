@@ -105,7 +105,7 @@ type OdooProductSyncService struct {
 	productAttributesRepository   *mysqlInfra.ProductAttributesRepository
 	attributeOptionsRepository    *mysqlInfra.AttributeOptionsRepository
 	// fitmentsRepository backs syncProductFitments: the machine/vehicle
-	// compatibilities pushed to the website_sale_machine_catalog module (ADR 0006).
+	// compatibilities pushed to the website_vegusa module (ADR 0006).
 	fitmentsRepository *mysqlInfra.ProductFitmentsExportRepository
 	rateLimiter        *odooInfra.RateLimiter
 	// httpClient downloads image files from wherever ecom_files.path points
@@ -1133,7 +1133,7 @@ func (s *OdooProductSyncService) resolveProductFitments(ctx context.Context, pro
 }
 
 // syncProductFitments pushes productID's compatibilities to Odoo's
-// website_sale_machine_catalog module for template productTmplID. It always
+// website_vegusa module for template productTmplID. It always
 // sends the complete list, an empty one included, so a compatibility removed
 // in core-orchestrator is removed from Odoo too; the module only ever removes
 // models it previously received (those with an ecom_ref), never ones loaded by

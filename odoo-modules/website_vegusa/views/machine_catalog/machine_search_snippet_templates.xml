@@ -2,11 +2,11 @@
 <odoo>
     <template id="machine_catalog_search_snippet_assets" inherit_id="website.snippets" name="Machine catalog search snippet">
         <xpath expr="//snippets[@id='snippet_groups']/*[1]" position="before">
-            <t snippet-group="website_sale_machine_catalog_group" t-snippet="website.s_snippet_group" string="Maquinaria y vehículos" t-thumbnail="/website_sale_machine_catalog/static/src/img/machine_catalog_snippet.svg"/>
+            <t snippet-group="website_vegusa_machine_catalog_group" t-snippet="website.s_snippet_group" string="Maquinaria y vehículos" t-thumbnail="/website_vegusa/static/src/img/wbuilder/machine_catalog_snippet.svg"/>
         </xpath>
 
         <xpath expr="//snippets[@id='snippet_structure']/*[1]" position="before">
-            <t t-snippet="website_sale_machine_catalog.machine_catalog_search_snippet" string="Búsqueda de maquinaria y vehículos" group="website_sale_machine_catalog_group">
+            <t t-snippet="website_vegusa.machine_catalog_search_snippet" string="Búsqueda de maquinaria y vehículos" group="website_vegusa_machine_catalog_group">
                 <keywords>maquinaria vehículo auto marca tipo modelo año categoría search</keywords>
             </t>
         </xpath>
