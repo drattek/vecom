@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <!-- Shop filters as checkboxes (Tipo, Marca, Modelo, Año), placed after Odoo's own
+         filters. Each filter behaves as single choice: ticking an option applies it and
+         unticking the active one clears it. Every checkbox carries the URL to go to
+         (data-url, built in the controller — see _get_machine_filters) and
+         machine_filter_checkbox.js navigates to it on change. -->
+    <template id="machine_catalog_filter_block" name="Machine catalog filter checkboxes">
+        <div class="o_machine_catalog_filters d-flex flex-column gap-3">
+            <t t-foreach="machine_filters" t-as="machine_filter">
+                <div class="o_machine_catalog_filter">
+                    <h6 class="mb-2">
+                        <t t-esc="machine_filter['label']"/>
+                        <span t-if="machine_filter['required'] and not machine_filter['active']" class="text-danger">*</span>
+                    </h6>
+                    <p t-if="machine_filter['disabled']" class="small text-muted mb-0" t-esc="machine_filter['placeholder']"/>
+                    <div t-else="" class="o_machine_catalog_filter_options">
+                        <t t-foreach="machine_filter['options']" t-as="machine_option">
+                            <t t-set="checkbox_id" t-value="'o_machine_filter_%s_%s_%s' % (filter_suffix, machine_filter['key'], machine_option_index)"/>
+                            <div class="form-check mb-1">
+                                <input type="checkbox"
+                                       class="form-check-input o_machine_catalog_filter_checkbox"
+                                       t-att-id="checkbox_id"
+                                       t-att-checked="machine_option['active'] and 'checked' or None"
+                                       t-att-data-url="machine_option['active'] and machine_filter['all_url'] or machine_option['url']"/>
+                                <label class="form-check-label" t-att-for="checkbox_id" t-esc="machine_option['label']"/>
+                            </div>
+                        </t>
+                    </div>
+                </div>
+            </t>
+            <div t-if="year_required" class="alert alert-warning py-2 px-3 small mb-0" role="alert">
+                Selecciona el año de tu vehículo para ver las refacciones compatibles.
+            </div>
+            <a t-if="brand or machine_type or machine_model" href="/shop" class="btn btn-sm btn-outline-secondary align-self-start w-100">Limpiar todos los filtros</a>
+            <t t-if="brand and machine_type and machine_model and (not machine_model.is_vehicle or vehicle_year) and not request.env.user._is_public()">
+                <span t-if="machine_garage_record" class="badge rounded-pill text-bg-success d-inline-flex align-items-center gap-2 px-3 py-2 align-self-start">
+                    <i class="fa fa-check" role="presentation"/>
+                    Guardado en Mi garage
+                </span>
+                <form t-else="" action="/my/garage/add" method="post" class="d-flex">
+                    <input type="hidden" name="csrf_token" t-att-value="request.csrf_token()"/>
+                    <input type="hidden" name="brand_id" t-att-value="brand.id"/>
+                    <input type="hidden" name="machine_type_id" t-att-value="machine_type.id"/>
+                    <input type="hidden" name="machine_model_id" t-att-value="machine_model.id"/>
+                    <input type="hidden" name="vehicle_year" t-att-value="vehicle_year or 0"/>
+                    <button type="submit" class="btn btn-sm btn-primary o_machine_garage_add_button w-100">Agregar a Mi garage</button>
+                </form>
+            </t>
+        </div>
+    </template>
+
+    <!-- priority > 16 so they are applied after Odoo's own filters and end up below them -->
+    <template id="website_sale_machine_filters_desktop" inherit_id="website_sale.products" name="Machine filters in shop" priority="20">
+        <xpath expr="//div[contains(@t-attf-class, 'products_attributes_filters')]" position="inside">
+            <div class="o_wsale_machine_filters mt-3">
+                <t t-call="website_sale_machine_catalog.machine_catalog_filter_block">
+                    <t t-set="filter_suffix" t-value="'desktop'"/>
+                </t>
+            </div>
+        </xpath>
+    </template>
+
+    <template id="website_sale_machine_filters_mobile" inherit_id="website_sale.product_attribute_filters_form" name="Mobile machine filters in shop" priority="20">
+        <xpath expr="//t[@t-if='isMobile']" position="before">
+            <t t-if="isMobile">
+                <div class="accordion-item o_wsale_machine_filters">
+                    <div class="accordion-body">
+                        <t t-call="website_sale_machine_catalog.machine_catalog_filter_block">
+                            <t t-set="filter_suffix" t-value="'mobile'"/>
+                        </t>
+                    </div>
+                </div>
+            </t>
+        </xpath>
+    </template>
+</odoo>

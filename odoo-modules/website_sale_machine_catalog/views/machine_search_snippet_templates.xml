@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <template id="machine_catalog_search_snippet_assets" inherit_id="website.snippets" name="Machine catalog search snippet">
+        <xpath expr="//snippets[@id='snippet_groups']/*[1]" position="before">
+            <t snippet-group="website_sale_machine_catalog_group" t-snippet="website.s_snippet_group" string="Maquinaria y vehículos" t-thumbnail="/website_sale_machine_catalog/static/src/img/machine_catalog_snippet.svg"/>
+        </xpath>
+
+        <xpath expr="//snippets[@id='snippet_structure']/*[1]" position="before">
+            <t t-snippet="website_sale_machine_catalog.machine_catalog_search_snippet" string="Búsqueda de maquinaria y vehículos" group="website_sale_machine_catalog_group">
+                <keywords>maquinaria vehículo auto marca tipo modelo año categoría search</keywords>
+            </t>
+        </xpath>
+    </template>
+
+    <!-- The snippet is saved as static HTML in every page it is dropped on, so its
+         markup must not depend on catalog data: the widget (machine_search_snippet.js)
+         builds the mode toggle and the selects at runtime from the current catalog.
+         The disabled placeholders below only give the website builder something to show
+         (the widget does not run in edit mode). -->
+    <template id="machine_catalog_search_snippet" name="Machine catalog search snippet">
+        <section class="o_machine_catalog_search_snippet" data-category-id="" data-search-mode="both">
+            <div class="container">
+                <form action="/shop" method="get" class="o_machine_catalog_search_snippet__panel">
+                    <input type="hidden" name="category" value="" disabled="disabled"/>
+                    <div class="row g-3 align-items-end o_machine_catalog_search_snippet__fields">
+                        <div class="col-12 col-lg-3">
+                            <label class="o_machine_catalog_search_snippet__label">Marca</label>
+                            <select class="form-select o_machine_catalog_search_snippet__select" disabled="disabled">
+                                <option>Selecciona una marca</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-lg-3">
+                            <label class="o_machine_catalog_search_snippet__label">Modelo</label>
+                            <select class="form-select o_machine_catalog_search_snippet__select" disabled="disabled">
+                                <option>Selecciona tu modelo</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-lg-3">
+                            <label class="o_machine_catalog_search_snippet__label">Año</label>
+                            <select class="form-select o_machine_catalog_search_snippet__select" disabled="disabled">
+                                <option>Selecciona el año</option>
+                            </select>
+                        </div>
+                        <div class="col-12 col-lg-3 ms-lg-auto">
+                            <button type="button" class="btn o_machine_catalog_search_snippet__button">Buscar</button>
+                        </div>
+                    </div>
+                </form>
+            </div>
+        </section>
+    </template>
+</odoo>

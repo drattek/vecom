@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <template id="website_sale_brand_listing" name="Brand catalog page">
+        <t t-call="website.layout">
+            <section class="container py-5">
+                <div class="row">
+                    <div class="col-12 text-center">
+                        <h1>Nuestras marcas</h1>
+                        <p>Explora las marcas disponibles y compra productos de máquinas por marca.</p>
+                    </div>
+                </div>
+                <div class="row row-cols-1 row-cols-md-5 g-5 mt-3">
+                    <t t-foreach="brands" t-as="brand_item">
+                        <div class="col my-auto">
+                            <a t-att-href="'/shop/brand/%s' % request.env['ir.http']._slugify(brand_item.name)" class="card border-0 h-100">
+                                <t t-if="brand_item.logo">
+                                    <img t-att-src="'/web/image/machine.brand/' + str(brand_item.id) + '/logo'" class="card-img-top" t-att-alt="brand_item.name"/>
+                                </t>
+                            </a>
+                        </div>
+                    </t>
+                </div>
+            </section>
+        </t>
+    </template>
+</odoo>

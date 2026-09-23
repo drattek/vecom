@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <record id="view_product_model_tree" model="ir.ui.view">
+        <field name="name">machine.model.tree.machine.catalog</field>
+        <field name="model">machine.model</field>
+        <field name="arch" type="xml">
+            <list>
+                <field name="sequence" widget="handle"/>
+                <field name="name"/>
+                <field name="brand_id"/>
+                <field name="machine_type_id"/>
+                <field name="year_label"/>
+                <field name="ecom_ref" optional="hide"/>
+                <field name="website_published"/>
+                <field name="product_count"/>
+            </list>
+        </field>
+    </record>
+
+    <record id="view_product_model_form" model="ir.ui.view">
+        <field name="name">machine.model.form.machine.catalog</field>
+        <field name="model">machine.model</field>
+        <field name="arch" type="xml">
+            <form>
+                <sheet>
+                    <group>
+                        <field name="name"/>
+                        <field name="brand_id"/>
+                        <field name="machine_type_id"/>
+                        <field name="is_vehicle" invisible="1"/>
+                        <field name="year_start" required="is_vehicle"/>
+                        <field name="year_end"/>
+                        <field name="ecom_ref" groups="base.group_no_one"/>
+                        <field name="sequence"/>
+                        <field name="website_published"/>
+                        <field name="logo" widget="image"/>
+                    </group>
+                    <group>
+                        <field name="description"/>
+                    </group>
+                    <notebook>
+                        <page string="Products">
+                            <field name="product_tmpl_ids" readonly="1">
+                                <list>
+                                    <field name="name"/>
+                                    <field name="default_code"/>
+                                    <field name="list_price"/>
+                                </list>
+                            </field>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <record id="action_machine_model" model="ir.actions.act_window">
+        <field name="name">Models</field>
+        <field name="res_model">machine.model</field>
+        <field name="view_mode">list,form</field>
+    </record>
+
+    <record id="product_template_form_inherit_machine_model" model="ir.ui.view">
+        <field name="name">product.template.form.machine.model</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_only_form_view"/>
+        <field name="arch" type="xml">
+            <field name="categ_id" position="after">
+                <field name="machine_model_ids" widget="many2many_tags" options="{'no_create': False, 'no_open': False}"/>
+            </field>
+        </field>
+    </record>
+
+    <menuitem
+        id="menu_machine_model"
+        name="Models"
+        parent="menu_machine_brand_root"
+        action="action_machine_model"
+        sequence="30"
+        groups="product.group_product_manager"
+    />
+</odoo>

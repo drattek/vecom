@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<templates xml:space="preserve">
+    <t t-name="website_sale_machine_catalog.MachineCatalogSearchSnippetOption">
+        <BuilderRow label.translate="Search for">
+            <BuilderSelect action="'setMachineCatalogMode'" dataAttributeAction="'searchMode'" preview="false">
+                <BuilderSelectItem actionValue="'both'">Vehicles and machinery</BuilderSelectItem>
+                <BuilderSelectItem actionValue="'vehicle'">Vehicles only</BuilderSelectItem>
+                <BuilderSelectItem actionValue="'machinery'">Machinery only</BuilderSelectItem>
+            </BuilderSelect>
+        </BuilderRow>
+        <BuilderRow label.translate="Category">
+            <BuilderSelect action="'setMachineCatalogCategory'" dataAttributeAction="'categoryId'" preview="false">
+                <BuilderSelectItem actionValue="''">All categories</BuilderSelectItem>
+                <t t-foreach="state.categories" t-as="category" t-key="category.id">
+                    <BuilderSelectItem actionValue="category.id">
+                        <t t-out="category.display_name or category.name"/>
+                    </BuilderSelectItem>
+                </t>
+            </BuilderSelect>
+        </BuilderRow>
+    </t>
+</templates>

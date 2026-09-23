@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_machine_brand_public,machine.brand public,model_machine_brand,base.group_public,1,0,0,0
+access_machine_brand_user,machine.brand user,model_machine_brand,base.group_user,1,1,1,1
+access_machine_type_public,machine.type public,model_machine_type,base.group_public,1,0,0,0
+access_machine_type_user,machine.type user,model_machine_type,base.group_user,1,1,1,1
+access_machine_model_public,machine.model public,model_machine_model,base.group_public,1,0,0,0
+access_machine_model_user,machine.model user,model_machine_model,base.group_user,1,1,1,1

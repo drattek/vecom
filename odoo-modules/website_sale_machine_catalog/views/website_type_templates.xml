@@ -1,0 +1,30 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <template id="website_sale_type_listing" name="Machine type catalog page">
+        <t t-call="website.layout">
+            <div class="container py-5">
+                <div class="row">
+                    <div class="col-12 text-center">
+                        <h1>Tipos</h1>
+                        <p>Explora los tipos disponibles (maquinaria y vehículos) y compra productos por tipo.</p>
+                    </div>
+                </div>
+                <div class="row row-cols-1 row-cols-md-3 g-4 mt-3">
+                    <t t-foreach="machine_types" t-as="machine_type_item">
+                        <div class="col">
+                            <a t-att-href="'/shop/type/%s' % request.env['ir.http']._slugify(machine_type_item.name)" class="card h-100">
+                                <t t-if="machine_type_item.logo">
+                                    <img t-att-src="'/web/image/machine.type/' + str(machine_type_item.id) + '/logo'" class="card-img-top" t-att-alt="machine_type_item.name"/>
+                                </t>
+                                <div class="card-body">
+                                    <h5 class="card-title" t-esc="machine_type_item.name"/>
+                                    <p class="card-text" t-esc="machine_type_item.description or ''"/>
+                                </div>
+                            </a>
+                        </div>
+                    </t>
+                </div>
+            </div>
+        </t>
+    </template>
+</odoo>

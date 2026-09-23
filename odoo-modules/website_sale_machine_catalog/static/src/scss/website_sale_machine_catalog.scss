@@ -1,0 +1,221 @@
+/* Machine Catalog website sale styles */
+.oe_website_sale {
+  .o_wsale_brand_filter,
+  .o_wsale_type_filter,
+  .o_wsale_model_filter {
+    .accordion-item {
+      border: 0;
+    }
+
+    .accordion-button::after {
+      background-image: escape-svg($accordion-button-icon);
+    }
+
+    .accordion-button:not(.collapsed)::after {
+      background-image: escape-svg($accordion-button-icon);
+    }
+  }
+}
+
+.o_wsale_brand_filter, .o_wsale_type_filter, .o_wsale_model_filter {
+  margin-bottom: 0;
+}
+.o_wsale_brand_filter ul, .o_wsale_type_filter ul, .o_wsale_model_filter ul {
+  list-style: none;
+  padding-left: 0;
+}
+.o_wsale_brand_filter li, .o_wsale_type_filter li, .o_wsale_model_filter li {
+  margin-bottom: 0.25rem;
+}
+.o_wsale_brand_filter a, .o_wsale_type_filter a, .o_wsale_model_filter a {
+  display: inline-block;
+}
+
+.o_machine_garage_page {
+  .o_machine_garage_table {
+    thead th {
+      font-size: 0.82rem;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: $gray-600;
+      border-bottom-width: 1px;
+    }
+
+    tbody tr {
+      background-color: rgba($white, 0.75);
+    }
+  }
+
+  .o_machine_garage_add_button {
+    box-shadow: none;
+  }
+}
+
+.o_machine_catalog_search_snippet {
+  --machine-snippet-surface: rgba(255, 255, 255, 0.94);
+  --machine-snippet-surface-strong: #ffffff;
+  --machine-snippet-border: rgba(52, 58, 64, 0.12);
+  // Theme primary color (website color palette 1), so the snippet follows the site design.
+  --machine-snippet-accent: var(--o-color-1, #c51733);
+  --machine-snippet-accent-dark: color-mix(in srgb, var(--machine-snippet-accent) 65%, #000000);
+  --machine-snippet-accent-2: #343a40;
+  --machine-snippet-text: #343a40;
+  --machine-snippet-muted: #6c757d;
+  --machine-snippet-field-bg: #f2f2f2;
+
+  position: relative;
+  overflow: hidden;
+  padding: clamp(1.1rem, 2vw, 1.6rem);
+  color: var(--machine-snippet-text);
+  background: linear-gradient(180deg, var(--machine-snippet-accent), var(--machine-snippet-accent-dark));
+
+  > .container {
+    position: relative;
+    z-index: 1;
+  }
+
+  .o_machine_catalog_search_snippet__panel {
+    position: relative;
+    margin-top: 1.1rem;
+    padding: clamp(1rem, 1.6vw, 1.35rem);
+    border: 1px solid var(--machine-snippet-border);
+    border-radius: 6px;
+    background: var(--machine-snippet-surface);
+    color: var(--machine-snippet-text);
+  }
+
+  .o_machine_catalog_search_snippet__label {
+    display: block;
+    margin-bottom: 0.35rem;
+    font-size: 0.8rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: #4f5b63;
+  }
+
+  .o_machine_catalog_search_snippet__select,
+  .o_machine_catalog_search_snippet__button {
+    min-height: 3rem;
+    border-radius: 6px;
+  }
+
+  .o_machine_catalog_search_snippet__select {
+    padding-inline: 1rem 2.75rem;
+    border: 1px solid rgba(52, 58, 64, 0.18);
+    background-color: var(--machine-snippet-field-bg);
+    background-position:
+      calc(100% - 1.15rem) calc(50% - 0.2rem),
+      calc(100% - 0.85rem) calc(50% - 0.2rem),
+      calc(100% - 2.25rem) 50%;
+    background-size: 0.45rem 0.45rem, 0.45rem 0.45rem, 1px 1.15rem;
+    background-repeat: no-repeat;
+    color: var(--machine-snippet-text);
+
+    &:not(:disabled) {
+      cursor: pointer;
+    }
+
+    &:disabled {
+      background-color: rgba(242, 242, 242, 0.82);
+      color: rgba(52, 58, 64, 0.55);
+      opacity: 1;
+      cursor: not-allowed;
+    }
+  }
+
+  .o_machine_catalog_search_snippet__select:focus {
+    border-color: var(--machine-snippet-accent);
+    background-color: #ffffff;
+    outline: 2px solid var(--machine-snippet-accent);
+    outline-offset: 1px;
+  }
+
+  .btn-group[role="group"] {
+    border-radius: 6px;
+    overflow: hidden;
+  }
+
+  .btn-group[role="group"] .btn {
+    border-radius: 0;
+    min-height: 2.6rem;
+    padding-inline: 1.25rem;
+    font-weight: 700;
+    border-color: rgba(52, 58, 64, 0.18);
+    color: var(--machine-snippet-text);
+
+    &.active {
+      border-color: var(--machine-snippet-accent);
+      background: var(--machine-snippet-accent);
+      color: #ffffff;
+    }
+  }
+
+  .o_machine_catalog_search_snippet__button {
+    width: 100%;
+    border: 0;
+    font-weight: 800;
+    letter-spacing: 0.02em;
+    color: #ffffff;
+    background: var(--machine-snippet-accent);
+  }
+
+  .o_machine_catalog_search_snippet__button:hover,
+  .o_machine_catalog_search_snippet__button:focus {
+    background: var(--machine-snippet-accent-dark);
+  }
+
+  @media (max-width: 767.98px) {
+    padding: 0.85rem;
+
+    .o_machine_catalog_search_snippet__panel {
+      padding: 0.95rem;
+
+    }
+
+    .o_machine_catalog_search_snippet__button {
+      min-height: 3.15rem;
+    }
+  }
+}
+
+.o_machine_catalog_product_models {
+  padding-top: 1rem;
+  border-top: 1px solid rgba(31, 111, 139, 0.16);
+
+  .o_machine_catalog_product_models__title {
+    margin-bottom: 1rem;
+    font-size: clamp(1.1rem, 1.6vw, 1.55rem);
+    font-weight: 700;
+    color: #15394a;
+  }
+
+  .o_machine_catalog_product_models__table {
+    margin-bottom: 0;
+    background: #fff;
+    border: 1px solid #d7dee3;
+    border-radius: 0.9rem;
+    overflow: hidden;
+
+    thead th {
+      background: #f4f8fa;
+      color: #5e717a;
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #d7dee3;
+    }
+
+    tbody td {
+      border-color: #edf1f4;
+    }
+  }
+}
+
+.o_machine_catalog_filters {
+  .o_machine_catalog_filter_options {
+    max-height: 14rem;
+    overflow-y: auto;
+  }
+}

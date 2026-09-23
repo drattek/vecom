@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<odoo>
+    <template id="website_sale_category_link" inherit_id="website_sale.categorie_link" name="Category link with brand preservation">
+        <xpath expr="//a" position="attributes">
+            <attribute name="t-att-href">shop_route_mode == 'brand' and brand and keep('/shop/brand/%s' % request.env['ir.http']._slugify(brand.name), category=c.id, machine_type=machine_type and machine_type.id or False) or (shop_route_mode == 'type' and machine_type and keep('/shop/type/%s' % request.env['ir.http']._slugify(machine_type.name), category=c.id, brand=brand and brand.id or False) or keep('/shop/category/%s' % slug(c), brand=brand and brand.id or False, machine_type=machine_type and machine_type.id or False))</attribute>
+        </xpath>
+    </template>
+
+    <template id="website_sale_brand_title" inherit_id="website_sale.products" name="Brand shop title">
+        <xpath expr="//t[@t-set='additional_title']" position="replace">
+            <t t-set="additional_title" t-value="brand and not category and brand.name or (category and category.name or '')"/>
+        </xpath>
+    </template>
+
+    <!-- <template id="website_sale_machine_selection_title" inherit_id="website_sale.products" name="Machine selection title">
+        <xpath expr="//div[@id='category_header']" position="before">
+            <t t-if="machine_selection_title">
+                <div class="w-100 d-flex justify-content-end mt-2">
+                    <div class="badge rounded-pill text-bg-light border border-1 border-secondary-subtle text-dark fw-semibold px-3 py-2 text-wrap text-end">
+                        <t t-esc="machine_selection_title"/>
+                    </div>
+                </div>
+            </t>
+        </xpath>
+
+        <xpath expr="//div[@id='oe_structure_products_header_shop']" position="before">
+            <t t-if="machine_selection_title">
+                <div class="w-100 d-flex justify-content-end mt-2">
+                    <div class="badge rounded-pill text-bg-light border border-1 border-secondary-subtle text-dark fw-semibold px-3 py-2 text-wrap text-end">
+                        <t t-esc="machine_selection_title"/>
+                    </div>
+                </div>
+            </t>
+        </xpath>
+    </template> -->
+
+    <template id="website_sale_product_machine_models" inherit_id="website_sale.product" name="Compatible machine models section" priority="30">
+        <xpath expr="//section[@id='product_detail']" position="inside">
+            <section t-if="product.machine_model_ids" id="o_machine_catalog_product_models" class="o_machine_catalog_product_models mt-5">
+                <div class="container">
+                    <h3 class="o_machine_catalog_product_models__title">Maquinaria y vehículos compatibles</h3>
+                    <div class="table-responsive">
+                        <table class="table align-middle o_machine_catalog_product_models__table">
+                            <thead>
+                                <tr>
+                                    <th scope="col">Modelo</th>
+                                    <th scope="col">Marca</th>
+                                    <th scope="col">Tipo</th>
+                                    <th scope="col">Años</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <t t-foreach="product.machine_model_ids" t-as="machine_model" t-key="machine_model.id">
+                                    <tr>
+                                        <td class="fw-semibold" t-esc="machine_model.name"/>
+                                        <td t-esc="machine_model.brand_id.name"/>
+                                        <td t-esc="machine_model.machine_type_id.name"/>
+                                        <td t-esc="machine_model.year_label or ''"/>
+                                    </tr>
+                                </t>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </section>
+        </xpath>
+    </template>
+</odoo>
