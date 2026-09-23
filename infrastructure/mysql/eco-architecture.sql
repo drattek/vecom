@@ -572,6 +572,29 @@ create table ecom_channel_category_map (
     constraint fk_cat_map_updated foreign key (updated_by) references ecom_api_user(id)
 );
 
+-- ADR 0005: categoría externa elegida por el usuario para un producto en una
+-- conexión, antes de que exista ninguna publicación (ecom_channel_product_map)
+-- para esa conexión. category_id es la hoja local que category_import.Import
+-- resolvió/creó para external_category_id; nunca se escribe en
+-- ecom_products.category_id.
+create table ecom_channel_product_category_selection (
+    id bigint unsigned primary key auto_increment,
+    product_id bigint unsigned not null,
+    connection_id bigint unsigned not null,
+    category_id bigint unsigned not null,
+    external_category_id varchar(255) not null,
+    external_category_name varchar(255) default null,
+    created_by bigint unsigned not null,
+    updated_by bigint unsigned default null,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp on update current_timestamp,
+    deleted_at timestamp default null,
+    unique key uq_product_connection_category_selection (product_id, connection_id),
+    constraint fk_pcs_product foreign key (product_id) references ecom_products(id),
+    constraint fk_pcs_connection foreign key (connection_id) references ecom_channel_connections(id),
+    constraint fk_pcs_category foreign key (category_id) references ecom_categories(id)
+);
+
 create table ecom_channel_product_map (
     id bigint unsigned primary key auto_increment,
     listing_title varchar(255) default null,

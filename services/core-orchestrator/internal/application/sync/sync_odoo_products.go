@@ -73,6 +73,10 @@ type OdooProductSyncService struct {
 	categoriesRepository         *mysqlInfra.CategoriesRepository
 	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository
 	channelProductMapRepository  *mysqlInfra.ChannelProductMapRepository
+	// categorySelectionRepository resolves the per-connection category the
+	// user picked in the "Sincronización" tab before this product had any
+	// listing there (ADR 0005) — see resolveConnectionCategoryID.
+	categorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository
 	// channelRepository/channelAttributesRepository/channelAttributeMapRepository/
 	// productAttributesRepository/attributeOptionsRepository back
 	// resolveProductInfoEntries: reading the custom attributes the ODOO channel
@@ -114,6 +118,7 @@ func NewOdooProductSyncService(
 	categoriesRepository *mysqlInfra.CategoriesRepository,
 	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository,
 	channelProductMapRepository *mysqlInfra.ChannelProductMapRepository,
+	categorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository,
 	channelRepository *mysqlInfra.ChannelRepository,
 	channelAttributesRepository *mysqlInfra.ChannelAttributesRepository,
 	channelAttributeMapRepository *mysqlInfra.ChannelAttributeMapRepository,
@@ -136,6 +141,7 @@ func NewOdooProductSyncService(
 		categoriesRepository:          categoriesRepository,
 		channelCategoryMapRepository:  channelCategoryMapRepository,
 		channelProductMapRepository:   channelProductMapRepository,
+		categorySelectionRepository:   categorySelectionRepository,
 		channelRepository:             channelRepository,
 		channelAttributesRepository:   channelAttributesRepository,
 		channelAttributeMapRepository: channelAttributeMapRepository,
@@ -473,8 +479,12 @@ func (s *OdooProductSyncService) update(
 	}
 
 	externalCategoryID := derefString(existingMap.ExternalCategoryID)
-	if product.CategoryID != nil {
-		resolvedCategoryID, err := s.resolveOdooCategory(ctx, categoriesHandler, credentials, *product.CategoryID, connectionID)
+	categoryID, err := s.resolveConnectionCategoryID(ctx, product, connectionID)
+	if err != nil {
+		return err
+	}
+	if categoryID != nil {
+		resolvedCategoryID, err := s.resolveOdooCategory(ctx, categoriesHandler, credentials, *categoryID, connectionID)
 		if err != nil {
 			return fmt.Errorf("error resolving odoo category for product %d: %w", productID, err)
 		}
@@ -662,11 +672,15 @@ func (s *OdooProductSyncService) create(
 		return "", missingRequired, missingOptional, fmt.Errorf("error downloading cover image for product %d: %w", product.ID, err)
 	}
 
-	if product.CategoryID == nil {
+	categoryID, err := s.resolveConnectionCategoryID(ctx, product, connectionID)
+	if err != nil {
+		return "", missingRequired, missingOptional, err
+	}
+	if categoryID == nil {
 		return "", missingRequired, missingOptional, fmt.Errorf("%w: product %d has no category", workers.ErrSyncNotReady, product.ID)
 	}
 
-	externalCategoryID, err := s.resolveOdooCategory(ctx, categoriesHandler, credentials, *product.CategoryID, connectionID)
+	externalCategoryID, err := s.resolveOdooCategory(ctx, categoriesHandler, credentials, *categoryID, connectionID)
 	if err != nil {
 		return "", missingRequired, missingOptional, fmt.Errorf("error resolving odoo category for product %d: %w", product.ID, err)
 	}
@@ -806,6 +820,25 @@ func priceOrStockChangedSince(priceUpdatedAt time.Time, stocks []mysqlInfra.Prod
 		}
 	}
 	return false
+}
+
+// resolveConnectionCategoryID returns the local ecom_categories id to
+// resolve product's Odoo category from on connectionID: a per-connection
+// selection picked in the "Sincronización" tab before this product had any
+// listing there (ecom_channel_product_category_selection — see ADR 0005)
+// takes priority when present; otherwise product's own catalog category is
+// used as before (nil if it has none), preserving prior behavior for
+// connections that never went through the picker.
+func (s *OdooProductSyncService) resolveConnectionCategoryID(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64) (*int64, error) {
+	selection, err := s.categorySelectionRepository.FindByProductAndConnection(ctx, product.ID, connectionID)
+	if err != nil && !errors.Is(err, mysqlInfra.ErrChannelProductCategorySelectionNotFound) {
+		return nil, fmt.Errorf("error loading category selection for product %d: %w", product.ID, err)
+	}
+	if selection != nil {
+		categoryID := selection.CategoryID
+		return &categoryID, nil
+	}
+	return product.CategoryID, nil
 }
 
 // resolveOdooCategory returns the Odoo product.public.category id that maps

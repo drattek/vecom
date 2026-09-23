@@ -108,22 +108,27 @@ type UploadResult struct {
 // allows_multiple_listings flag — Upload enforces it before ever calling
 // out to MercadoLibre.
 type MercadoLibreProductSyncService struct {
-	productRepository            *mysqlInfra.ProductRepository
-	brandsRepository             *mysqlInfra.BrandsRepository
-	productPricesRepository      *mysqlInfra.ProductPricesRepository
-	productStockRepository       *mysqlInfra.ProductStockRepository
-	productImagesRepository      *mysqlInfra.ProductImagesRepository
-	productDimensionsRepository  *mysqlInfra.ProductDimensionsRepository
-	filesRepository              *mysqlInfra.FilesRepository
-	currenciesRepository         *mysqlInfra.CurrenciesRepository
-	channelConnectionRepository  *mysqlInfra.ChannelConnectionRepository
-	channelProductMapRepository  *mysqlInfra.ChannelProductMapRepository
-	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository
-	tokenService                 *MercadoLibreTokenService
-	categoryPredictorService     *MercadoLibreCategoryPredictorService
-	itemsHandler                 *mercadoLibreInfra.ItemsHandler
-	formulaCalculator            *pricingApp.PricingFormulaCalculator
-	effectivePriceResolver       *pricingApp.EffectivePriceResolver
+	productRepository           *mysqlInfra.ProductRepository
+	brandsRepository            *mysqlInfra.BrandsRepository
+	productPricesRepository     *mysqlInfra.ProductPricesRepository
+	productStockRepository      *mysqlInfra.ProductStockRepository
+	productImagesRepository     *mysqlInfra.ProductImagesRepository
+	productDimensionsRepository *mysqlInfra.ProductDimensionsRepository
+	filesRepository             *mysqlInfra.FilesRepository
+	currenciesRepository        *mysqlInfra.CurrenciesRepository
+	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository
+	channelProductMapRepository *mysqlInfra.ChannelProductMapRepository
+	// categorySelectionRepository resolves the per-connection category the
+	// user picked in the "Sincronización" tab before this product had any
+	// listing there (ADR 0005) — checked in resolveExternalCategoryID ahead
+	// of the predictor. There is deliberately no ecom_channel_category_map
+	// (local-category-level) fallback here anymore — see resolveExternalCategoryID.
+	categorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository
+	tokenService                *MercadoLibreTokenService
+	categoryPredictorService    *MercadoLibreCategoryPredictorService
+	itemsHandler                *mercadoLibreInfra.ItemsHandler
+	formulaCalculator           *pricingApp.PricingFormulaCalculator
+	effectivePriceResolver      *pricingApp.EffectivePriceResolver
 	// channelAttributeValuesService/productAttributesRepository/
 	// attributeOptionsRepository back resolveCustomAttributes: provisioning
 	// the required-attribute slots for a listing's category and reading
@@ -152,7 +157,7 @@ func NewMercadoLibreProductSyncService(
 	currenciesRepository *mysqlInfra.CurrenciesRepository,
 	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository,
 	channelProductMapRepository *mysqlInfra.ChannelProductMapRepository,
-	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository,
+	categorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository,
 	tokenService *MercadoLibreTokenService,
 	categoryPredictorService *MercadoLibreCategoryPredictorService,
 	rateLimiter *mercadoLibreInfra.RateLimiter,
@@ -176,7 +181,7 @@ func NewMercadoLibreProductSyncService(
 		currenciesRepository:          currenciesRepository,
 		channelConnectionRepository:   channelConnectionRepository,
 		channelProductMapRepository:   channelProductMapRepository,
-		channelCategoryMapRepository:  channelCategoryMapRepository,
+		categorySelectionRepository:   categorySelectionRepository,
 		tokenService:                  tokenService,
 		categoryPredictorService:      categoryPredictorService,
 		itemsHandler:                  mercadoLibreInfra.NewItemsHandler(client),
@@ -1329,20 +1334,27 @@ func formatMercadoLibreBoolean(value bool) string {
 }
 
 // resolveExternalCategoryID returns the MercadoLibre category id to list
-// product under. If product already has a local category that's mapped to
-// connectionID in ecom_channel_category_map, that mapping's external id is
-// reused directly and the category predictor is never called; otherwise
-// query is sent to the predictor and its best match is used.
+// product under. It first checks for a per-(product, connectionID) category
+// picked in the "Sincronización" tab before this product had any listing on
+// connectionID (ecom_channel_product_category_selection — see ADR 0005),
+// returning that directly when present. Deliberately does NOT fall back to
+// ecom_channel_category_map (the local-category-level mapping): that map is
+// keyed only by (local category, connection), so reusing it here is exactly
+// the bug ADR 0005 fixes — once any product under a shared local category
+// (e.g. "Frenos") resolved to some ML category, every other product under
+// that same local category would silently inherit it too, even a wrong one
+// (e.g. balatas getting listed under "Frenos"). With no selection on record,
+// query is always sent to the predictor and its best match is used — this
+// covers the automated discovery/queue publish path (workers.MarketplaceWorker),
+// which never goes through the manual picker.
 func (s *MercadoLibreProductSyncService) resolveExternalCategoryID(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, query string) (string, error) {
-	if product.CategoryID != nil {
-		existing, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, *product.CategoryID, connectionID)
-		if err != nil && !errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
-			return "", fmt.Errorf("error loading channel category map for product %d: %w", product.ID, err)
-		}
-		if existing != nil {
-			log.Printf("mercadolibre upload: product %d — category %d already mapped to %s for connection %d, skipping category predictor", product.ID, *product.CategoryID, existing.ExternalCategoryID, connectionID)
-			return existing.ExternalCategoryID, nil
-		}
+	selection, err := s.categorySelectionRepository.FindByProductAndConnection(ctx, product.ID, connectionID)
+	if err != nil && !errors.Is(err, mysqlInfra.ErrChannelProductCategorySelectionNotFound) {
+		return "", fmt.Errorf("error loading category selection for product %d: %w", product.ID, err)
+	}
+	if selection != nil {
+		log.Printf("mercadolibre upload: product %d — using category %s selected for connection %d, skipping category predictor", product.ID, selection.ExternalCategoryID, connectionID)
+		return selection.ExternalCategoryID, nil
 	}
 
 	log.Printf("mercadolibre upload: product %d — calling category predictor (query=%q)", product.ID, query)

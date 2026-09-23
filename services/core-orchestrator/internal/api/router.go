@@ -69,6 +69,7 @@ func NewRouter(
 	mercadoLibreCategoryAttributesDebugHandler *httpHandler.MercadoLibreCategoryAttributesDebugHandler,
 	mercadoLibreCategoriesDebugHandler *httpHandler.MercadoLibreCategoriesDebugHandler,
 	mercadoLibreMigrateSyncItemMeliHandler *httpHandler.MercadoLibreMigrateSyncItemMeliHandler,
+	productCategorySelectionHandler *httpHandler.ProductCategorySelectionHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -279,6 +280,10 @@ func NewRouter(
 		// tenga sincronizado ese producto (o pendiente, en conexiones con
 		// allows_multiple_listings). Solo lectura.
 		protected.Get("/api/products/{productId}/details/sync", productSyncHandler.GetSync)
+		// Selección manual, por conexión, de la categoría externa a publicar —
+		// paso previo al botón "Publicar" en Sincronización cuando la conexión
+		// todavía no tiene ninguna publicación. Ver ADR 0005.
+		protected.Post("/api/products/{productId}/details/sync/{connectionId}/category", productCategorySelectionHandler.Select)
 
 		// Videos por URL desde el detalle de producto (Multimedia). Solo disco +
 		// URLs; sin orden, portada ni tipo.

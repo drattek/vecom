@@ -17,6 +17,11 @@ type ChannelConnectionDTO struct {
 	ID          int64  `json:"id"`
 	ChannelID   int64  `json:"channelId"`
 	ChannelName string `json:"channelName"`
+	// ChannelCode is ecom_channels.code (e.g. "MERCADOLIBRE", "ODOO") — lets a
+	// caller (e.g. the product detail Atributos tab's category picker) tell
+	// MercadoLibre apart from every other channel without matching on the
+	// display name. See ADR 0005.
+	ChannelCode string `json:"channelCode"`
 	Name        string `json:"name"`
 	Status      string `json:"status"`
 	Environment string `json:"environment"`
@@ -78,7 +83,7 @@ func (r *ChannelConnectionRepository) FindPaginated(ctx context.Context, offset,
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
 		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
-		       ch.name
+		       ch.name, ch.code
 		FROM ecom_channel_connections cc
 		LEFT JOIN ecom_channels ch ON ch.id = cc.channel_id
 		WHERE cc.deleted_at IS NULL
@@ -123,7 +128,7 @@ func (r *ChannelConnectionRepository) FindActiveByChannelCode(ctx context.Contex
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
 		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
-		       ch.name
+		       ch.name, ch.code
 		FROM ecom_channel_connections cc
 		JOIN ecom_channels ch ON ch.id = cc.channel_id
 		WHERE cc.deleted_at IS NULL AND cc.status = 'active' AND UPPER(TRIM(ch.code)) = UPPER(TRIM(?))
@@ -161,7 +166,7 @@ func (r *ChannelConnectionRepository) FindAllActive(ctx context.Context) ([]Chan
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
 		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
-		       ch.name
+		       ch.name, ch.code
 		FROM ecom_channel_connections cc
 		JOIN ecom_channels ch ON ch.id = cc.channel_id
 		WHERE cc.deleted_at IS NULL AND cc.status = 'active'
@@ -194,7 +199,7 @@ func (r *ChannelConnectionRepository) FindByID(ctx context.Context, id int64) (*
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
 		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
-		       ch.name
+		       ch.name, ch.code
 		FROM ecom_channel_connections cc
 		LEFT JOIN ecom_channels ch ON ch.id = cc.channel_id
 		WHERE cc.id = ? AND cc.deleted_at IS NULL
@@ -310,6 +315,7 @@ func scanChannelConnection(scanner interface{ Scan(dest ...any) error }) (Channe
 	var updatedBy sql.NullInt64
 	var deletedAt sql.NullTime
 	var channelName sql.NullString
+	var channelCode sql.NullString
 
 	err := scanner.Scan(
 		&channelConnection.ID,
@@ -325,12 +331,14 @@ func scanChannelConnection(scanner interface{ Scan(dest ...any) error }) (Channe
 		&channelConnection.UpdatedAt,
 		&deletedAt,
 		&channelName,
+		&channelCode,
 	)
 	if err != nil {
 		return ChannelConnectionDTO{}, fmt.Errorf("error scanning channel connection: %w", err)
 	}
 
 	channelConnection.ChannelName = channelName.String
+	channelConnection.ChannelCode = channelCode.String
 
 	if updatedBy.Valid {
 		channelConnection.UpdatedBy = &updatedBy.Int64

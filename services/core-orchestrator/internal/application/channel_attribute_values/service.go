@@ -326,6 +326,15 @@ type ProvisionCategoryAttributesInput struct {
 	CategoryID   string
 	ConnectionID *int64
 	ActorID      int64
+	// LocalCategoryIDOverride, when set, is used directly as the local
+	// category every created slot is scoped to, skipping the
+	// product.CategoryID / EnsureLocalCategory derivation below entirely.
+	// Set by product_category_selection.Service.Select when the user picked
+	// an external category for one connection that differs from the
+	// product's own catalog category (see ADR 0005) — without this, slots
+	// for that category would get scoped to the product's unrelated
+	// category, contaminating it for every other product that shares it.
+	LocalCategoryIDOverride *int64
 }
 
 // ProvisionedAttributeOutcome reports what happened for one required
@@ -438,7 +447,9 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 	}
 
 	localCategoryID := product.CategoryID
-	if localCategoryID == nil && input.ConnectionID != nil {
+	if input.LocalCategoryIDOverride != nil {
+		localCategoryID = input.LocalCategoryIDOverride
+	} else if localCategoryID == nil && input.ConnectionID != nil {
 		leafCategoryID, err := s.categoryPredictorService.EnsureLocalCategory(ctx, *input.ConnectionID, categoryID, input.ActorID)
 		if err != nil {
 			return nil, fmt.Errorf("error resolving local category for mercadolibre category %s: %w", categoryID, err)

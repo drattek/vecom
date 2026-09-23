@@ -6,6 +6,8 @@ import {
 import {
     attributeChecklistSchema,
     brandOptionsResponseSchema,
+    categoryPredictionsResponseSchema,
+    channelProductCategorySelectionSchema,
     createListingsResultSchema,
     productAttributesSectionSchema,
     productGeneralSchema,
@@ -17,6 +19,7 @@ import {
     productVideoImportResultSchema,
     resyncListingsResultSchema,
     type BrandOption,
+    type CategoryPrediction,
     type ProductDimensionsPatch,
     type ProductGeneralPatch,
     type ProductSeoPatch,
@@ -201,6 +204,54 @@ export function usePublishChannelListing(productId: string | undefined) {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["product-details", productId, "sync"] })
+        },
+    })
+}
+
+/**
+ * useCategoryPrediction sugiere una categoría de MercadoLibre a partir de un
+ * texto (nombre del producto) — paso previo, en el selector de categoría de
+ * Sincronización, a dejar elegir del árbol completo (ver ADR 0005). Solo
+ * corre con conexión y título disponibles; no se cachea entre productos
+ * distintos (queryKey incluye el título).
+ */
+export function useCategoryPrediction(connectionId: number | null, title: string | undefined) {
+    return useQuery({
+        queryKey: ["category-prediction", connectionId, title],
+        enabled: connectionId != null && Boolean(title),
+        queryFn: async (): Promise<CategoryPrediction | null> => {
+            const response = await apiClient.get("/api/marketplaces/mercadolibre/category-predictor", {
+                params: { connectionId, title, limit: 1 },
+            })
+            const predictions = categoryPredictionsResponseSchema.parse(response.data).predictions
+            return predictions[0] ?? null
+        },
+    })
+}
+
+/**
+ * useSelectChannelCategory guarda, para (producto, conexión), la categoría
+ * externa elegida en el selector de Sincronización antes de que exista
+ * ninguna publicación (ver ADR 0005) — el paso previo a que el checklist de
+ * atributos y el botón "Publicar" queden disponibles. Invalida tanto "sync"
+ * (para que el selector desaparezca) como el checklist de esa conexión (para
+ * que muestre los atributos de la categoría recién elegida).
+ */
+export function useSelectChannelCategory(productId: string | undefined) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (input: { connectionId: number; externalCategoryId: string }) => {
+            const response = await apiClient.post(
+                `/api/products/${productId}/details/sync/${input.connectionId}/category`,
+                { externalCategoryId: input.externalCategoryId },
+            )
+            return channelProductCategorySelectionSchema.parse(response.data)
+        },
+        onSuccess: (_data, variables) => {
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId, "sync"] })
+            queryClient.invalidateQueries({
+                queryKey: ["product-details", productId, "attributes", "checklist", variables.connectionId],
+            })
         },
     })
 }

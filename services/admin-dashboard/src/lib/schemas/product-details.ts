@@ -345,7 +345,11 @@ export const attributeChecklistSchema = z.object({
   attributeScope: z.enum(['category', 'product']),
   categoryId: z.number().nullish(),
   categoryName: z.string().nullish(),
-  state: z.enum(['no_category', 'category_not_mapped', 'ok']),
+  // 'needs_selection': el canal es por categoría y todavía no hay categoría
+  // externa resuelta para esta conexión — ni por selección manual (ver ADR
+  // 0005) ni por el mapeo legado de la categoría del producto. El front debe
+  // mostrar el selector de categoría en vez de la lista de atributos.
+  state: z.enum(['needs_selection', 'ok']),
   externalCategoryId: z.string().nullish(),
   externalCategoryName: z.string().nullish(),
   requiredMissing: z.number(),
@@ -404,6 +408,34 @@ export type SyncCompatibility = z.infer<typeof syncCompatibilitySchema>
 export type SyncListing = z.infer<typeof syncListingSchema>
 export type SyncConnection = z.infer<typeof syncConnectionSchema>
 export type ProductSyncSection = z.infer<typeof productSyncSectionSchema>
+
+// Sugerencia de categoría de MercadoLibre por texto —
+// GET /api/marketplaces/mercadolibre/category-predictor?connectionId=&title=&limit=1.
+// category_id/category_name vienen tal cual los devuelve la API de MercadoLibre
+// (snake_case), a diferencia del resto de las respuestas del core.
+export const categoryPredictionSchema = z.object({
+  category_id: z.string(),
+  category_name: z.string(),
+})
+
+export const categoryPredictionsResponseSchema = z.object({
+  predictions: z.array(categoryPredictionSchema),
+})
+
+export type CategoryPrediction = z.infer<typeof categoryPredictionSchema>
+
+// Selección manual de categoría externa por conexión, antes de publicar (ver
+// ADR 0005) — POST .../details/sync/{connectionId}/category con
+// { externalCategoryId }.
+export const channelProductCategorySelectionSchema = z.object({
+  productId: z.number(),
+  connectionId: z.number(),
+  categoryId: z.number(),
+  externalCategoryId: z.string(),
+  externalCategoryName: z.string().optional().default(''),
+})
+
+export type ChannelProductCategorySelection = z.infer<typeof channelProductCategorySelectionSchema>
 
 // --- Compatibilidades ------------------------------------------------------
 // GET /api/products/{id}/details/compatibilities — solo lectura: las

@@ -34,6 +34,7 @@ import (
 	migrationApp "core-orchestrator/internal/application/migration"
 	pricingApp "core-orchestrator/internal/application/pricing"
 	productAttributeChecklistApp "core-orchestrator/internal/application/product_attributes_checklist"
+	productCategorySelectionApp "core-orchestrator/internal/application/product_category_selection"
 	productDetailsApp "core-orchestrator/internal/application/product_details"
 	productImageImportApp "core-orchestrator/internal/application/product_image_import"
 	productMediaApp "core-orchestrator/internal/application/product_media"
@@ -141,11 +142,13 @@ func main() {
 		mysqlRepos.ChannelRepository,
 		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.ChannelProductMapRepository,
 		mysqlRepos.ChannelAttributesRepository,
 		mysqlRepos.ChannelAttributeMapRepository,
 		mysqlRepos.AttributesRepository,
 		mysqlRepos.AttributeOptionsRepository,
 		mysqlRepos.ProductAttributesRepository,
+		mysqlRepos.ChannelProductCategorySelectionRepository,
 	)
 	productSyncService := productSyncApp.NewService(
 		mysqlRepos.ProductRepository,
@@ -251,7 +254,7 @@ func main() {
 		mysqlRepos.CurrenciesRepository,
 		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelProductMapRepository,
-		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.ChannelProductCategorySelectionRepository,
 		mercadoLibreTokenService,
 		mercadoLibreCategoryPredictorService,
 		mercadoLibreRateLimiter,
@@ -290,6 +293,19 @@ func main() {
 		mysqlRepos.ConnectionSettingsRepository,
 		mercadoLibreCategoryPredictorService,
 		odooRateLimiter,
+	)
+	// Backs the "Sincronización" tab's category picker: records, per
+	// (product, connection), the external category chosen before the product
+	// has any listing there, reusing categoryImportService to ensure the
+	// local category exists and channelAttributeValuesService to seed
+	// MercadoLibre's required-attribute slots for it. See ADR 0005.
+	productCategorySelectionService := productCategorySelectionApp.NewService(
+		mysqlRepos.ProductRepository,
+		mysqlRepos.ChannelRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelProductCategorySelectionRepository,
+		categoryImportService,
+		channelAttributeValuesService,
 	)
 	// TEMPORARY one-off migration service — migra vecom_sync_product /
 	// vecom_products (sistema anterior) a ecom_products / ecom_channel_product_map.
@@ -332,6 +348,7 @@ func main() {
 		mysqlRepos.CategoriesRepository,
 		mysqlRepos.ChannelCategoryMapRepository,
 		mysqlRepos.ChannelProductMapRepository,
+		mysqlRepos.ChannelProductCategorySelectionRepository,
 		mysqlRepos.ChannelRepository,
 		mysqlRepos.ChannelAttributesRepository,
 		mysqlRepos.ChannelAttributeMapRepository,
@@ -410,6 +427,7 @@ func main() {
 	productDetailsHandler := httpHandler.NewProductDetailsHandler(productDetailsService)
 	productAttributeChecklistHandler := httpHandler.NewProductAttributeChecklistHandler(productAttributeChecklistService)
 	productSyncHandler := httpHandler.NewProductSyncHandler(productSyncService)
+	productCategorySelectionHandler := httpHandler.NewProductCategorySelectionHandler(productCategorySelectionService)
 	productImageImportHandler := httpHandler.NewProductImageImportHandler(productImageImportService)
 	productVideosHandler := httpHandler.NewProductVideosHandler(productVideosService)
 	productPartNumbersHandler := httpHandler.NewProductPartNumbersHandler(productPartNumbersService)
@@ -571,6 +589,7 @@ func main() {
 		mercadoLibreCategoryAttributesDebugHandler,
 		mercadoLibreCategoriesDebugHandler,
 		mercadoLibreMigrateSyncItemMeliHandler,
+		productCategorySelectionHandler,
 	)
 
 	server := &http.Server{

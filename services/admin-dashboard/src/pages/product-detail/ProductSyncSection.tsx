@@ -2,7 +2,7 @@ import { Badge, Field, FieldError, SectionCard, SectionState } from "@/component
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { getServerErrorMessage } from "@/lib/api"
-import { formatDate, useProductSection, usePublishChannelListing, useResyncChannelListing } from "@/lib/product-detail"
+import { formatDate, useAttributeChecklist, useProductSection, usePublishChannelListing, useResyncChannelListing } from "@/lib/product-detail"
 import {
     productGeneralSchema,
     productSyncSectionSchema,
@@ -126,7 +126,7 @@ function ConnectionCard({
             }
         >
             {!hasActiveRows ? (
-                <PublishPrompt
+                <PublishGate
                     productId={productId}
                     sku={sku}
                     connectionId={connection.connectionId}
@@ -159,24 +159,88 @@ function ConnectionCard({
     )
 }
 
-/** Estado vacío de una conexión: mensaje + botón para crear la primera publicación. */
-function PublishPrompt({
+/**
+ * Reemplaza el botón "Publicar" directo cuando la conexión no tiene ninguna
+ * publicación activa: la categoría externa de la conexión se elige desde la
+ * pestaña Atributos (ver ADR 0005 y CategorySelector en
+ * ProductAttributesSection.tsx) — acá solo se lee el resultado
+ * (useAttributeChecklist) para mostrar el estado y habilitar "Publicar" recién
+ * cuando hay categoría Y, si el canal es por categoría, no faltan atributos
+ * requeridos. checklist.externalCategoryId es la señal — nula todavía no hay
+ * categoría resuelta para esta conexión, sea cual sea el canal.
+ */
+function PublishGate({
     productId,
     sku,
     connectionId,
     message,
     buttonLabel,
+    variant = "default",
+    compact = false,
 }: {
     productId?: string
     sku?: string
     connectionId: number
-    message: string
+    message?: string
     buttonLabel: string
+    variant?: "default" | "outline"
+    compact?: boolean
 }) {
+    const checklist = useAttributeChecklist(productId, connectionId)
+    const isCategoryScope = checklist.data?.attributeScope === "category"
+    const requiredMissing = checklist.data?.requiredMissing ?? 0
+    const hasCategory = checklist.data?.externalCategoryId != null
+    const canPublish = hasCategory && (!isCategoryScope || requiredMissing === 0)
+
     return (
-        <div className="flex flex-col items-center gap-3 py-6 text-center">
-            <p className="text-sm text-muted-foreground">{message}</p>
-            <PublishButton productId={productId} sku={sku} connectionId={connectionId} label={buttonLabel} />
+        <div
+            className={
+                compact
+                    ? "flex flex-col items-start gap-3"
+                    : "flex flex-col items-center gap-3 py-6 text-center"
+            }
+        >
+            {message ? <p className="text-sm text-muted-foreground">{message}</p> : null}
+
+            {checklist.isLoading ? (
+                <SectionState state="loading" />
+            ) : checklist.isError || !checklist.data ? (
+                <SectionState state="error" message="No se pudo cargar la categoría de esta conexión." />
+            ) : !hasCategory ? (
+                <p className="text-sm text-muted-foreground">
+                    Todavía no hay categoría elegida para esta conexión. Elegila desde la pestaña Atributos para poder
+                    publicar.
+                </p>
+            ) : (
+                <div
+                    className={
+                        compact
+                            ? "flex w-full flex-col items-start gap-2"
+                            : "flex w-full max-w-md flex-col items-center gap-2"
+                    }
+                >
+                    <p className="text-xs text-muted-foreground">
+                        Categoría:{" "}
+                        <span className="font-medium text-foreground">
+                            {checklist.data.externalCategoryName ?? checklist.data.externalCategoryId}
+                        </span>
+                    </p>
+                    {isCategoryScope && requiredMissing > 0 ? (
+                        <p className="text-sm font-medium text-destructive">
+                            {requiredMissing} atributo(s) requerido(s) sin completar — completalos en la pestaña
+                            Atributos.
+                        </p>
+                    ) : null}
+                    <PublishButton
+                        productId={productId}
+                        sku={sku}
+                        connectionId={connectionId}
+                        label={buttonLabel}
+                        variant={variant}
+                        disabled={!canPublish}
+                    />
+                </div>
+            )}
         </div>
     )
 }
@@ -184,7 +248,8 @@ function PublishPrompt({
 /**
  * Aviso para las publicaciones que el marketplace cerró (status "closed"): ya
  * no son recuperables, así que se listan de forma tenue y se ofrece volver a
- * publicar (el endpoint ignora las filas closed y crea unas nuevas).
+ * publicar a través del mismo PublishGate (el endpoint ignora las filas
+ * closed y crea unas nuevas).
  */
 function ClosedListingsNotice({
     productId,
@@ -214,12 +279,13 @@ function ClosedListingsNotice({
                     </li>
                 ))}
             </ul>
-            <PublishButton
+            <PublishGate
                 productId={productId}
                 sku={sku}
                 connectionId={connectionId}
-                label="Volver a publicar"
+                buttonLabel="Volver a publicar"
                 variant="outline"
+                compact
             />
         </div>
     )
@@ -236,12 +302,14 @@ function PublishButton({
     connectionId,
     label,
     variant = "default",
+    disabled = false,
 }: {
     productId?: string
     sku?: string
     connectionId: number
     label: string
     variant?: "default" | "outline"
+    disabled?: boolean
 }) {
     const mutation = usePublishChannelListing(productId)
     const [outcomes, setOutcomes] = useState<ListingOutcome[] | null>(null)
@@ -264,7 +332,7 @@ function PublishButton({
 
     return (
         <>
-            <Button size="sm" variant={variant} onClick={publish} disabled={mutation.isPending || !sku}>
+            <Button size="sm" variant={variant} onClick={publish} disabled={disabled || mutation.isPending || !sku}>
                 {mutation.isPending ? "Publicando…" : label}
             </Button>
             {outcomes ? <PublishOutcomes outcomes={outcomes} /> : null}

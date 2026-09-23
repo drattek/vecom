@@ -1,11 +1,12 @@
 import {
-    Badge,
     Field,
     FieldError,
     SectionCard,
     SectionEditActions,
     SectionState,
 } from "@/components/product-detail/ProductDetailPrimitives"
+import { AttributeChecklistTable } from "@/components/product-detail/AttributeChecklistTable"
+import { ExternalCategoryTree } from "@/components/categories/ExternalCategoryTree"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -23,10 +24,10 @@ import {
     useAddChannelAttributeValue,
     useAttributeChecklist,
     useCardEditor,
+    useCategoryPrediction,
     useChannelConnections,
-    useDeleteProductAttribute,
     useProductSection,
-    useSetProductAttribute,
+    useSelectChannelCategory,
     useUpdateProductDimensions,
     useUpdateProductSeo,
 } from "@/lib/product-detail"
@@ -35,15 +36,19 @@ import {
     productDimensionsPatchSchema,
     productGeneralSchema,
     productSeoPatchSchema,
-    type AttributeChecklistItem,
     type ProductAttributeValue,
     type ProductDimensions,
     type ProductDimensionsPatch,
     type ProductSeo,
     type ProductSeoPatch,
 } from "@/lib/schemas/product-details"
-import { useMemo, useState } from "react"
+import { useState } from "react"
 import { useParams } from "react-router-dom"
+
+// ecom_channels.code para MercadoLibre — la única conexión que tiene
+// predictor de categoría por texto (ver ADR 0005). Cualquier otro canal
+// soportado (hoy solo Odoo) muestra el árbol de categorías directamente.
+const MERCADOLIBRE_CHANNEL_CODE = "MERCADOLIBRE"
 
 const dataTypeLabels: Record<string, string> = {
     text: "Texto",
@@ -151,6 +156,7 @@ function AttributesChecklistCard({
 
     // Si el usuario no eligió nada, usar la primera conexión disponible.
     const connectionId = pickedConnectionId ?? connections.data?.[0]?.id ?? null
+    const selectedConnection = (connections.data ?? []).find((connection) => connection.id === connectionId)
     const checklist = useAttributeChecklist(productId, connectionId)
 
     function handleConnectionChange(value: string | null) {
@@ -218,16 +224,19 @@ function AttributesChecklistCard({
                 <SectionState state="loading" />
             ) : checklist.isError || !checklist.data ? (
                 <SectionState state="error" message="No se pudo cargar el checklist de atributos." />
-            ) : checklist.data.state === "no_category" ? (
-                <SectionState
-                    state="empty"
-                    message="Asigná una categoría al producto (sección Clasificación) para ver los atributos que el canal requiere."
-                />
-            ) : checklist.data.state === "category_not_mapped" ? (
-                <SectionState
-                    state="empty"
-                    message={`En ${checklist.data.channelName} la categoría «${checklist.data.categoryName ?? ""}» aún no tiene mapeo. Mapeala desde la configuración del canal para ver sus atributos.`}
-                />
+            ) : checklist.data.state === "needs_selection" && connectionId != null ? (
+                <div className="flex flex-col gap-3">
+                    <p className="text-sm text-muted-foreground">
+                        Elegí la categoría de {checklist.data.channelName} para esta conexión — es lo que habilita
+                        publicar desde Sincronización.
+                    </p>
+                    <CategorySelector
+                        productId={productId}
+                        connectionId={connectionId}
+                        channelCode={selectedConnection?.channelCode ?? ""}
+                        productName={general.data?.name}
+                    />
+                </div>
             ) : (
                 <div className="flex flex-col gap-4">
                     {checklist.data.attributeScope === "product" ? (
@@ -253,21 +262,7 @@ function AttributesChecklistCard({
                             }
                         />
                     ) : (
-                        <Table containerClassName="overflow-x-auto">
-                            <TableHeader>
-                                <TableRow>
-                                    <TableHead>Atributo</TableHead>
-                                    <TableHead>Estado</TableHead>
-                                    <TableHead className="w-64">Valor</TableHead>
-                                    <TableHead />
-                                </TableRow>
-                            </TableHeader>
-                            <TableBody>
-                                {checklist.data.items.map((item) => (
-                                    <ChecklistRow key={item.attributeId} productId={productId} item={item} />
-                                ))}
-                            </TableBody>
-                        </Table>
+                        <AttributeChecklistTable productId={productId} items={checklist.data.items} />
                     )}
 
                     {checklist.data.attributeScope === "product" && connectionId != null && general.data?.sku ? (
@@ -289,6 +284,94 @@ function AttributesChecklistCard({
                 </div>
             )}
         </SectionCard>
+    )
+}
+
+/**
+ * Selector de categoría externa por conexión, previo a publicar (ver ADR
+ * 0005). MercadoLibre muestra primero la sugerencia del predictor de
+ * categoría (por nombre de producto), con opción de elegir otra desde el
+ * árbol completo; cualquier otro canal soportado (hoy Odoo, que no tiene
+ * predictor) muestra el árbol directamente. Vive en Atributos (no en
+ * Sincronización) porque es lo que determina qué atributos requeridos
+ * aplican; Sincronización solo lee el resultado para habilitar "Publicar".
+ */
+function CategorySelector({
+    productId,
+    connectionId,
+    channelCode,
+    productName,
+}: {
+    productId?: string
+    connectionId: number
+    channelCode: string
+    productName?: string
+}) {
+    const isMercadoLibre = channelCode === MERCADOLIBRE_CHANNEL_CODE
+    const [showTree, setShowTree] = useState(!isMercadoLibre)
+    const prediction = useCategoryPrediction(isMercadoLibre ? connectionId : null, isMercadoLibre ? productName : undefined)
+    const mutation = useSelectChannelCategory(productId)
+    const [pickingExternalId, setPickingExternalId] = useState<string | null>(null)
+    const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+    function pick(externalCategoryId: string) {
+        setErrorMessage(null)
+        setPickingExternalId(externalCategoryId)
+        mutation.mutate(
+            { connectionId, externalCategoryId },
+            {
+                onError: (error) => {
+                    setErrorMessage(getServerErrorMessage(error, "No se pudo guardar la categoría."))
+                    setPickingExternalId(null)
+                },
+            },
+        )
+    }
+
+    if (isMercadoLibre && !showTree) {
+        return (
+            <div className="flex flex-col gap-2">
+                {prediction.isLoading ? (
+                    <p className="text-sm text-muted-foreground">Buscando categoría sugerida…</p>
+                ) : prediction.data ? (
+                    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
+                        <p className="text-sm">
+                            Categoría sugerida: <span className="font-medium">{prediction.data.category_name}</span>{" "}
+                            <span className="text-xs text-muted-foreground">({prediction.data.category_id})</span>
+                        </p>
+                        <div className="flex gap-2">
+                            <Button size="sm" disabled={mutation.isPending} onClick={() => pick(prediction.data!.category_id)}>
+                                {mutation.isPending ? "Guardando…" : "Usar esta categoría"}
+                            </Button>
+                            <Button size="sm" variant="outline" disabled={mutation.isPending} onClick={() => setShowTree(true)}>
+                                Elegir otra
+                            </Button>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="flex flex-col items-start gap-2">
+                        <p className="text-sm text-muted-foreground">No se pudo sugerir una categoría automáticamente.</p>
+                        <Button size="sm" variant="outline" onClick={() => setShowTree(true)}>
+                            Elegir categoría
+                        </Button>
+                    </div>
+                )}
+                <FieldError message={errorMessage} />
+            </div>
+        )
+    }
+
+    return (
+        <div className="flex flex-col gap-2">
+            <ExternalCategoryTree
+                connectionId={connectionId}
+                pickLabel="Seleccionar"
+                pickingExternalId={mutation.isPending ? pickingExternalId : null}
+                busy={mutation.isPending}
+                onPick={(node) => pick(node.externalId)}
+            />
+            <FieldError message={errorMessage} />
+        </div>
     )
 }
 
@@ -450,202 +533,6 @@ function AddCustomAttributeForm({
             </div>
             <FieldError message={error} />
         </div>
-    )
-}
-
-const dataTypeInputType: Record<string, "text" | "number" | "date"> = {
-    number: "number",
-    date: "date",
-    text: "text",
-}
-
-// Valor del <Select> para "sin valor" (base-ui no maneja bien el string vacío).
-const NONE = "__none__"
-
-function ChecklistRow({ productId, item }: { productId?: string; item: AttributeChecklistItem }) {
-    const setMut = useSetProductAttribute(productId)
-    const delMut = useDeleteProductAttribute(productId)
-    const isSelect = item.dataType === "enum" || item.dataType === "boolean"
-
-    // Borrador: para enum guardamos el optionId como string; para booleano
-    // "true"/"false"; para el resto el texto tal cual. NONE = sin valor.
-    const initial = useMemo(() => {
-        if (item.dataType === "enum") {
-            return item.optionId != null ? String(item.optionId) : NONE
-        }
-        if (item.dataType === "boolean") {
-            return item.value === "Sí" ? "true" : item.value === "No" ? "false" : NONE
-        }
-        return item.value
-    }, [item])
-    const [draft, setDraft] = useState(initial)
-    const [error, setError] = useState<string | null>(null)
-    // Valor que acabamos de mandar al servidor: la fila queda "guardando" (sin
-    // botones clickeables) hasta que la lista recargada refleje ese valor —
-    // solo afecta a ESTA fila, no a las demás.
-    const [savedValue, setSavedValue] = useState<string | null>(null)
-
-    const settling = savedValue !== null && savedValue !== initial
-    const isSaving = setMut.isPending || delMut.isPending || settling
-    const missing = item.isRequired && !item.value && item.optionId == null
-    const isDirty = draft !== initial && !settling
-
-    function clearValue() {
-        setError(null)
-        const cleared = isSelect ? NONE : ""
-        if (item.productAttributeId == null) {
-            setDraft(cleared)
-            return
-        }
-        delMut.mutate(item.productAttributeId, {
-            onSuccess: () => {
-                setDraft(cleared)
-                setSavedValue(cleared)
-            },
-            onError: () => setError("No se pudo limpiar."),
-        })
-    }
-
-    function save() {
-        setError(null)
-        const trimmed = draft === NONE ? "" : draft.trim()
-
-        if (trimmed === "") {
-            clearValue()
-            return
-        }
-
-        let payload: Parameters<typeof setMut.mutate>[0]
-        let persisted = trimmed
-        switch (item.dataType) {
-            case "number": {
-                const n = Number(trimmed)
-                if (!Number.isFinite(n)) {
-                    setError("Número inválido")
-                    return
-                }
-                payload = { attributeId: item.attributeId, valueNumber: n }
-                persisted = String(n)
-                break
-            }
-            case "boolean":
-                payload = { attributeId: item.attributeId, valueBoolean: trimmed === "true" }
-                break
-            case "date":
-                payload = { attributeId: item.attributeId, valueDate: `${trimmed}T00:00:00Z` }
-                break
-            case "enum": {
-                const id = Number(trimmed)
-                if (!id) {
-                    setError("Opción inválida")
-                    return
-                }
-                payload = { attributeId: item.attributeId, optionId: id }
-                break
-            }
-            default:
-                payload = { attributeId: item.attributeId, valueText: trimmed }
-        }
-
-        setMut.mutate(payload, {
-            onSuccess: () => {
-                setDraft(persisted)
-                setSavedValue(persisted)
-            },
-            onError: () => setError("No se pudo guardar."),
-        })
-    }
-
-    const selectItems = isSelect
-        ? [
-              { label: "— Sin valor —", value: NONE },
-              ...(item.dataType === "enum"
-                  ? item.options.map((option) => ({ label: option.value, value: String(option.id) }))
-                  : [
-                        { label: "Sí", value: "true" },
-                        { label: "No", value: "false" },
-                    ]),
-          ]
-        : []
-
-    const control = isSelect ? (
-        <Select
-            value={draft}
-            onValueChange={(value) => setDraft(value ?? NONE)}
-            items={selectItems}
-            disabled={isSaving}
-        >
-            <SelectTrigger className="w-full" aria-label={item.name}>
-                <SelectValue />
-            </SelectTrigger>
-            <SelectContent align="start">
-                <SelectGroup>
-                    {selectItems.map((option) => (
-                        <SelectItem key={option.value} value={option.value}>
-                            {option.label}
-                        </SelectItem>
-                    ))}
-                </SelectGroup>
-            </SelectContent>
-        </Select>
-    ) : (
-        <Input
-            type={dataTypeInputType[item.dataType] ?? "text"}
-            value={draft}
-            onChange={(event) => setDraft(event.target.value)}
-            disabled={isSaving}
-            aria-label={item.name}
-            aria-invalid={error ? true : undefined}
-        />
-    )
-
-    return (
-        <TableRow>
-            <TableCell>
-                <span className="font-medium">{item.name}</span>
-                {item.externalLabel && item.externalLabel !== item.name ? (
-                    <span className="ml-1 text-xs text-muted-foreground">({item.externalLabel})</span>
-                ) : null}
-            </TableCell>
-            <TableCell>
-                {item.isRequired ? (
-                    <Badge tone={missing ? "warning" : "success"}>{missing ? "Falta" : "Requerido"}</Badge>
-                ) : (
-                    <Badge tone="muted">Opcional</Badge>
-                )}
-            </TableCell>
-            <TableCell>
-                {control}
-                {error ? <p className="mt-1 text-xs text-destructive">{error}</p> : null}
-            </TableCell>
-            <TableCell>
-                <div className="flex items-center justify-end gap-1.5">
-                    {isSaving ? (
-                        <span className="text-xs text-muted-foreground">Guardando…</span>
-                    ) : isDirty ? (
-                        <>
-                            <Button
-                                variant="ghost"
-                                size="xs"
-                                onClick={() => {
-                                    setDraft(initial)
-                                    setError(null)
-                                }}
-                            >
-                                Cancelar
-                            </Button>
-                            <Button size="xs" onClick={save}>
-                                Guardar
-                            </Button>
-                        </>
-                    ) : item.productAttributeId != null ? (
-                        <Button variant="ghost" size="xs" onClick={clearValue}>
-                            Limpiar
-                        </Button>
-                    ) : null}
-                </div>
-            </TableCell>
-        </TableRow>
     )
 }
 

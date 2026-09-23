@@ -7,9 +7,23 @@
 // endpoints).
 //
 // A channel whose ecom_channels.attribute_scope is "product" (Odoo — see ADR
-// 0004) has attributes that don't depend on the category: the no_category /
-// category_not_mapped short-circuits are skipped and the applicable slots
-// (category_id IS NULL) are listed regardless of the product's category.
+// 0004) has attributes that don't depend on the category, so the applicable
+// slots (category_id IS NULL) are listed regardless of the product's
+// category. It still needs_selection like any other channel when it has no
+// resolved external category, though: Odoo publishing requires one (see
+// OdooProductSyncService.resolveConnectionCategoryID) just as much as
+// MercadoLibre's does.
+//
+// For every channel, the category slots — and, for a product-scoped
+// channel, whether an external category is resolved at all — are checked
+// against ecom_channel_product_category_selection first — the per-connection
+// choice made in the "Sincronización" tab (see ADR 0005).
+// ecom_products.category_id / ecom_channel_category_map (the product's own
+// catalog category and its category-level mapping) are deliberately never
+// consulted to resolve this — see resolvePublishedCategory's doc comment for
+// why. The only other source is an already-published listing's own recorded
+// external category (ecom_channel_product_map), for connections that were
+// published before this feature existed.
 package product_attributes_checklist
 
 import (
@@ -18,6 +32,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
@@ -30,9 +45,12 @@ var (
 
 // Checklist states.
 const (
-	StateNoCategory        = "no_category"
-	StateCategoryNotMapped = "category_not_mapped"
-	StateOK                = "ok"
+	// StateNeedsSelection means the channel is category-scoped and neither a
+	// per-connection selection (ADR 0005) nor a legacy category-level mapping
+	// resolves an external category yet — the UI should show the category
+	// picker (predictor/tree) instead of the attribute list.
+	StateNeedsSelection = "needs_selection"
+	StateOK             = "ok"
 )
 
 type Service struct {
@@ -40,11 +58,13 @@ type Service struct {
 	channels            *mysqlInfra.ChannelRepository
 	channelConnections  *mysqlInfra.ChannelConnectionRepository
 	channelCategoryMap  *mysqlInfra.ChannelCategoryMapRepository
+	channelProductMap   *mysqlInfra.ChannelProductMapRepository
 	channelAttributes   *mysqlInfra.ChannelAttributesRepository
 	channelAttributeMap *mysqlInfra.ChannelAttributeMapRepository
 	attributes          *mysqlInfra.AttributesRepository
 	attributeOptions    *mysqlInfra.AttributeOptionsRepository
 	productAttributes   *mysqlInfra.ProductAttributesRepository
+	categorySelection   *mysqlInfra.ChannelProductCategorySelectionRepository
 }
 
 func NewService(
@@ -52,22 +72,26 @@ func NewService(
 	channels *mysqlInfra.ChannelRepository,
 	channelConnections *mysqlInfra.ChannelConnectionRepository,
 	channelCategoryMap *mysqlInfra.ChannelCategoryMapRepository,
+	channelProductMap *mysqlInfra.ChannelProductMapRepository,
 	channelAttributes *mysqlInfra.ChannelAttributesRepository,
 	channelAttributeMap *mysqlInfra.ChannelAttributeMapRepository,
 	attributes *mysqlInfra.AttributesRepository,
 	attributeOptions *mysqlInfra.AttributeOptionsRepository,
 	productAttributes *mysqlInfra.ProductAttributesRepository,
+	categorySelection *mysqlInfra.ChannelProductCategorySelectionRepository,
 ) *Service {
 	return &Service{
 		productDetails:      productDetails,
 		channels:            channels,
 		channelConnections:  channelConnections,
 		channelCategoryMap:  channelCategoryMap,
+		channelProductMap:   channelProductMap,
 		channelAttributes:   channelAttributes,
 		channelAttributeMap: channelAttributeMap,
 		attributes:          attributes,
 		attributeOptions:    attributeOptions,
 		productAttributes:   productAttributes,
+		categorySelection:   categorySelection,
 	}
 }
 
@@ -151,32 +175,44 @@ func (s *Service) GetChecklist(ctx context.Context, productID, connectionID int6
 		AutoCovered:    make([]AutoCoveredDTO, 0),
 	}
 
-	// slotCategoryID scopes FindApplicable below. For a category-scoped channel
-	// it's the product's category (and a missing category / missing map is a
-	// dead end). For a product-scoped channel (Odoo) it's still passed when
-	// present — a slot may be scoped to it — but its absence is not fatal:
-	// category_id IS NULL slots still apply.
+	// slotCategoryID scopes FindApplicable below. A per-connection selection
+	// (ADR 0005 — picked in the "Sincronización" tab before this product has
+	// any listing on connectionID) takes priority over everything else: it's
+	// what lets two products sharing a local category (e.g. "Frenos")
+	// resolve to different external categories — and different required
+	// attributes — per connection. general.CategoryID (the product's own
+	// catalog category) is deliberately never used to derive this — see the
+	// package doc comment and resolvePublishedCategory below.
 	var slotCategoryID *int64
-	if general.CategoryID != nil {
-		categoryID := *general.CategoryID
-		slotCategoryID = &categoryID
+	selection, selErr := s.categorySelection.FindByProductAndConnection(ctx, productID, connectionID)
+	if selErr != nil && !errors.Is(selErr, mysqlInfra.ErrChannelProductCategorySelectionNotFound) {
+		return nil, fmt.Errorf("error loading category selection: %w", selErr)
+	}
 
-		categoryMap, mapErr := s.channelCategoryMap.FindByCategoryAndConnection(ctx, categoryID, connectionID)
-		switch {
-		case mapErr == nil:
-			out.ExternalCategoryID = &categoryMap.ExternalCategoryID
-			out.ExternalCategoryName = categoryMap.ExternalCategoryName
-		case errors.Is(mapErr, mysqlInfra.ErrChannelCategoryMapNotFound):
-			if !productScope {
-				out.State = StateCategoryNotMapped
-				return out, nil
-			}
-		default:
-			return nil, fmt.Errorf("error loading category map: %w", mapErr)
+	switch {
+	case selErr == nil:
+		categoryID := selection.CategoryID
+		slotCategoryID = &categoryID
+		out.ExternalCategoryID = &selection.ExternalCategoryID
+		out.ExternalCategoryName = selection.ExternalCategoryName
+	default:
+		publishedCategoryID, externalCategoryID, externalCategoryName, pubErr := s.resolvePublishedCategory(ctx, productID, connectionID)
+		if pubErr != nil {
+			return nil, pubErr
 		}
-	} else if !productScope {
-		out.State = StateNoCategory
-		return out, nil
+		switch {
+		case publishedCategoryID != nil:
+			slotCategoryID = publishedCategoryID
+			out.ExternalCategoryID = externalCategoryID
+			out.ExternalCategoryName = externalCategoryName
+		default:
+			// No per-connection selection and no already-published listing to
+			// read a category from — every channel needs one picked before
+			// attributes are shown, product-scoped (Odoo) included: it's what
+			// lets sync resolve/create the external category at publish time.
+			out.State = StateNeedsSelection
+			return out, nil
+		}
 	}
 	out.State = StateOK
 
@@ -313,6 +349,45 @@ func (s *Service) GetChecklist(ctx context.Context, productID, connectionID int6
 	}
 
 	return out, nil
+}
+
+// resolvePublishedCategory is the fallback used when (productID, connectionID)
+// has no per-connection selection yet (ADR 0005): it looks at whatever
+// category an already-published listing for this exact product actually used
+// (ecom_channel_product_map.external_category_id — written once at publish
+// time, per product, never ambiguous) and reverse-maps it to its local
+// ecom_categories leaf via ecom_channel_category_map.FindByExternalCategoryAndConnection.
+// This is safe where resolving forward from the product's own catalog
+// category never was: here the starting point is one product's own real,
+// already-resolved listing, not a local category shared by every product
+// under it — the exact ambiguity ADR 0005 exists to avoid (see the package
+// doc comment). Returns all nils when the product has no listing on
+// connectionID yet, or that listing has no external category recorded — the
+// caller then needs a fresh selection.
+func (s *Service) resolvePublishedCategory(ctx context.Context, productID, connectionID int64) (categoryID *int64, externalCategoryID, externalCategoryName *string, err error) {
+	rows, err := s.channelProductMap.FindAllByProductAndConnection(ctx, productID, connectionID)
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("error loading channel product map: %w", err)
+	}
+
+	for _, row := range rows {
+		if row.ExternalCategoryID == nil || strings.TrimSpace(*row.ExternalCategoryID) == "" {
+			continue
+		}
+
+		categoryMap, mapErr := s.channelCategoryMap.FindByExternalCategoryAndConnection(ctx, *row.ExternalCategoryID, connectionID)
+		if mapErr != nil {
+			if errors.Is(mapErr, mysqlInfra.ErrChannelCategoryMapNotFound) {
+				continue
+			}
+			return nil, nil, nil, fmt.Errorf("error loading channel category map for external category %q: %w", *row.ExternalCategoryID, mapErr)
+		}
+
+		id := categoryMap.CategoryID
+		return &id, row.ExternalCategoryID, categoryMap.ExternalCategoryName, nil
+	}
+
+	return nil, nil, nil, nil
 }
 
 func hasValue(item ItemDTO) bool {

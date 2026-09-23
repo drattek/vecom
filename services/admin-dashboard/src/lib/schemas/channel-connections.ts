@@ -4,6 +4,10 @@ export const channelConnectionSchema = z.object({
   id: z.number(),
   channelId: z.number(),
   channelName: z.string().nullish(),
+  // ecom_channels.code (p.ej. "MERCADOLIBRE", "ODOO") — distingue si el
+  // selector de categoría del checklist de atributos debe mostrar primero la
+  // sugerencia del predictor (MercadoLibre) o el árbol directo. Ver ADR 0005.
+  channelCode: z.string().optional().default(''),
   name: z.string(),
   status: z.string(),
   environment: z.string(),
