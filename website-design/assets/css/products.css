@@ -1,0 +1,228 @@
+/* ============================================================
+   PRODUCTOS RECOMENDADOS — fila única con scroll horizontal.
+   Escritorio: siempre se ven 5 tarjetas · Móvil: siempre se ve 1.
+   La sección tiene 8 tarjetas en total (visibles + ocultas por scroll).
+   Todas las tarjetas comparten el mismo alto sin importar si el
+   título ocupa 1 o 2 líneas (el espacio del título es fijo).
+   ============================================================ */
+
+.products {
+  padding: 2.5rem calc(var(--vg-space-4) * 2);
+  background: var(--vg-color-brand-white);
+}
+
+.products__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1.25rem;
+}
+
+.products__title {
+  margin: 0;
+  font-family: var(--vg-font-heading);
+  font-size: var(--vg-font-size-h3);
+  font-weight: var(--vg-font-weight-bold);
+  color: var(--vg-color-heading);
+}
+
+.products__link {
+  display: inline-flex;
+  align-items: center;
+  gap: .4rem;
+  flex: 0 0 auto;
+  font-size: var(--vg-font-size-sm);
+  font-weight: var(--vg-font-weight-medium);
+  color: var(--vg-color-link);
+}
+.products__link:hover { color: var(--vg-color-link-hover); }
+
+/* ---------- Fila con scroll horizontal ---------- */
+.prod-scroll {
+  --prod-gap: 1.5rem;
+  display: flex;
+  gap: var(--prod-gap);
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  scrollbar-width: none;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: .25rem;
+}
+.prod-scroll::-webkit-scrollbar { display: none; }
+
+/* Escritorio: siempre 5 tarjetas visibles */
+.prod-card {
+  flex: 0 0 calc((100% - 4 * var(--prod-gap)) / 5);
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  scroll-snap-align: start;
+  padding: .75rem;
+  border: 1px solid var(--vg-border-color);
+  border-radius: var(--vg-radius-lg);
+  background: var(--vg-bg-card);
+  box-shadow: var(--vg-shadow-sm);
+  text-decoration: none;
+  color: var(--vg-color-text);
+  transition: box-shadow .2s ease, transform .2s ease;
+}
+.prod-card:hover {
+  box-shadow: var(--vg-shadow);
+  transform: translateY(-2px);
+}
+
+/* ---------- Imagen (1:1) ---------- */
+.prod-card__media {
+  position: relative;
+  width: 100%;
+  aspect-ratio: 1 / 1;
+  overflow: hidden;
+  border-radius: var(--vg-radius-lg);
+  background: var(--vg-gray-200);
+}
+
+.prod-card__img {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center;
+  background: var(--vg-gray-200);
+}
+
+.prod-card__fav {
+  position: absolute;
+  top: .6rem;
+  right: .6rem;
+  z-index: 1;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border: none;
+  border-radius: 50%;
+  background: var(--vg-color-brand-white);
+  color: var(--vg-color-brand-graphite);
+  font-size: 1rem;
+  box-shadow: var(--vg-shadow-sm);
+  cursor: pointer;
+  transition: opacity .2s ease, color .2s ease, transform .2s ease;
+}
+.prod-card__fav:hover,
+.prod-card__fav:focus-visible {
+  color: var(--vg-color-brand-red);
+  transform: scale(1.06);
+}
+
+/* En pantallas táctiles (sin hover) el botón de favoritos siempre se ve */
+.prod-card__fav { opacity: 1; }
+
+@media (hover: hover) and (pointer: fine) {
+  .prod-card__fav {
+    opacity: 0;
+    transition: opacity .2s ease, color .2s ease, transform .2s ease;
+  }
+  .prod-card:hover .prod-card__fav,
+  .prod-card:focus-within .prod-card__fav {
+    opacity: 1;
+  }
+}
+
+/* ---------- Estrellas de reseña ---------- */
+.prod-card__rating {
+  display: flex;
+  align-items: center;
+  gap: .2rem;
+  margin-top: .75rem;
+  font-size: .8rem;
+  color: var(--vg-gray-400);
+}
+.prod-card__rating .is-filled { color: var(--vg-color-warning); }
+
+/* ---------- Título (siempre 2 líneas de alto, con elipsis) ---------- */
+.prod-card__title {
+  margin: .5rem 0 0;
+  height: 2.6em;
+  font-size: var(--vg-font-size-sm);
+  font-weight: var(--vg-font-weight-medium);
+  line-height: 1.3;
+  color: var(--vg-color-heading);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Fila inferior: precio + agregar al carrito ---------- */
+.prod-card__footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: .5rem;
+  margin-top: .75rem;
+}
+
+.prod-card__price {
+  font-family: var(--vg-font-heading);
+  font-size: var(--vg-font-size-lead);
+  font-weight: var(--vg-font-weight-bold);
+  color: var(--vg-color-heading);
+}
+
+.prod-card__cart {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 50%;
+  background: var(--vg-color-brand-red);
+  color: var(--vg-color-brand-white);
+  font-size: 1rem;
+  cursor: pointer;
+  transition: background .2s ease, transform .2s ease;
+}
+.prod-card__cart:hover,
+.prod-card__cart:focus-visible {
+  background: var(--vg-color-link-hover);
+  transform: translateY(-1px);
+}
+
+/* ---------- Móvil: siempre 1 tarjeta visible ---------- */
+@media (max-width: 767.98px) {
+  .products { padding: 1.75rem var(--vg-gutter-mobile); }
+
+  .products__title { font-size: var(--vg-font-size-h5); }
+
+  .prod-scroll { --prod-gap: .75rem; }
+
+  .prod-card {
+    flex: 0 0 100%;
+    padding: .5rem;
+  }
+
+  .prod-card__fav {
+    width: 1.875rem;
+    height: 1.875rem;
+    font-size: .85rem;
+  }
+
+  .prod-card__rating { font-size: .7rem; }
+
+  .prod-card__title { font-size: .75rem; }
+
+  .prod-card__price { font-size: var(--vg-font-size-base); }
+
+  .prod-card__cart {
+    width: 2rem;
+    height: 2rem;
+    font-size: .85rem;
+  }
+}

@@ -1,0 +1,97 @@
+/* ============================================================
+   DISTRIBUIDORES AUTORIZADOS — franja de logos de marca
+   ============================================================ */
+
+.brands {
+  padding: 2.5rem calc(var(--vg-space-4) * 2);
+  background: linear-gradient(135deg, var(--vg-color-brand-red) 0%, var(--vg-color-link-hover) 100%);
+}
+
+.brands__header {
+  max-width: 60ch;
+  margin: 0 auto 1.75rem;
+  text-align: center;
+}
+
+.brands__title {
+  margin: 0 0 .5rem;
+  font-family: var(--vg-font-heading);
+  font-size: var(--vg-font-size-h3);
+  font-weight: var(--vg-font-weight-bold);
+  color: var(--vg-color-brand-white);
+}
+
+.brands__grid {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  gap: 1rem;
+  align-items: center;
+}
+
+.brands__item {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: .25rem;
+  border-radius: var(--vg-radius-lg);
+  transition: transform .15s ease;
+}
+.brands__item:hover {
+  transform: translateY(-2px);
+}
+
+.brands__item img {
+  width: 100%;
+  max-width: 170px;
+  height: auto;
+}
+
+/* ---------- Marquee (auto-scroll infinito): solo visible en móvil ---------- */
+.brands__marquee { display: none; }
+
+/* ---------- Móvil: franja de logos en auto-scroll horizontal ---------- */
+@media (max-width: 767.98px) {
+  .brands { padding: 1.75rem 0; }
+
+  .brands__header { padding: 0 var(--vg-gutter-mobile); }
+  .brands__title { font-size: var(--vg-font-size-h5); }
+
+  /* la rejilla estática se sustituye por el marquee en móvil */
+  .brands__grid { display: none; }
+
+  .brands__marquee {
+    display: block;
+    overflow: hidden;
+    width: 100%;
+    -webkit-mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+    mask-image: linear-gradient(to right, transparent, #000 8%, #000 92%, transparent);
+  }
+
+  .brands__track {
+    display: flex;
+    width: max-content;
+    animation: brands-scroll 22s linear infinite;
+  }
+
+  .brands__track-dup { display: flex; }
+
+  .brands__track .brands__item,
+  .brands__track-dup .brands__item {
+    flex-shrink: 0;
+    padding: .25rem;
+    margin-right: .5rem;
+  }
+  .brands__track .brands__item img,
+  .brands__track-dup .brands__item img {
+    max-width: 120px;
+  }
+
+  @keyframes brands-scroll {
+    from { transform: translateX(0); }
+    to { transform: translateX(-50%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .brands__track { animation: none; }
+  }
+}

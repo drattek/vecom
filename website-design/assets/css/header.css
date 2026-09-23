@@ -1,0 +1,502 @@
+/* ============================================================
+   Header — Refacciones Vegusa
+   Fila única: logo · buscador (expandido) · carrito · menú
+   Usa las variables de tokens.css · reset y shell en layout.css
+   ============================================================ */
+
+/* ============================================================
+   HEADER
+   ============================================================ */
+.site-header {
+  background: var(--vg-color-brand-white);
+  box-shadow: var(--vg-shadow-sm);
+}
+
+.header__inner {
+  --header-control-h: 2.75rem;   /* alto compartido: buscador y botón de equipos */
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .625rem calc(var(--vg-space-4) * 2);
+}
+
+/* En móvil el gutter es el mismo de todas las secciones (--vg-gutter-mobile) */
+@media (max-width: 767.98px) {
+  .header__inner { padding-left: var(--vg-gutter-mobile); padding-right: var(--vg-gutter-mobile); }
+}
+
+/* ---------- Marca / logo ---------- */
+.brand { flex-shrink: 0; display: block; }
+.brand picture { display: block; }
+.brand img { width: 95px; height: 40px; object-fit: contain; }
+
+/* ---------- Buscador (input group: icono como sufijo dentro de la caja) ---------- */
+.search {
+  display: flex;
+  align-items: center;
+  flex: 1 1 auto;
+  min-width: 0;
+  height: var(--header-control-h);
+  background: var(--vg-bg-subtle);
+  border-radius: var(--vg-radius-sm);
+  padding-right: .375rem;
+}
+.search:focus-within {
+  outline: 2px solid var(--vg-color-brand-red);
+  outline-offset: -2px;
+}
+
+.search__input {
+  flex: 1;
+  min-width: 0;
+  border: 0;
+  background: transparent;
+  padding: .625rem .875rem;
+  font: inherit;
+  color: var(--vg-color-text);
+}
+.search__input::placeholder { color: var(--vg-color-text-muted); }
+.search__input:focus { outline: none; }
+
+.search__btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  background: transparent;
+  color: var(--vg-color-text-muted);
+  padding: .25rem .5rem;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.search__btn:hover { color: var(--vg-color-brand-red); }
+
+/* ---------- Acciones (carrito + menú) ---------- */
+.header__actions {
+  display: flex;
+  align-items: center;
+  gap: .25rem;
+  flex-shrink: 0;
+}
+
+.icon-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: 0;
+  background: transparent;
+  border-radius: 50%;
+  color: var(--vg-color-text);
+  font-size: 1.15rem;
+  cursor: pointer;
+  transition: background-color .15s ease;
+}
+.icon-btn:hover { background: var(--vg-bg-subtle); }
+
+.icon-btn__badge {
+  position: absolute;
+  top: .1rem;
+  right: .1rem;
+  min-width: 1.1em;
+  padding: .1em .35em;
+  font-size: .7rem;
+  line-height: 1;
+  color: #fff;
+  background: var(--vg-color-brand-red);
+  border-radius: 999px;
+  text-align: center;
+}
+
+/* ---------- Botón "Maquinaria/Vehículo" (abre el side "Mis equipos") ---------- */
+.equipment-btn {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  height: var(--header-control-h);
+  padding: 0 .875rem;
+  border: var(--vg-border-width) solid var(--vg-btn-primary-border);
+  border-radius: var(--vg-btn-radius);
+  background: var(--vg-btn-primary-bg);
+  color: var(--vg-btn-primary-text);
+  font: inherit;
+  font-family: var(--vg-font-button);
+  font-size: var(--vg-font-size-sm);
+  font-weight: var(--vg-font-weight-medium);
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+}
+.equipment-btn:hover { filter: brightness(.94); }
+.equipment-btn:focus-visible {
+  outline: 2px solid var(--vg-color-brand-black);
+  outline-offset: 2px;
+}
+
+/* Responsive: en pantallas chicas se compacta todo (logo, iconos y gaps)
+   para dar el máximo de ancho al input */
+@media (max-width: 575.98px) {
+  .header__inner { --header-control-h: 2.5rem; gap: .5rem; }
+
+  .brand img { width: 32px; height: 32px; }
+
+  /* Solo icono (el texto queda para lectores de pantalla) */
+  .equipment-btn { justify-content: center; width: var(--header-control-h); padding: 0; }
+  .equipment-btn__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0 0 0 0);
+    white-space: nowrap;
+  }
+
+  .header__actions { gap: 0; }
+  .icon-btn { width: 2rem; height: 2rem; font-size: 1rem; }
+
+  .search { padding-right: .25rem; }
+  .search__input { padding: .5rem .75rem; }
+  .search__btn { padding: .25rem .375rem; }
+}
+
+/* ============================================================
+   SIDE PANEL / OFFCANVAS
+   ============================================================ */
+.offcanvas { position: fixed; inset: 0; z-index: 1080; }
+.offcanvas[hidden] { display: none; }
+
+/* Overlay de fondo */
+.offcanvas__backdrop {
+  position: absolute;
+  inset: 0;
+  background: var(--vg-color-brand-black);
+  opacity: 0;
+  transition: opacity .25s ease;
+}
+.offcanvas.is-open .offcanvas__backdrop { opacity: .5; }
+
+.offcanvas__panel {
+  position: absolute;
+  top: 0;
+  right: 0;
+  height: 100%;
+  width: min(88vw, 380px);
+  background: #fff;
+  box-shadow: var(--vg-shadow-lg);
+  display: flex;
+  flex-direction: column;
+  transform: translateX(100%);
+  transition: transform .25s ease;
+}
+.offcanvas.is-open .offcanvas__panel { transform: translateX(0); }
+
+/* ---------- Parte superior (fija): usuario ---------- */
+.offcanvas__top {
+  position: relative;
+  flex-shrink: 0;
+  padding: 1.25rem;
+  border-bottom: 1px solid var(--vg-border-color);
+}
+
+.offcanvas__close {
+  position: absolute;
+  top: .5rem;
+  right: .5rem;
+  border: 0;
+  background: transparent;
+  font-size: 1.15rem;
+  padding: .5rem;
+  line-height: 1;
+  cursor: pointer;
+  color: var(--vg-color-text-muted);
+}
+.offcanvas__close:hover { color: var(--vg-color-brand-red); }
+
+.user {
+  display: flex;
+  align-items: center;
+  gap: .875rem;
+  padding-right: 1.75rem;
+}
+
+.user__avatar {
+  flex-shrink: 0;
+  width: 3rem;
+  height: 3rem;
+  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--vg-bg-subtle);
+  color: var(--vg-color-text-muted);
+  font-size: 1.25rem;
+  overflow: hidden;
+}
+.user__avatar img { width: 100%; height: 100%; object-fit: cover; }
+
+.user__info {
+  display: flex;
+  flex-direction: column;
+  gap: .1rem;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+.user__name {
+  display: block;
+  max-width: 100%;
+  font-weight: var(--vg-font-weight-medium);
+  color: var(--vg-color-text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user__link {
+  display: block;
+  max-width: 100%;
+  font-size: var(--vg-font-size-sm);
+  color: var(--vg-color-link);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.user__link:hover { color: var(--vg-color-link-hover); text-decoration: underline; }
+
+/* ---------- Mi garage (accordion, fijo) ---------- */
+.garage {
+  flex-shrink: 0;
+  background: var(--vg-color-brand-oxford);
+  color: #fff;
+}
+
+.garage__toggle {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  width: 100%;
+  padding: .875rem 1.25rem;
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-family: var(--vg-font-navbar);
+  font-weight: var(--vg-font-weight-medium);
+  color: #fff;
+  cursor: pointer;
+}
+.garage__toggle > i:first-child { width: 1.25rem; text-align: center; color: rgba(255, 255, 255, .7); }
+.garage__toggle span { flex: 1; text-align: left; }
+.garage__chevron { transition: transform .2s ease; color: rgba(255, 255, 255, .7); }
+.garage.is-open .garage__chevron { transform: rotate(180deg); }
+.garage__toggle:hover,
+.garage__toggle:hover > i { color: rgba(255, 255, 255, .8); }
+
+.garage__body {
+  height: 0;
+  overflow: hidden;
+  transition: height .25s ease;
+}
+
+.garage__list {
+  list-style: none;
+  margin: 0;
+  padding: 0 1.25rem 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: .5rem;
+}
+
+.vehicle-card {
+  border-radius: var(--vg-radius);
+  padding: .625rem .75rem;
+  background: #fff;
+  box-shadow: var(--vg-shadow-sm);
+}
+.vehicle-card__brand {
+  margin: 0;
+  font-weight: var(--vg-font-weight-bold);
+  color: var(--vg-color-text);
+}
+.vehicle-card__type {
+  margin: 0 0 .375rem;
+  font-size: var(--vg-font-size-sm);
+  color: var(--vg-color-text-muted);
+}
+.vehicle-card__spec {
+  margin: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .125rem 1rem;
+}
+.vehicle-card__spec > div { display: flex; gap: .35rem; font-size: var(--vg-font-size-sm); }
+.vehicle-card__spec dt { margin: 0; color: var(--vg-color-text-muted); }
+.vehicle-card__spec dd { margin: 0; color: var(--vg-color-text); font-weight: var(--vg-font-weight-medium); }
+
+/* Botón "Agregar equipo" — siempre visible */
+.garage__footer {
+  padding: 0 1.25rem 1rem;
+}
+.garage:not(.is-open) .garage__footer {
+  padding-top: .25rem;
+}
+.garage__add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  width: 100%;
+  padding: .6rem .75rem;
+  border: 1px dashed rgba(255, 255, 255, .5);
+  border-radius: var(--vg-radius);
+  color: #fff;
+  font-size: var(--vg-font-size-sm);
+  font-weight: var(--vg-font-weight-medium);
+}
+.garage__add:hover {
+  background: rgba(255, 255, 255, .1);
+  border-color: #fff;
+}
+
+/* ---------- Parte media (scroll): menú ---------- */
+.offcanvas__menu {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: .5rem 0;
+}
+
+.offcanvas__group + .offcanvas__group {
+  margin-top: .5rem;
+  padding-top: .5rem;
+  border-top: 1px solid var(--vg-border-color);
+}
+
+.offcanvas__group-title {
+  margin: 0;
+  padding: .5rem 1.25rem .25rem;
+  font-size: var(--vg-font-size-sm);
+  font-weight: var(--vg-font-weight-bold);
+  text-transform: uppercase;
+  letter-spacing: .04em;
+  color: var(--vg-color-text-muted);
+}
+
+.offcanvas__menu ul { list-style: none; margin: 0; padding: 0; }
+.offcanvas__menu a {
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: .875rem 1.25rem;
+  color: var(--vg-color-text);
+  font-family: var(--vg-font-navbar);
+}
+.offcanvas__menu a i { width: 1.25rem; text-align: center; color: var(--vg-color-text-muted); }
+.offcanvas__menu a:hover { background: var(--vg-bg-subtle); color: var(--vg-color-brand-red); }
+.offcanvas__menu a:hover i { color: var(--vg-color-brand-red); }
+
+/* ---------- Side "Mis equipos" ---------- */
+.offcanvas__title {
+  margin: 0;
+  padding-right: 1.75rem;
+  font-size: 1.125rem;
+  font-weight: var(--vg-font-weight-bold);
+  color: var(--vg-color-text);
+}
+
+/* Parte media (scroll vertical) */
+.offcanvas__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 1rem 1.25rem;
+}
+
+.equipment-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: .625rem;
+}
+.equipment-list .vehicle-card {
+  position: relative;
+  display: block;
+  width: 100%;
+  padding: .75rem .875rem;
+  border: 1px solid var(--vg-border-color);
+  box-shadow: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color .15s ease, box-shadow .15s ease;
+}
+.equipment-list .vehicle-card:hover { border-color: var(--vg-color-brand-red); }
+.equipment-list .vehicle-card:focus-visible {
+  outline: 2px solid var(--vg-color-brand-red);
+  outline-offset: 2px;
+}
+.equipment-list .vehicle-card.is-selected {
+  border-color: var(--vg-color-brand-red);
+  box-shadow: 0 0 0 1px var(--vg-color-brand-red);
+}
+.equipment-list .vehicle-card.is-selected::after {
+  content: "\f00c";
+  font-family: "Font Awesome 6 Free";
+  font-weight: 900;
+  position: absolute;
+  top: .625rem;
+  right: .75rem;
+  color: var(--vg-color-brand-red);
+}
+
+/* La tarjeta es un <button>: su contenido son <span> en bloque */
+.vehicle-card__brand,
+.vehicle-card__type { display: block; }
+.vehicle-card__spec-item { display: flex; gap: .35rem; font-size: var(--vg-font-size-sm); }
+.vehicle-card__spec-label { color: var(--vg-color-text-muted); }
+.vehicle-card__spec-value { color: var(--vg-color-text); font-weight: var(--vg-font-weight-medium); }
+
+/* Botón del header: los modelos largos se recortan con "…" */
+.equipment-btn__label {
+  max-width: 10rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* ---------- Parte inferior (fija): cerrar sesión / agregar equipo ---------- */
+.offcanvas__bottom {
+  flex-shrink: 0;
+  padding: 0;
+}
+.btn {
+  display: inline-block;
+  width: 100%;
+  text-align: center;
+  padding: .5rem var(--vg-btn-padding-x);
+  font: inherit;
+  font-family: var(--vg-font-button);
+  font-weight: var(--vg-font-weight-medium);
+  border-radius: var(--vg-btn-radius);
+  border: var(--vg-border-width) solid transparent;
+  cursor: pointer;
+}
+.btn--logout,
+.btn--add {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  width: 100%;
+  padding: .9rem var(--vg-btn-padding-x);
+  border-radius: 0;
+  border-color: var(--vg-color-brand-red);
+  background: var(--vg-color-brand-red);
+  color: #fff;
+}
+.btn--logout:hover,
+.btn--add:hover { filter: brightness(.94); }

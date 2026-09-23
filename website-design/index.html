@@ -1,0 +1,1003 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Refacciones Vegusa</title>
+  <meta name="description" content="Compra refacciones originales para montacargas y maquinaria industrial. Distribuidores de Bobcat, Unicarriers, JLG, Flexi, CAMSO - Vegusa Maquinaria" />
+
+  <!-- Tipografía -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet" />
+
+  <!-- Iconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
+  <!-- Design tokens + estilos -->
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="assets/css/layout.css" />
+  <link rel="stylesheet" href="assets/css/hero.css" />
+  <link rel="stylesheet" href="assets/css/finder.css" />
+  <link rel="stylesheet" href="assets/css/header.css" />
+  <link rel="stylesheet" href="assets/css/brands.css" />
+  <link rel="stylesheet" href="assets/css/categories.css" />
+  <link rel="stylesheet" href="assets/css/products.css" />
+  <link rel="stylesheet" href="assets/css/how-buy.css" />
+  <link rel="stylesheet" href="assets/css/faq.css" />
+  <link rel="stylesheet" href="assets/css/footer.css" />
+  <link rel="stylesheet" href="assets/css/quote-bar.css" />
+  <link rel="stylesheet" href="assets/css/scroll-indicator.css" />
+</head>
+<body>
+
+  <!-- =========================================================
+       HEADER (fila única)
+       ========================================================= -->
+  <header class="site-header" data-name="Header">
+    <div class="header__inner">
+
+      <a href="/" class="brand" aria-label="Refacciones Vegusa">
+        <picture>
+          <!-- móvil: logo cuadrado (favicon del sitio original, provisional) -->
+          <source media="(max-width: 575.98px)"
+                  srcset="https://refaccionesvegusa.com/web/image/website/1/favicon?unique=fa24c9d" />
+          <!-- escritorio: logo horizontal -->
+          <img class="brand__logo"
+               src="https://refaccionesvegusa.com/web/image/website/1/logo/Refacciones%20Vegusa?unique=fa24c9d"
+               width="95" height="40" alt="Refacciones Vegusa" />
+        </picture>
+      </a>
+
+      <form method="get" action="/website/search" class="search" role="search">
+        <input type="search" name="search" class="search__input" placeholder="Encuentra tu refacción por número de parte" aria-label="Buscar" />
+        <button type="submit" class="search__btn" aria-label="Buscar" title="Buscar">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        </button>
+      </form>
+
+      <button type="button" class="equipment-btn" data-offcanvas-open="equipmentPanel" aria-expanded="false" aria-controls="equipmentPanel" title="Mi garage">
+        <i class="fa-solid fa-tractor" aria-hidden="true"></i>
+        <span class="equipment-btn__label" data-equipment-label>Mi garage</span>
+      </button>
+
+      <div class="header__actions">
+        <a href="/shop/cart" class="icon-btn" aria-label="Carrito">
+          <i class="fa fa-shopping-cart" aria-hidden="true"></i>
+          <sup class="icon-btn__badge is-hidden">0</sup>
+        </a>
+        <button type="button" class="icon-btn" data-offcanvas-open="sideMenu" aria-label="Abrir menú" aria-expanded="false">
+          <i class="fa fa-bars" aria-hidden="true"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- =========================================================
+       SIDE PANEL
+       ========================================================= -->
+  <div class="offcanvas" id="sideMenu" data-offcanvas hidden>
+    <div class="offcanvas__backdrop" data-offcanvas-close></div>
+    <div class="offcanvas__panel" role="dialog" aria-modal="true" aria-label="Menú de usuario">
+
+      <!-- Parte superior (fija): usuario -->
+      <div class="offcanvas__top">
+        <button type="button" class="offcanvas__close" data-offcanvas-close aria-label="Cerrar">
+          <i class="fa fa-times" aria-hidden="true"></i>
+        </button>
+        <div class="user">
+          <span class="user__avatar" aria-hidden="true">
+            <i class="fa fa-user"></i>
+          </span>
+          <div class="user__info">
+            <span class="user__name">Zeoli Maldonado</span>
+            <a href="/my/profile" class="user__link">Mi perfil</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Parte media (scroll): menú de opciones, agrupado -->
+      <nav class="offcanvas__menu" aria-label="Opciones de cuenta">
+
+        <div class="offcanvas__group">
+          <p class="offcanvas__group-title">General</p>
+          <ul>
+            <li>
+              <a href="/">
+                <i class="fa fa-house" aria-hidden="true"></i>
+                <span>Inicio</span>
+              </a>
+            </li>
+            <li>
+              <a href="/shop">
+                <i class="fa-solid fa-grip" aria-hidden="true"></i>
+                <span>Categorías</span>
+              </a>
+            </li>
+            <li>
+              <a href="/shop/wishlist">
+                <i class="fa fa-heart" aria-hidden="true"></i>
+                <span>Favoritos</span>
+              </a>
+            </li>
+            <li>
+              <a href="/shop?tag=ofertas">
+                <i class="fa fa-tag" aria-hidden="true"></i>
+                <span>Ofertas</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="offcanvas__group">
+          <p class="offcanvas__group-title">Mis pedidos</p>
+          <ul>
+            <li>
+              <a href="/my/orders">
+                <i class="fa fa-bag-shopping" aria-hidden="true"></i>
+                <span>Mis compras</span>
+              </a>
+            </li>
+            <li>
+              <a href="/rastrear-pedido">
+                <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+                <span>Rastrear mi pedido</span>
+              </a>
+            </li>
+            <li>
+              <a href="/my/quotes">
+                <i class="fa-solid fa-file-invoice" aria-hidden="true"></i>
+                <span>Mis cotizaciones</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="offcanvas__group">
+          <p class="offcanvas__group-title">Mi cuenta</p>
+          <ul>
+            <li>
+              <a href="/my/garage">
+                <i class="fa fa-warehouse" aria-hidden="true"></i>
+                <span>Mi garage</span>
+              </a>
+            </li>
+            <li>
+              <a href="/my/addresses">
+                <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+                <span>Direcciones de envío</span>
+              </a>
+            </li>
+            <li>
+              <a href="/ventas-mayoreo">
+                <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
+                <span>Ventas por mayoreo</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+      </nav>
+
+      <!-- Parte inferior (fija): cerrar sesión -->
+      <div class="offcanvas__bottom">
+        <a href="/web/session/logout" class="btn btn--logout">
+          <i class="fa fa-right-from-bracket" aria-hidden="true"></i>
+          <span>Cerrar sesión</span>
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================================
+       SIDE PANEL — MIS EQUIPOS (maquinaria / vehículos)
+       ========================================================= -->
+  <div class="offcanvas" id="equipmentPanel" data-offcanvas hidden>
+    <div class="offcanvas__backdrop" data-offcanvas-close></div>
+    <div class="offcanvas__panel" role="dialog" aria-modal="true" aria-labelledby="equipmentTitle">
+
+      <!-- Parte superior (fija): título -->
+      <div class="offcanvas__top">
+        <button type="button" class="offcanvas__close" data-offcanvas-close aria-label="Cerrar">
+          <i class="fa fa-times" aria-hidden="true"></i>
+        </button>
+        <h2 class="offcanvas__title" id="equipmentTitle">Mis equipos</h2>
+      </div>
+
+      <!-- Parte media (scroll): lista de equipos -->
+      <div class="offcanvas__scroll">
+        <ul class="equipment-list" data-equipment-list>
+          <li>
+            <button type="button" class="vehicle-card" data-brand="Toyota" data-model="8FGCU25" data-year="2019" aria-pressed="false">
+              <span class="vehicle-card__brand">Toyota</span>
+              <span class="vehicle-card__type">Montacargas</span>
+              <span class="vehicle-card__spec">
+                <span class="vehicle-card__spec-item"><span class="vehicle-card__spec-label">Modelo</span><span class="vehicle-card__spec-value">8FGCU25</span></span>
+                <span class="vehicle-card__spec-item"><span class="vehicle-card__spec-label">Año</span><span class="vehicle-card__spec-value">2019</span></span>
+              </span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="vehicle-card" data-brand="Nissan" data-model="Versa" data-year="2011" aria-pressed="false">
+              <span class="vehicle-card__brand">Nissan</span>
+              <span class="vehicle-card__type">Automóvil</span>
+              <span class="vehicle-card__spec">
+                <span class="vehicle-card__spec-item"><span class="vehicle-card__spec-label">Modelo</span><span class="vehicle-card__spec-value">Versa</span></span>
+                <span class="vehicle-card__spec-item"><span class="vehicle-card__spec-label">Año</span><span class="vehicle-card__spec-value">2011</span></span>
+              </span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="vehicle-card" data-brand="Caterpillar" data-model="420F2" aria-pressed="false">
+              <span class="vehicle-card__brand">Caterpillar</span>
+              <span class="vehicle-card__type">Retroexcavadora</span>
+              <span class="vehicle-card__spec">
+                <span class="vehicle-card__spec-item"><span class="vehicle-card__spec-label">Modelo</span><span class="vehicle-card__spec-value">420F2</span></span>
+              </span>
+            </button>
+          </li>
+          <li>
+            <button type="button" class="vehicle-card" data-brand="Bobcat" data-model="S450" aria-pressed="false">
+              <span class="vehicle-card__brand">Bobcat</span>
+              <span class="vehicle-card__type">Cargador Compacto</span>
+              <span class="vehicle-card__spec">
+                <span class="vehicle-card__spec-item"><span class="vehicle-card__spec-label">Modelo</span><span class="vehicle-card__spec-value">S450</span></span>
+              </span>
+            </button>
+          </li>
+        </ul>
+      </div>
+
+      <!-- Parte inferior (fija): agregar equipo -->
+      <div class="offcanvas__bottom">
+        <a href="/my/garage/new" class="btn btn--add">
+          <i class="fa fa-plus" aria-hidden="true"></i>
+          <span>Agregar equipo</span>
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================================
+       ÁREA SCROLLEABLE (hero + secciones + footer)
+       ========================================================= -->
+  <main class="site-scroll">
+
+    <!-- HERO — bento grid (3 columnas x 2 filas): sección 1 título + subtítulo + confianza, de index.html (2x2) + secciones 2 y 3 (1x1 c/u) -->
+    <section class="hero-grid" data-name="Hero Bento Grid">
+
+      <div class="hero-grid__section hero-grid__section--1">
+        <img class="hero-grid__bg" src="assets/image/background-bento-optimized.jpg" alt="" loading="eager" />
+        <div class="hero-grid__scrim" aria-hidden="true"></div>
+
+        <div class="bento-item hero-intro">
+          <h1 class="hero-intro__title">Refacciones para montacargas y maquinaria</h1>
+          <p class="hero-intro__text">Piezas originales para montacargas, maquinaria pesada y vehículos, con envío a todo México.</p>
+          <div class="hero-intro__actions">
+            <a href="/shop" class="hero-cta hero-cta--primary">Ver catálogo</a>
+          </div>
+        </div>
+
+        <ul class="bento-item trust">
+          <li class="trust__item">
+            <i class="fa-solid fa-award" aria-hidden="true"></i>
+            <span class="trust__text">
+              <strong>25+ años</strong>
+              de experiencia
+            </span>
+          </li>
+          <li class="trust__item">
+            <i class="fa-solid fa-certificate" aria-hidden="true"></i>
+            <span class="trust__text">
+              <strong>Piezas originales</strong>
+              directo de fábrica
+            </span>
+          </li>
+          <li class="trust__item">
+            <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+            <span class="trust__text">
+              <strong>Envíos nacionales</strong>
+              a todo México
+            </span>
+          </li>
+          <li class="trust__item">
+            <i class="fa-solid fa-shield-halved" aria-hidden="true"></i>
+            <span class="trust__text">
+              <strong>Pagos seguros</strong>
+              100% protegida
+            </span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="hero-grid__section hero-grid__section--2">
+        <img class="hero-grid__img" src="https://assets.jumpseller.com/store/vegusa/themes/828083/settings/4c1b1c5a0131c86e36fa/ENV%C3%8DO-GRATIS-960-X-640.png?1771956302" alt="Envío gratis" loading="lazy" />
+      </div>
+
+      <div class="hero-grid__section hero-grid__section--3">
+        <img class="hero-grid__img" src="https://assets.jumpseller.com/store/vegusa/themes/828083/settings/02d378fb0cdf9d87bbb1/BANNER%20PRIMER%20COMPRA.jpg?1755107371" alt="Beneficio primera compra" loading="lazy" />
+      </div>
+
+    </section>
+
+    <!-- BUSCADOR ESTILO GARAGE — semi-híbrido: pestañas Maquinaria / Vehículo
+         que cambian los campos del formulario. Maquinaria no usa año (importa
+         marca, modelo y serie; el motor es opcional y ayuda a encontrar piezas
+         compatibles entre equipos que comparten motor). Vehículo sí usa año y
+         motor como datos relevantes para la compatibilidad. -->
+    <section class="finder" data-name="Buscador (estilo garage)">
+      <div class="finder__panel" data-finder>
+        <div class="finder__tabs" role="tablist" aria-label="Tipo de equipo">
+          <button type="button" class="finder__tab is-active" data-finder-tab="maquinaria" role="tab" aria-selected="true" aria-controls="finderFieldsMaquinaria" id="finderTabMaquinaria">
+            <i class="fa-solid fa-truck-monster" aria-hidden="true"></i>
+            <span>Maquinaria</span>
+          </button>
+          <button type="button" class="finder__tab" data-finder-tab="vehiculo" role="tab" aria-selected="false" aria-controls="finderFieldsVehiculo" id="finderTabVehiculo">
+            <i class="fa-solid fa-car" aria-hidden="true"></i>
+            <span>Vehículo</span>
+          </button>
+        </div>
+
+        <form class="finder__form" action="/shop" method="get">
+
+          <!-- Maquinaria: sin año; importa marca, modelo y serie. El motor es
+               opcional y sirve como criterio extra de compatibilidad, ya que
+               varias maquinarias distintas comparten el mismo tipo de motor. -->
+          <div class="finder__fields" id="finderFieldsMaquinaria" data-finder-fields="maquinaria" role="tabpanel" aria-labelledby="finderTabMaquinaria">
+            <div class="finder__field">
+              <label for="fmMarca">Marca</label>
+              <select id="fmMarca" name="marca">
+                <option value="">Selecciona marca</option>
+                <option>Bobcat</option>
+                <option>Unicarriers</option>
+                <option>JLG</option>
+                <option>Flexi</option>
+                <option>Dongfeng</option>
+                <option>Omniparts</option>
+                <option>Otra marca</option>
+              </select>
+            </div>
+            <div class="finder__field">
+              <label for="fmModelo">Modelo</label>
+              <input type="text" id="fmModelo" name="modelo" placeholder="Ej. S650, 420F2" />
+            </div>
+            <div class="finder__field">
+              <label for="fmSerie">Serie <span class="finder__optional">(opcional)</span></label>
+              <input type="text" id="fmSerie" name="serie" placeholder="Ej. 8FGCU25" />
+            </div>
+            <div class="finder__field finder__field--motor">
+              <label for="fmMotor">
+                Tipo de motor <span class="finder__optional">(opcional)</span>
+                <span class="finder__hint" tabindex="0" data-tooltip="Varias maquinarias comparten el mismo tipo de motor entre modelos. Indícalo y te mostraremos también piezas 100% compatibles de otros equipos con ese motor.">
+                  <i class="fa-solid fa-circle-info" aria-hidden="true"></i>
+                  <span class="is-hidden">Ayuda</span>
+                </span>
+              </label>
+              <select id="fmMotor" name="motor">
+                <option value="">No estoy seguro / omitir</option>
+                <option>Diésel</option>
+                <option>Gasolina</option>
+                <option>Gas LP</option>
+                <option>Eléctrico</option>
+              </select>
+            </div>
+
+            <button type="submit" class="finder__submit">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <span>Buscar refacciones</span>
+            </button>
+          </div>
+
+          <!-- Vehículo: aquí el año y el tipo de motor sí son relevantes para
+               la compatibilidad de la refacción. -->
+          <div class="finder__fields is-hidden" id="finderFieldsVehiculo" data-finder-fields="vehiculo" role="tabpanel" aria-labelledby="finderTabVehiculo" hidden>
+            <div class="finder__field">
+              <label for="fvMarca">Marca</label>
+              <select id="fvMarca" name="marca">
+                <option value="">Selecciona marca</option>
+                <option>Nissan</option>
+                <option>Toyota</option>
+                <option>Chevrolet</option>
+                <option>Ford</option>
+                <option>Otra marca</option>
+              </select>
+            </div>
+            <div class="finder__field">
+              <label for="fvModelo">Modelo</label>
+              <input type="text" id="fvModelo" name="modelo" placeholder="Ej. Versa, Hilux" />
+            </div>
+            <div class="finder__field">
+              <label for="fvAnio">Año</label>
+              <select id="fvAnio" name="anio" data-finder-year>
+                <option value="">Selecciona año</option>
+              </select>
+            </div>
+            <div class="finder__field">
+              <label for="fvMotor">Tipo de motor</label>
+              <select id="fvMotor" name="motor">
+                <option value="">Selecciona motor</option>
+                <option>Gasolina</option>
+                <option>Diésel</option>
+                <option>Híbrido</option>
+                <option>Eléctrico</option>
+              </select>
+            </div>
+
+            <button type="submit" class="finder__submit">
+              <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+              <span>Buscar refacciones</span>
+            </button>
+          </div>
+        </form>
+      </div>
+    </section>
+
+    <!-- CATEGORÍAS (nuevo diseño) — grid de 6 columnas en escritorio (5
+         categorías + "ver todas"), scroll horizontal en móvil. Sin encabezado:
+         la última columna ("Ver todas") cumple esa función. Círculos con
+         icono que al hacer hover se convierten en tarjeta -->
+    <section class="categories categories--circles" data-name="Categorías (círculos)">
+      <div class="cat-scroll">
+        <a href="/shop/category/lubricantes-y-fluidos" class="cat-circle">
+          <span class="cat-circle__shape">
+            <span class="cat-circle__bg" aria-hidden="true"></span>
+            <img src="assets/image/category/lubricantes-filtros.png" alt="Lubricantes y fluidos" class="cat-circle__img" loading="lazy" />
+          </span>
+          <span class="cat-circle__name">Lubricantes y fluidos</span>
+          <span class="cat-circle__cta">Ver productos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a href="/shop/category/filtros" class="cat-circle">
+          <span class="cat-circle__shape">
+            <span class="cat-circle__bg" aria-hidden="true"></span>
+            <img src="assets/image/category/filtros.png" alt="Filtros" class="cat-circle__img" loading="lazy" />
+          </span>
+          <span class="cat-circle__name">Filtros</span>
+          <span class="cat-circle__cta">Ver productos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a href="/shop/category/motor" class="cat-circle">
+          <span class="cat-circle__shape">
+            <span class="cat-circle__bg" aria-hidden="true"></span>
+            <img src="assets/image/category/motor.png" alt="Motor" class="cat-circle__img" loading="lazy" />
+          </span>
+          <span class="cat-circle__name">Motor</span>
+          <span class="cat-circle__cta">Ver productos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a href="/shop/category/suspension-y-direccion" class="cat-circle">
+          <span class="cat-circle__shape">
+            <span class="cat-circle__bg" aria-hidden="true"></span>
+            <img src="assets/image/category/suspension-direccion.png" alt="Suspensión y dirección" class="cat-circle__img" loading="lazy" />
+          </span>
+          <span class="cat-circle__name">Suspensión y dirección</span>
+          <span class="cat-circle__cta">Ver productos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a href="/shop/category/frenos" class="cat-circle">
+          <span class="cat-circle__shape">
+            <span class="cat-circle__bg" aria-hidden="true"></span>
+            <img src="assets/image/category/frenos.png" alt="Frenos" class="cat-circle__img" loading="lazy" />
+          </span>
+          <span class="cat-circle__name">Frenos</span>
+          <span class="cat-circle__cta">Ver productos <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+        <a href="/shop" class="cat-circle cat-circle--all">
+          <span class="cat-circle__shape">
+            <span class="cat-circle__bg" aria-hidden="true"></span>
+            <i class="fa-solid fa-grip cat-circle__icon" aria-hidden="true"></i>
+          </span>
+          <span class="cat-circle__name">Ver todas</span>
+          <span class="cat-circle__cta">Ver categorías <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></span>
+        </a>
+      </div>
+    </section>
+
+    <!-- PRODUCTOS RECOMENDADOS — fila única con scroll horizontal.
+         8 tarjetas en total; escritorio muestra 5, móvil muestra 3. -->
+    <section class="products" data-name="Productos recomendados">
+      <div class="products__header">
+        <h2 class="products__title">Productos recomendados</h2>
+        <a href="/shop" class="products__link">
+          Ver todos
+          <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+
+      <div class="prod-scroll">
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/01.jpg" alt="Filtro de aceite para motor diésel" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4.5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star-half-stroke is-filled" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Filtro de aceite para motor diésel</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$450.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/02.webp" alt="Kit de balatas delanteras de alto rendimiento para montacargas" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Kit de balatas delanteras de alto rendimiento para montacargas</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$1,250.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/03.webp" alt="Bomba hidráulica" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Bomba hidráulica</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$3,890.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/04.webp" alt="Sensor de posición del cigüeñal compatible con múltiples modelos" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="3.5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star-half-stroke is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Sensor de posición del cigüeñal compatible con múltiples modelos</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$680.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/05.webp" alt="Correa de distribución reforzada" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Correa de distribución reforzada</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$920.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/06.jpg" alt="Juego de bujías de iridio para motor a gasolina" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4.5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star-half-stroke is-filled" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Juego de bujías de iridio para motor a gasolina</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$540.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/07.webp" alt="Filtro de aire" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Filtro de aire</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$310.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/08.webp" alt="Amortiguador trasero para suspensión independiente de alto impacto" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Amortiguador trasero para suspensión independiente de alto impacto</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$1,780.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- DISTRIBUIDORES AUTORIZADOS — franja de logos de marca -->
+    <section class="brands" data-name="Distribuidores autorizados">
+      <div class="brands__header">
+        <h2 class="brands__title">Distribuidores autorizados</h2>
+      </div>
+
+      <div class="brands__grid">
+        <a href="/shop/category/maquinaria-1?attribute_values=1-3" class="brands__item">
+          <img src="assets/image/logo/brands/UNICARRIERS.png" alt="Unicarriers" loading="lazy" />
+        </a>
+        <a href="/shop/category/maquinaria-1?attribute_values=1-2" class="brands__item">
+          <img src="assets/image/logo/brands/BOBCAT.png" alt="Bobcat" loading="lazy" />
+        </a>
+        <a href="/shop/category/maquinaria-1?attribute_values=1-1" class="brands__item">
+          <img src="assets/image/logo/brands/JLG.png" alt="JLG" loading="lazy" />
+        </a>
+        <a href="/shop/category/maquinaria-1?attribute_values=1-4" class="brands__item">
+          <img src="assets/image/logo/brands/FLEXI.png" alt="Flexi" loading="lazy" />
+        </a>
+        <a href="/shop/category/maquinaria-1?attribute_values=1-5" class="brands__item">
+          <img src="assets/image/logo/brands/DONGFENG.png" alt="Dongfeng" loading="lazy" />
+        </a>
+        <a href="/shop?category=233" class="brands__item">
+          <img src="assets/image/logo/brands/NISSAN.png" alt="Nissan" loading="lazy" />
+        </a>
+        <a href="/shop/category/maquinaria-1" class="brands__item">
+          <img src="assets/image/logo/brands/OMNIPARTS.png" alt="Omniparts" loading="lazy" />
+        </a>
+      </div>
+
+      <!-- Móvil: misma franja en auto-scroll horizontal infinito -->
+      <div class="brands__marquee">
+        <div class="brands__track">
+          <a href="/shop/category/maquinaria-1?attribute_values=1-3" class="brands__item">
+            <img src="assets/image/logo/brands/UNICARRIERS.png" alt="Unicarriers" loading="lazy" />
+          </a>
+          <a href="/shop/category/maquinaria-1?attribute_values=1-2" class="brands__item">
+            <img src="assets/image/logo/brands/BOBCAT.png" alt="Bobcat" loading="lazy" />
+          </a>
+          <a href="/shop/category/maquinaria-1?attribute_values=1-1" class="brands__item">
+            <img src="assets/image/logo/brands/JLG.png" alt="JLG" loading="lazy" />
+          </a>
+          <a href="/shop/category/maquinaria-1?attribute_values=1-4" class="brands__item">
+            <img src="assets/image/logo/brands/FLEXI.png" alt="Flexi" loading="lazy" />
+          </a>
+          <a href="/shop/category/maquinaria-1?attribute_values=1-5" class="brands__item">
+            <img src="assets/image/logo/brands/DONGFENG.png" alt="Dongfeng" loading="lazy" />
+          </a>
+          <a href="/shop?category=233" class="brands__item">
+            <img src="assets/image/logo/brands/NISSAN.png" alt="Nissan" loading="lazy" />
+          </a>
+          <a href="/shop/category/maquinaria-1" class="brands__item">
+            <img src="assets/image/logo/brands/OMNIPARTS.png" alt="Omniparts" loading="lazy" />
+          </a>
+
+          <!-- Copia duplicada (oculta de lectores de pantalla) para el loop continuo -->
+          <div class="brands__track-dup" aria-hidden="true">
+            <a href="/shop/category/maquinaria-1?attribute_values=1-3" class="brands__item" tabindex="-1">
+              <img src="assets/image/logo/brands/UNICARRIERS.png" alt="" loading="lazy" />
+            </a>
+            <a href="/shop/category/maquinaria-1?attribute_values=1-2" class="brands__item" tabindex="-1">
+              <img src="assets/image/logo/brands/BOBCAT.png" alt="" loading="lazy" />
+            </a>
+            <a href="/shop/category/maquinaria-1?attribute_values=1-1" class="brands__item" tabindex="-1">
+              <img src="assets/image/logo/brands/JLG.png" alt="" loading="lazy" />
+            </a>
+            <a href="/shop/category/maquinaria-1?attribute_values=1-4" class="brands__item" tabindex="-1">
+              <img src="assets/image/logo/brands/FLEXI.png" alt="" loading="lazy" />
+            </a>
+            <a href="/shop/category/maquinaria-1?attribute_values=1-5" class="brands__item" tabindex="-1">
+              <img src="assets/image/logo/brands/DONGFENG.png" alt="" loading="lazy" />
+            </a>
+            <a href="/shop?category=233" class="brands__item" tabindex="-1">
+              <img src="assets/image/logo/brands/NISSAN.png" alt="" loading="lazy" />
+            </a>
+            <a href="/shop/category/maquinaria-1" class="brands__item" tabindex="-1">
+              <img src="assets/image/logo/brands/OMNIPARTS.png" alt="" loading="lazy" />
+            </a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- CÓMO COMPRAR — bento grid de 4 pasos -->
+    <section class="how-buy" data-name="Cómo comprar">
+      <div class="how-buy__header">
+        <h2 class="how-buy__title">¿Cómo comprar?</h2>
+        <p class="how-buy__subtitle">Comprar tus refacciones es rápido y sencillo, sigue estos pasos.</p>
+      </div>
+
+      <div class="how-buy__grid">
+        <article class="how-buy__card how-buy__card--1">
+          <span class="how-buy__step" aria-hidden="true"><span class="how-buy__step-num">1</span></span>
+          <div class="how-buy__content">
+            <h3 class="how-buy__name">Búsca tu pieza</h3>
+            <p class="how-buy__text">Encuentra la pieza exacta por marca, modelo o número de parte en nuestro catálogo.</p>
+            <a href="/shop" class="how-buy__cta">Explorar catálogo <i class="fa-solid fa-arrow-right" aria-hidden="true"></i></a>
+          </div>
+        </article>
+
+        <article class="how-buy__card how-buy__card--2">
+          <span class="how-buy__step" aria-hidden="true"><span class="how-buy__step-num">2</span></span>
+          <div class="how-buy__content">
+            <h3 class="how-buy__name">Confirma la compatibilidad</h3>
+            <p class="how-buy__text">Verifica que la refacción sea compatible con tu marca y modelo de equipo.</p>
+          </div>
+        </article>
+
+        <article class="how-buy__card how-buy__card--3">
+          <span class="how-buy__step" aria-hidden="true"><span class="how-buy__step-num">3</span></span>
+          <div class="how-buy__content">
+            <h3 class="how-buy__name">Compra o cotiza</h3>
+            <p class="how-buy__text">Compra en línea o solicita una cotización si lo prefieres.</p>
+          </div>
+        </article>
+
+        <article class="how-buy__card how-buy__card--4">
+          <span class="how-buy__step" aria-hidden="true"><span class="how-buy__step-num">4</span></span>
+          <div class="how-buy__content">
+            <h3 class="how-buy__name">Recíbe en tu operación</h3>
+            <p class="how-buy__text">Te la enviamos directo a tu domicilio, taller u operación.</p>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- PREGUNTAS FRECUENTES — dos columnas (acordeón + personaje) -->
+    <section class="faq" data-name="Preguntas frecuentes">
+      <div class="faq__header">
+        <h2 class="faq__title">Preguntas frecuentes</h2>
+        <p class="faq__subtitle">Resolvemos tus dudas sobre refacciones, envíos y compras.</p>
+      </div>
+
+      <div class="faq__grid">
+
+        <div class="faq__col">
+          <div class="faq__accordion">
+            <details class="faq-item" open>
+              <summary class="faq-item__question">
+                ¿Qué marcas de refacciones encuentro en Refacciones Vegusa?
+                <i class="fa-solid fa-plus faq-item__icon" aria-hidden="true"></i>
+              </summary>
+              <p class="faq-item__answer">En Refacciones Vegusa encontrarás refacciones 100% originales de marcas reconocidas como Bobcat, JLG, Flexi, Dongfeng y Unicarriers. Somos distribuidores autorizados, lo que garantiza piezas confiables y compatibles con tus equipos. Además, contamos con opciones genéricas de alta calidad que se adaptan a diferentes necesidades y presupuestos.</p>
+            </details>
+
+            <details class="faq-item">
+              <summary class="faq-item__question">
+                ¿Hacen envíos de refacciones a todo México?
+                <i class="fa-solid fa-plus faq-item__icon" aria-hidden="true"></i>
+              </summary>
+              <p class="faq-item__answer">¡Sí! Realizamos envíos nacionales a cualquier parte del país. Trabajamos con varias paqueterías para asegurar una entrega rápida, segura y confiable.</p>
+            </details>
+
+            <details class="faq-item">
+              <summary class="faq-item__question">
+                ¿Qué métodos de pago aceptan en su tienda en línea?
+                <i class="fa-solid fa-plus faq-item__icon" aria-hidden="true"></i>
+              </summary>
+              <p class="faq-item__answer">Aceptamos tarjetas de crédito y débito, así como PayPal y Mercado Pago, para que elijas la opción que más te convenga. Todas las transacciones están protegidas bajo estrictos estándares de seguridad.</p>
+            </details>
+
+            <details class="faq-item">
+              <summary class="faq-item__question">
+                ¿Cuál es el horario de atención al cliente?
+                <i class="fa-solid fa-plus faq-item__icon" aria-hidden="true"></i>
+              </summary>
+              <p class="faq-item__answer">Nuestro equipo está disponible de lunes a viernes, de 9:00 a 18:00 hrs, para apoyarte con dudas, cotizaciones o seguimiento de pedidos.</p>
+            </details>
+
+            <details class="faq-item">
+              <summary class="faq-item__question">
+                ¿Para qué tipos de equipos ofrecen refacciones?
+                <i class="fa-solid fa-plus faq-item__icon" aria-hidden="true"></i>
+              </summary>
+              <p class="faq-item__answer">En Refacciones Vegusa ofrecemos refacciones originales para una amplia gama de equipos, tales como montacargas, minicargadores, plataformas de elevación, retroexcavadoras, plataformas elevadoras, apiladores eléctricos, y más. Sea cual sea el tipo de maquinaria que tengas, tenemos las piezas que necesitas para mantenerla funcionando de manera óptima y eficiente.</p>
+            </details>
+
+            <details class="faq-item">
+              <summary class="faq-item__question">
+                ¿Cómo puedo solicitar una refacción que no encuentro en su catálogo?
+                <i class="fa-solid fa-plus faq-item__icon" aria-hidden="true"></i>
+              </summary>
+              <p class="faq-item__answer">Si no encuentras la refacción que necesitas, no te preocupes. Puedes solicitar una cotización personalizada llenando nuestro formulario de contacto o escribiéndonos por WhatsApp al 477 813 4999. Estamos para ayudarte a conseguir la pieza correcta lo más pronto posible.</p>
+            </details>
+
+            <details class="faq-item">
+              <summary class="faq-item__question">
+                ¿Cuáles son las refacciones más solicitadas en Refacciones Vegusa?
+                <i class="fa-solid fa-plus faq-item__icon" aria-hidden="true"></i>
+              </summary>
+              <p class="faq-item__answer">Algunas de las refacciones más solicitadas incluyen componentes de motor, sistema hidráulico, transmisión y tren motriz, así como filtros, llantas, mangueras y sellos. También contamos con refacciones para cabina y controles, suspensión y dirección, sistema eléctrico, y más. Explora nuestras categorías como: Accesorios, Elementos de Fijación, Componentes del Mástil, y más.</p>
+            </details>
+          </div>
+        </div>
+
+        <div class="faq__media">
+          <img src="assets/image/character/questions-character-2.jpeg" alt="Personaje Vegusa respondiendo preguntas frecuentes" loading="lazy" />
+        </div>
+
+      </div>
+    </section>
+
+    <!-- =========================================================
+         FOOTER (copia del sitio original)
+         ========================================================= -->
+    <footer class="site-footer" id="bottom" data-name="Footer">
+      <div class="site-footer__inner">
+
+        <div class="footer-brand">
+          <img class="footer-brand__logo"
+               src="assets/image/logo/logo-inverted.png"
+               alt="Grupo Vegusa" loading="lazy" />
+          <div class="footer-social">
+            <h2 class="footer-social__title">Síguenos en redes</h2>
+            <div class="footer-social__links">
+              <a href="/website/social/facebook" target="_blank" rel="noopener" aria-label="Facebook"><i class="fa-brands fa-facebook-f" aria-hidden="true"></i></a>
+              <a href="/website/social/instagram" target="_blank" rel="noopener" aria-label="Instagram"><i class="fa-brands fa-instagram" aria-hidden="true"></i></a>
+              <a href="/website/social/youtube" target="_blank" rel="noopener" aria-label="YouTube"><i class="fa-brands fa-youtube" aria-hidden="true"></i></a>
+              <a href="/website/social/tiktok" target="_blank" rel="noopener" aria-label="TikTok"><i class="fa-brands fa-tiktok" aria-hidden="true"></i></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="site-footer__cols">
+
+          <div class="footer-col">
+            <h2>Nuestra empresa</h2>
+            <div class="footer-col__list">
+              <a href="/quienes-somos">Quiénes somos</a>
+              <a href="/sucursales">Sucursales</a>
+              <a href="/trabaja-con-nosotros">Trabaja con nosotros</a>
+              <a href="/ventas-mayoreo">Ventas por mayoreo</a>
+            </div>
+          </div>
+
+          <div class="footer-col">
+            <h2>Ayuda y mi cuenta</h2>
+            <div class="footer-col__list">
+              <a href="/mi-cuenta">Mi cuenta</a>
+              <a href="/rastrear-pedido">Rastrear mi pedido</a>
+              <a href="/como-comprar">Cómo comprar</a>
+            </div>
+          </div>
+
+          <div class="footer-col">
+            <h2>Atención al cliente</h2>
+            <div class="footer-col__list">
+              <a href="mailto:contacto@refaccionesvegusa.com">contacto@refaccionesvegusa.com</a>
+              <a href="tel:4778134999">477 813 4999</a>
+              <address>Boulevard Aeropuerto 1401, San Carlos la Roncha, 37544 León de los Aldama, Guanajuato.</address>
+              <span>Abierto de 9:00 a 18:00 horas.</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="site-footer__bottom">
+        <div class="footer-payments">
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/americanexpress.svg" alt="American Express" loading="lazy" />
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/mastercard.svg" alt="Mastercard" loading="lazy" />
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/visa.svg" alt="Visa" loading="lazy" />
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/paypal.svg" alt="PayPal" loading="lazy" />
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/mercadopago.svg" alt="Mercado Pago" loading="lazy" />
+        </div>
+
+        <div class="footer-bottom__legal">
+          <nav class="footer-legal" aria-label="Legal">
+            <a href="/politica-de-reembolso">Política de devoluciones</a>
+            <a href="/terms">Términos y condiciones</a>
+            <a href="/aviso-de-privacidad">Aviso de privacidad</a>
+          </nav>
+          <div class="footer-copyright">© 2024 - 2026 Vegusa. Todos los derechos reservados.</div>
+        </div>
+      </div>
+    </footer>
+
+  </main>
+
+  <!-- =========================================================
+       QUOTE BAR — barra inferior del shell (solo diseño)
+       ========================================================= -->
+  <div class="quote-bar">
+    <div class="quote-bar__inner">
+
+      <div class="quote-bar__chat">
+        <i class="fa-solid fa-comment-dots quote-bar__icon" aria-hidden="true"></i>
+        <input type="text" class="quote-bar__input" placeholder="¿En qué podemos ayudarte?" aria-label="Escribe tu mensaje" />
+        <span class="quote-bar__send quote-bar__send--disabled" title="Enviar" aria-hidden="true">
+          <i class="fa fa-arrow-up"></i>
+        </span>
+      </div>
+
+      <a href="/contactus" class="quote-bar__quote" title="Solicitar cotización">
+        <i class="fa fa-tags quote-bar__quote-icon" aria-hidden="true"></i>
+        <span class="quote-bar__label">Solicitar cotización</span>
+      </a>
+
+      <button type="button" class="quote-bar__whatsapp" title="Hablar por WhatsApp" aria-label="Hablar por WhatsApp">
+        <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+      </button>
+
+    </div>
+  </div>
+
+  <script src="assets/js/header.js"></script>
+  <script src="assets/js/equipment.js"></script>
+  <script src="assets/js/finder.js"></script>
+  <script src="assets/js/scroll-indicator.js"></script>
+</body>
+</html>

@@ -1,0 +1,161 @@
+{
+  "$description": "Design tokens extraídos de https://refaccionesvegusa.com/ (sitio Odoo, paleta 'vegusa'). Valores tomados de web.assets_frontend.min.css.",
+  "$source": "https://refaccionesvegusa.com/",
+  "$extractedAt": "2026-09-10",
+
+  "color": {
+    "brand": {
+      "red":        { "value": "#C51733", "comment": "o-color-1 — color principal de marca Vegusa" },
+      "red-strong": { "value": "#C41733", "comment": "fondo real del botón primario" },
+      "red-border": { "value": "#CE0000", "comment": "borde del botón primario" },
+      "graphite":   { "value": "#343A40", "comment": "o-color-2 — gris oscuro / botón secundario" },
+      "oxford":     { "value": "#4B4F58", "comment": "gris oxford — fondo de la sección 'Mi garage'" },
+      "paper":      { "value": "#F2F2F2", "comment": "o-color-3 — fondo claro, header y footer" },
+      "white":      { "value": "#FFFFFF", "comment": "o-color-4" },
+      "black":      { "value": "#000000", "comment": "o-color-5 — barra superior de avisos" }
+    },
+    "text": {
+      "default":  { "value": "#212529" },
+      "muted":    { "value": "#6C757D" },
+      "on-dark":  { "value": "#FFFFFF" },
+      "heading":  { "value": "#212529" }
+    },
+    "link": {
+      "default": { "value": "#C01632" },
+      "hover":   { "value": "#7C0E20" },
+      "on-dark": { "value": "#EE6D82" }
+    },
+    "background": {
+      "body":      { "value": "#FFFFFF" },
+      "subtle":    { "value": "#F2F2F2" },
+      "dark":      { "value": "#343A40" },
+      "inverse":   { "value": "#000000" },
+      "card":      { "value": "#FFFFFF" }
+    },
+    "border": {
+      "default": { "value": "#DEE2E6" },
+      "muted":   { "value": "rgba(0, 0, 0, 0.15)" }
+    },
+    "feedback": {
+      "success": { "value": "#28A745" },
+      "info":    { "value": "#17A2B8" },
+      "warning": { "value": "#FFC107" },
+      "danger":  { "value": "#DC3545" }
+    },
+    "gray": {
+      "100": { "value": "#F8F9FA" },
+      "200": { "value": "#E9ECEF" },
+      "300": { "value": "#DEE2E6" },
+      "400": { "value": "#CED4DA" },
+      "500": { "value": "#ADB5BD" },
+      "600": { "value": "#6C757D" },
+      "700": { "value": "#495057" },
+      "800": { "value": "#343A40" },
+      "900": { "value": "#212529" }
+    },
+    "component": {
+      "header-bg":        { "value": "#F2F2F2" },
+      "menu-bg":          { "value": "#FFFFFF" },
+      "announcement-bg":  { "value": "#000000" },
+      "announcement-text":{ "value": "#FFFFFF" },
+      "footer-bg":        { "value": "#F2F2F2" },
+      "dropdown-bg":      { "value": "#FFFFFF" }
+    }
+  },
+
+  "font": {
+    "family": {
+      "base":     { "value": "'Roboto', 'Odoo Unicode Support Noto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif" },
+      "heading":  { "value": "'Roboto', 'Odoo Unicode Support Noto', sans-serif" },
+      "navbar":   { "value": "'Roboto', sans-serif" },
+      "button":   { "value": "'Roboto', sans-serif" }
+    },
+    "weight": {
+      "regular": { "value": "400" },
+      "medium":  { "value": "500" },
+      "bold":    { "value": "700" }
+    },
+    "size": {
+      "root":     { "value": "16px" },
+      "base":     { "value": "1rem" },
+      "small":    { "value": "0.875rem" },
+      "lead":     { "value": "1.125rem" },
+      "h1":       { "value": "3rem" },
+      "h2":       { "value": "2.5rem" },
+      "h3":       { "value": "2rem" },
+      "h4":       { "value": "1.5rem" },
+      "h5":       { "value": "1.25rem" },
+      "h6":       { "value": "1rem" },
+      "display-1":{ "value": "5rem" },
+      "display-2":{ "value": "4.5rem" },
+      "display-3":{ "value": "4rem" },
+      "display-4":{ "value": "3.5rem" }
+    },
+    "lineHeight": {
+      "body":     { "value": "1.5" },
+      "heading":  { "value": "1.2" }
+    }
+  },
+
+  "space": {
+    "paragraph-bottom":  { "value": "16px" },
+    "heading-bottom":    { "value": "0.5rem" },
+    "grid-gutter":       { "value": "30px" },
+    "scale": {
+      "0": { "value": "0" },
+      "1": { "value": "0.25rem" },
+      "2": { "value": "0.5rem" },
+      "3": { "value": "1rem" },
+      "4": { "value": "1.5rem" },
+      "5": { "value": "3rem" }
+    }
+  },
+
+  "radius": {
+    "sm":   { "value": "0.3rem" },
+    "base": { "value": "0.4rem" },
+    "lg":   { "value": "0.6rem" }
+  },
+
+  "border": {
+    "width": { "value": "1px" }
+  },
+
+  "shadow": {
+    "sm":   { "value": "0px 1px 3px rgba(0, 0, 0, 0.1)" },
+    "base": { "value": "0px 4px 16px rgba(0, 0, 0, 0.12)" },
+    "lg":   { "value": "0px 12px 32px rgba(0, 0, 0, 0.175)" }
+  },
+
+  "breakpoint": {
+    "sm":  { "value": "576px" },
+    "md":  { "value": "768px" },
+    "lg":  { "value": "992px" },
+    "xl":  { "value": "1200px" },
+    "xxl": { "value": "1400px" }
+  },
+
+  "button": {
+    "primary": {
+      "bg":          { "value": "#C41733" },
+      "text":        { "value": "#FFFFFF" },
+      "border":      { "value": "#CE0000" }
+    },
+    "secondary": {
+      "bg":          { "value": "#343A40" },
+      "text":        { "value": "#FFFFFF" },
+      "border":      { "value": "#343A40" }
+    },
+    "padding-y":     { "value": "0.375rem" },
+    "padding-x":     { "value": "0.75rem" },
+    "font-size":     { "value": "1rem" },
+    "radius":        { "value": "0.4rem" }
+  },
+
+  "layout": {
+    "logo-height":       { "value": "2.5rem" },
+    "header-scroll":     { "value": "fixed" },
+    "container-md":      { "value": "720px" },
+    "sidebar-width":     { "value": "18.75rem" }
+  }
+}

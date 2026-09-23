@@ -1,0 +1,140 @@
+/* ============================================================
+   Quote Bar — barra inferior (chat · cotización · WhatsApp)
+   Clonada de la sticky bar de refaccionesvegusa.com (solo diseño)
+   Es una fila fija del shell (ver layout.css): vive bajo el área
+   scrolleable, así que nunca tapa el contenido ni el footer.
+   ============================================================ */
+
+.quote-bar {
+  position: relative;
+  z-index: 1000;
+  display: flex;
+  justify-content: center;
+  padding: 12px 16px;
+  background: var(--vg-color-brand-white);
+  border-top: 1px solid rgba(0, 0, 0, .08);
+  box-shadow: 0 -4px 16px rgba(0, 0, 0, .08);
+}
+
+.quote-bar__inner {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+}
+@media (min-width: 992px) {
+  .quote-bar__inner { width: 50%; }
+}
+
+/* ---------- Campo de chat ---------- */
+.quote-bar__chat {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 6px 6px 10px;
+  border-radius: var(--vg-radius);
+  background: var(--vg-color-brand-paper);
+  cursor: text;
+}
+
+.quote-bar__icon {
+  flex: 0 0 auto;
+  font-size: 18px;
+  color: var(--vg-color-text-muted);
+}
+
+.quote-bar__input {
+  flex: 1 1 auto;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--vg-color-brand-graphite);
+  font: inherit;
+  font-size: 14px;
+  font-weight: var(--vg-font-weight-medium);
+}
+.quote-bar__input::placeholder {
+  color: var(--vg-color-text-muted);
+  font-weight: var(--vg-font-weight-regular);
+}
+.quote-bar__input:focus { outline: none; }
+
+.quote-bar__send {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: var(--vg-color-brand-graphite);
+  color: #fff;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background-color .15s ease-in-out;
+}
+.quote-bar__send--disabled {
+  background: #c9cbce;
+  cursor: default;
+  pointer-events: none;
+}
+
+/* ---------- Solicitar cotización ---------- */
+.quote-bar__quote {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-radius: var(--vg-radius);
+  background: var(--vg-color-brand-red);
+  text-decoration: none;
+  cursor: pointer;
+  transition: filter .15s ease-in-out, transform .15s ease-in-out;
+}
+.quote-bar__quote:hover { filter: brightness(.92); transform: translateY(-1px); }
+.quote-bar__quote:active { transform: translateY(0); }
+
+.quote-bar__quote-icon {
+  flex: 0 0 auto;
+  font-size: 16px;
+  color: #fff;
+}
+
+.quote-bar__label {
+  flex: 0 0 auto;
+  font-weight: var(--vg-font-weight-bold);
+  font-size: 14px;
+  white-space: nowrap;
+  color: #fff;
+}
+
+/* ---------- WhatsApp ---------- */
+.quote-bar__whatsapp {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  border: 0;
+  border-radius: var(--vg-radius);
+  background: #25D366; /* verde de marca WhatsApp */
+  color: #fff;
+  font-size: 20px;
+  cursor: pointer;
+  transition: filter .15s ease-in-out, transform .15s ease-in-out;
+}
+.quote-bar__whatsapp:hover { filter: brightness(.95); transform: translateY(-1px); }
+.quote-bar__whatsapp:active { transform: translateY(0); }
+
+/* ---------- Responsivo ---------- */
+@media (max-width: 767.98px) {
+  .quote-bar__quote { display: none; }
+}
+@media (max-width: 480px) {
+  .quote-bar__label { display: none; }
+  .quote-bar__input { min-width: 60px; }
+}

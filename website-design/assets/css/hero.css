@@ -1,0 +1,148 @@
+/* ============================================================
+   HERO — bento grid (3 columnas x 2 filas)
+   Sección 1: título + subtítulo + confianza, tomados de index.html (ocupa 2 columnas x 2 filas)
+   Secciones 2 y 3: 1 columna x 1 fila c/u
+   Ocupa el alto disponible del área scrolleable (igual que en index.html):
+   header y quote-bar son filas fijas del shell, .hero-grid llena el resto.
+   ============================================================ */
+.hero-grid {
+  height: 100%;
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-rows: repeat(2, minmax(0, 1fr));
+  padding: 1.5rem 3rem;
+  background: var(--vg-color-brand-white);
+}
+
+.hero-grid__section {
+  display: block;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 6px;
+  background: var(--vg-gray-100);
+}
+
+.hero-grid__img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.hero-grid__section--1 {
+  position: relative;
+  grid-column: 1 / 3;
+  grid-row: 1 / 3;
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--vg-gray-200);
+}
+
+/* Fondo: <img> real en vez de background-image + border-radius/overflow
+   (esa combinación fuerza repintado en cada frame de scroll y provoca
+   que el contenido se vea "adelantarse" y luego reacomodarse). */
+.hero-grid__bg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  z-index: 0;
+}
+
+/* Tinte: div sólido con degradado (sin filtros) — oscurece el lado
+   izquierdo (donde va el texto) y se aclara hacia la derecha */
+.hero-grid__scrim {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  background: linear-gradient(90deg, rgba(0, 0, 0, .68) 0%, rgba(0, 0, 0, .4) 45%, rgba(0, 0, 0, 0) 78%);
+  pointer-events: none;
+}
+
+.hero-grid__section--1 .hero-intro,
+.hero-grid__section--1 .trust {
+  position: relative;
+  z-index: 2;
+}
+
+.hero-grid__section--1 .hero-intro { flex: 1; }
+.hero-grid__section--1 .hero-intro__title {
+  color: var(--vg-color-text-on-dark);
+}
+.hero-grid__section--1 .hero-intro__text {
+  color: rgba(255, 255, 255, .85);
+}
+
+/* index.html anima la entrada de este contenido (transform y también
+   opacity, ambos probados aquí) pero cualquiera de las dos dispara el
+   mismo salto visual al hacer scroll en esta sección — se desactiva. */
+.hero-grid__section--1 .hero-intro__title,
+.hero-grid__section--1 .hero-intro__text,
+.hero-grid__section--1 .hero-intro__actions .hero-cta,
+.hero-grid__section--1 .trust__item {
+  animation: none;
+  opacity: 1;
+  transform: none;
+}
+
+/* Barra de confianza (glassmorphism): esquinas inferiores igualadas a las
+   de la sección (si no, el overflow:hidden del contenedor deja ver una
+   línea oscura de la imagen en las esquinas), un poco más transparente,
+   y texto secundario más oscuro para que se lea sobre el fondo. */
+.hero-grid__section--1 .trust {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-bottom-left-radius: 6px;
+  border-bottom-right-radius: 6px;
+  /* backdrop-filter es un blur "en vivo": obliga a esta barra a
+     recalcularse cada frame de scroll y se desincroniza del resto del
+     contenido de la sección (se ve como si "adelantara" y luego
+     reacomodara). Se quita aquí y se compensa con más opacidad para
+     no perder legibilidad sobre la foto. */
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  background: rgba(255, 255, 255, .5);
+  border-color: rgba(255, 255, 255, .35);
+}
+.hero-grid__section--1 .trust__text {
+  color: var(--vg-color-text);
+}
+.hero-grid__section--2 { grid-column: 3; grid-row: 1; }
+.hero-grid__section--3 { grid-column: 3; grid-row: 2; }
+
+/* ---------- Pantallas chicas ---------- */
+@media (max-width: 767.98px) {
+  .hero-grid {
+    height: auto;
+    grid-template-columns: 1fr 1fr;
+    grid-template-rows: auto auto;
+    padding: 0;
+    gap: .5rem;
+  }
+  .hero-grid__section--1 {
+    grid-column: 1 / 3;
+    grid-row: 1;
+    min-height: 50vh;
+    border-radius: 0;
+  }
+  .hero-grid__section--1 .trust {
+    border-bottom-left-radius: 0;
+    border-bottom-right-radius: 0;
+  }
+  .hero-grid__section--2 {
+    grid-column: 1;
+    grid-row: 2;
+    aspect-ratio: 3 / 2;
+    border-radius: 6px;
+    margin-left: var(--vg-gutter-mobile);
+  }
+  .hero-grid__section--3 {
+    grid-column: 2;
+    grid-row: 2;
+    aspect-ratio: 3 / 2;
+    border-radius: 6px;
+    margin-right: var(--vg-gutter-mobile);
+  }
+}

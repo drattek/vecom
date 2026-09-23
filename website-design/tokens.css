@@ -1,0 +1,140 @@
+/* ============================================================
+   Design Tokens — Refacciones Vegusa
+   Fuente: https://refaccionesvegusa.com/  (Odoo, paleta "vegusa")
+   Extraído: 2026-09-10
+   ============================================================ */
+
+:root {
+  /* ---------- Marca ---------- */
+  --vg-color-brand-red: #C51733;          /* color principal */
+  --vg-color-brand-red-strong: #C41733;   /* fondo botón primario */
+  --vg-color-brand-red-border: #CE0000;   /* borde botón primario */
+  --vg-color-brand-graphite: #343A40;     /* gris oscuro / secundario */
+  --vg-color-brand-oxford: #4B4F58;       /* gris oxford — fondo sección garage */
+  --vg-color-brand-paper: #F2F2F2;        /* fondo claro, header, footer */
+  --vg-color-brand-white: #FFFFFF;
+  --vg-color-brand-black: #000000;        /* barra superior de avisos */
+
+  /* ---------- Texto ---------- */
+  --vg-color-text: #212529;
+  --vg-color-text-muted: #6C757D;
+  --vg-color-text-on-dark: #FFFFFF;
+  --vg-color-heading: #212529;
+
+  /* ---------- Enlaces ---------- */
+  --vg-color-link: #C01632;
+  --vg-color-link-hover: #7C0E20;
+  --vg-color-link-on-dark: #EE6D82;
+
+  /* ---------- Fondos ---------- */
+  --vg-bg-body: #FFFFFF;
+  --vg-bg-subtle: #F2F2F2;
+  --vg-bg-dark: #343A40;
+  --vg-bg-inverse: #000000;
+  --vg-bg-card: #FFFFFF;
+
+  /* ---------- Bordes ---------- */
+  --vg-border-color: #DEE2E6;
+  --vg-border-color-muted: rgba(0, 0, 0, 0.15);
+  --vg-border-width: 1px;
+
+  /* ---------- Feedback ---------- */
+  --vg-color-success: #28A745;
+  --vg-color-info: #17A2B8;
+  --vg-color-warning: #FFC107;
+  --vg-color-danger: #DC3545;
+
+  /* ---------- Escala de grises ---------- */
+  --vg-gray-100: #F8F9FA;
+  --vg-gray-200: #E9ECEF;
+  --vg-gray-300: #DEE2E6;
+  --vg-gray-400: #CED4DA;
+  --vg-gray-500: #ADB5BD;
+  --vg-gray-600: #6C757D;
+  --vg-gray-700: #495057;
+  --vg-gray-800: #343A40;
+  --vg-gray-900: #212529;
+
+  /* ---------- Componentes ---------- */
+  --vg-header-bg: #F2F2F2;
+  --vg-menu-bg: #FFFFFF;
+  --vg-announcement-bg: #000000;
+  --vg-announcement-text: #FFFFFF;
+  --vg-footer-bg: #F2F2F2;
+  --vg-dropdown-bg: #FFFFFF;
+
+  /* ---------- Tipografía ---------- */
+  --vg-font-base: 'Roboto', 'Odoo Unicode Support Noto', -apple-system, BlinkMacSystemFont, 'Segoe UI', Arial, sans-serif;
+  --vg-font-heading: 'Roboto', 'Odoo Unicode Support Noto', sans-serif;
+  --vg-font-navbar: 'Roboto', sans-serif;
+  --vg-font-button: 'Roboto', sans-serif;
+
+  --vg-font-weight-regular: 400;
+  --vg-font-weight-medium: 500;
+  --vg-font-weight-bold: 700;
+
+  --vg-font-size-root: 16px;
+  --vg-font-size-base: 1rem;
+  --vg-font-size-sm: 0.875rem;
+  --vg-font-size-lead: 1.125rem;
+  --vg-font-size-h1: 3rem;
+  --vg-font-size-h2: 2.5rem;
+  --vg-font-size-h3: 2rem;
+  --vg-font-size-h4: 1.5rem;
+  --vg-font-size-h5: 1.25rem;
+  --vg-font-size-h6: 1rem;
+  --vg-font-size-display-1: 5rem;
+  --vg-font-size-display-2: 4.5rem;
+  --vg-font-size-display-3: 4rem;
+  --vg-font-size-display-4: 3.5rem;
+
+  --vg-line-height-body: 1.5;
+  --vg-line-height-heading: 1.2;
+
+  /* ---------- Espaciado ---------- */
+  --vg-space-paragraph-bottom: 16px;
+  --vg-space-heading-bottom: 0.5rem;
+  --vg-grid-gutter: 30px;
+  --vg-space-0: 0;
+  --vg-space-1: 0.25rem;
+  --vg-space-2: 0.5rem;
+  --vg-space-3: 1rem;
+  --vg-space-4: 1.5rem;
+  --vg-space-5: 3rem;
+  /* gutter horizontal de todas las secciones en móvil (= margen de las secciones 2 y 3 del hero) */
+  --vg-gutter-mobile: calc(var(--vg-space-4) / 2);
+
+  /* ---------- Radio de borde ---------- */
+  --vg-radius-sm: 0.3rem;
+  --vg-radius: 0.4rem;
+  --vg-radius-lg: 0.6rem;
+
+  /* ---------- Sombras ---------- */
+  --vg-shadow-sm: 0px 1px 3px rgba(0, 0, 0, 0.1);
+  --vg-shadow: 0px 4px 16px rgba(0, 0, 0, 0.12);
+  --vg-shadow-lg: 0px 12px 32px rgba(0, 0, 0, 0.175);
+
+  /* ---------- Breakpoints (referencia) ---------- */
+  --vg-bp-sm: 576px;
+  --vg-bp-md: 768px;
+  --vg-bp-lg: 992px;
+  --vg-bp-xl: 1200px;
+  --vg-bp-xxl: 1400px;
+
+  /* ---------- Botones ---------- */
+  --vg-btn-primary-bg: #C41733;
+  --vg-btn-primary-text: #FFFFFF;
+  --vg-btn-primary-border: #CE0000;
+  --vg-btn-secondary-bg: #343A40;
+  --vg-btn-secondary-text: #FFFFFF;
+  --vg-btn-secondary-border: #343A40;
+  --vg-btn-padding-y: 0.375rem;
+  --vg-btn-padding-x: 0.75rem;
+  --vg-btn-font-size: 1rem;
+  --vg-btn-radius: 0.4rem;
+
+  /* ---------- Layout ---------- */
+  --vg-logo-height: 2.5rem;
+  --vg-container-md: 720px;
+  --vg-sidebar-width: 18.75rem;
+}

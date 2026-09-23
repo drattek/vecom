@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Llanta neumática para montacargas 14'' | Refacciones Vegusa</title>
+  <meta name="description" content="Llanta neumática para montacargas 14'', compatible con Bobcat y Unicarriers. Piezas originales con envío a todo México - Vegusa Maquinaria" />
+
+  <!-- Tipografía -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap" rel="stylesheet" />
+
+  <!-- Iconos -->
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" />
+
+  <!-- Design tokens + estilos -->
+  <link rel="stylesheet" href="tokens.css" />
+  <link rel="stylesheet" href="assets/css/layout.css" />
+  <link rel="stylesheet" href="assets/css/header.css" />
+  <link rel="stylesheet" href="assets/css/product.css" />
+  <link rel="stylesheet" href="assets/css/products.css" />
+  <link rel="stylesheet" href="assets/css/footer.css" />
+  <link rel="stylesheet" href="assets/css/quote-bar.css" />
+</head>
+<body>
+
+  <!-- =========================================================
+       HEADER (fila única) — idéntico al de la página principal
+       ========================================================= -->
+  <header class="site-header" data-name="Header">
+    <div class="header__inner">
+
+      <a href="/" class="brand" aria-label="Refacciones Vegusa">
+        <picture>
+          <!-- móvil: logo cuadrado (favicon del sitio original, provisional) -->
+          <source media="(max-width: 575.98px)"
+                  srcset="https://refaccionesvegusa.com/web/image/website/1/favicon?unique=fa24c9d" />
+          <!-- escritorio: logo horizontal -->
+          <img class="brand__logo"
+               src="https://refaccionesvegusa.com/web/image/website/1/logo/Refacciones%20Vegusa?unique=fa24c9d"
+               width="95" height="40" alt="Refacciones Vegusa" />
+        </picture>
+      </a>
+
+      <form method="get" action="/website/search" class="search" role="search">
+        <input type="search" name="search" class="search__input" placeholder="Encuentra tu refacción por número de parte" aria-label="Buscar" />
+        <button type="submit" class="search__btn" aria-label="Buscar" title="Buscar">
+          <i class="fa-solid fa-magnifying-glass" aria-hidden="true"></i>
+        </button>
+      </form>
+
+      <div class="header__actions">
+        <a href="/shop/cart" class="icon-btn" aria-label="Carrito">
+          <i class="fa fa-shopping-cart" aria-hidden="true"></i>
+          <sup class="icon-btn__badge is-hidden">0</sup>
+        </a>
+        <button type="button" class="icon-btn" data-offcanvas-open aria-label="Abrir menú" aria-expanded="false">
+          <i class="fa fa-bars" aria-hidden="true"></i>
+        </button>
+      </div>
+
+    </div>
+  </header>
+
+  <!-- =========================================================
+       SIDE PANEL
+       ========================================================= -->
+  <div class="offcanvas" id="sideMenu" data-offcanvas hidden>
+    <div class="offcanvas__backdrop" data-offcanvas-close></div>
+    <div class="offcanvas__panel" role="dialog" aria-modal="true" aria-label="Menú de usuario">
+
+      <!-- Parte superior (fija): usuario -->
+      <div class="offcanvas__top">
+        <button type="button" class="offcanvas__close" data-offcanvas-close aria-label="Cerrar">
+          <i class="fa fa-times" aria-hidden="true"></i>
+        </button>
+        <div class="user">
+          <span class="user__avatar" aria-hidden="true">
+            <i class="fa fa-user"></i>
+          </span>
+          <div class="user__info">
+            <span class="user__name">Zeoli Maldonado</span>
+            <a href="/my/profile" class="user__link">Mi perfil</a>
+          </div>
+        </div>
+      </div>
+
+      <!-- Mi garage (accordion, fijo) -->
+      <div class="garage" data-accordion>
+        <button type="button" class="garage__toggle" aria-expanded="false" aria-controls="garageBody">
+          <i class="fa fa-warehouse" aria-hidden="true"></i>
+          <span>Mi garage</span>
+          <i class="fa fa-chevron-down garage__chevron" aria-hidden="true"></i>
+        </button>
+        <div class="garage__body" id="garageBody">
+          <ul class="garage__list">
+            <li class="vehicle-card">
+              <p class="vehicle-card__brand">Toyota</p>
+              <p class="vehicle-card__type">Montacargas</p>
+              <dl class="vehicle-card__spec">
+                <div><dt>Modelo</dt><dd>8FGCU25</dd></div>
+                <div><dt>Año</dt><dd>2019</dd></div>
+              </dl>
+            </li>
+            <li class="vehicle-card">
+              <p class="vehicle-card__brand">Nissan</p>
+              <p class="vehicle-card__type">Automóvil</p>
+              <dl class="vehicle-card__spec">
+                <div><dt>Modelo</dt><dd>Versa</dd></div>
+                <div><dt>Año</dt><dd>2021</dd></div>
+              </dl>
+            </li>
+            <li class="vehicle-card">
+              <p class="vehicle-card__brand">Caterpillar</p>
+              <p class="vehicle-card__type">Retroexcavadora</p>
+              <dl class="vehicle-card__spec">
+                <div><dt>Modelo</dt><dd>420F2</dd></div>
+              </dl>
+            </li>
+          </ul>
+        </div>
+        <div class="garage__footer">
+          <a href="/my/garage/new" class="garage__add">
+            <i class="fa fa-plus" aria-hidden="true"></i>
+            <span>Agregar equipo</span>
+          </a>
+        </div>
+      </div>
+
+      <!-- Parte media (scroll): menú de opciones, agrupado -->
+      <nav class="offcanvas__menu" aria-label="Opciones de cuenta">
+
+        <div class="offcanvas__group">
+          <p class="offcanvas__group-title">General</p>
+          <ul>
+            <li>
+              <a href="/">
+                <i class="fa fa-house" aria-hidden="true"></i>
+                <span>Inicio</span>
+              </a>
+            </li>
+            <li>
+              <a href="/shop">
+                <i class="fa-solid fa-grip" aria-hidden="true"></i>
+                <span>Categorías</span>
+              </a>
+            </li>
+            <li>
+              <a href="/shop/wishlist">
+                <i class="fa fa-heart" aria-hidden="true"></i>
+                <span>Favoritos</span>
+              </a>
+            </li>
+            <li>
+              <a href="/shop?tag=ofertas">
+                <i class="fa fa-tag" aria-hidden="true"></i>
+                <span>Ofertas</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="offcanvas__group">
+          <p class="offcanvas__group-title">Mis pedidos</p>
+          <ul>
+            <li>
+              <a href="/my/orders">
+                <i class="fa fa-bag-shopping" aria-hidden="true"></i>
+                <span>Mis compras</span>
+              </a>
+            </li>
+            <li>
+              <a href="/rastrear-pedido">
+                <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+                <span>Rastrear mi pedido</span>
+              </a>
+            </li>
+            <li>
+              <a href="/my/quotes">
+                <i class="fa-solid fa-file-invoice" aria-hidden="true"></i>
+                <span>Mis cotizaciones</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+        <div class="offcanvas__group">
+          <p class="offcanvas__group-title">Mi cuenta</p>
+          <ul>
+            <li>
+              <a href="/my/addresses">
+                <i class="fa-solid fa-location-dot" aria-hidden="true"></i>
+                <span>Direcciones de envío</span>
+              </a>
+            </li>
+            <li>
+              <a href="/ventas-mayoreo">
+                <i class="fa-solid fa-boxes-stacked" aria-hidden="true"></i>
+                <span>Ventas por mayoreo</span>
+              </a>
+            </li>
+          </ul>
+        </div>
+
+      </nav>
+
+      <!-- Parte inferior (fija): cerrar sesión -->
+      <div class="offcanvas__bottom">
+        <a href="/web/session/logout" class="btn btn--logout">
+          <i class="fa fa-right-from-bracket" aria-hidden="true"></i>
+          <span>Cerrar sesión</span>
+        </a>
+      </div>
+
+    </div>
+  </div>
+
+  <!-- =========================================================
+       ÁREA SCROLLEABLE (ficha de producto + footer)
+       ========================================================= -->
+  <main class="site-scroll">
+
+    <!-- BREADCRUMB -->
+    <nav class="breadcrumb" aria-label="Ruta de navegación">
+      <ol class="breadcrumb__list">
+        <li><a href="/shop/category/maquinaria">Maquinaria</a></li>
+        <li><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></li>
+        <li><a href="/shop/category/llantas-y-rodaje">Llantas y Rodaje</a></li>
+        <li><i class="fa-solid fa-chevron-right" aria-hidden="true"></i></li>
+        <li class="breadcrumb__current" aria-current="page">Llantas</li>
+      </ol>
+    </nav>
+
+    <!-- FICHA DE PRODUCTO — 2 columnas 50/50 -->
+    <section class="product" data-name="Ficha de producto">
+      <div class="product__grid">
+
+        <!-- Columna 1: galería (se mantiene fija al hacer scroll hasta el final de la columna 2) -->
+        <div class="product__gallery">
+          <div class="product__gallery-sticky">
+            <div class="product__gallery-layout">
+
+              <div class="product__thumbs" role="listbox" aria-label="Imágenes del producto">
+                <button type="button" class="product__thumb is-active" data-full="assets/image/product/wheel/01.webp" role="option" aria-selected="true" aria-label="Imagen 1">
+                  <img src="assets/image/product/wheel/01.webp" alt="Llanta neumática para montacargas 14'' — vista 1" loading="lazy" />
+                </button>
+                <button type="button" class="product__thumb" data-full="assets/image/product/wheel/02.webp" role="option" aria-selected="false" aria-label="Imagen 2">
+                  <img src="assets/image/product/wheel/02.webp" alt="Llanta neumática para montacargas 14'' — vista 2" loading="lazy" />
+                </button>
+                <button type="button" class="product__thumb" data-full="assets/image/product/wheel/03.webp" role="option" aria-selected="false" aria-label="Imagen 3">
+                  <img src="assets/image/product/wheel/03.webp" alt="Llanta neumática para montacargas 14'' — vista 3" loading="lazy" />
+                </button>
+                <button type="button" class="product__thumb" data-full="assets/image/product/wheel/04.webp" role="option" aria-selected="false" aria-label="Imagen 4">
+                  <img src="assets/image/product/wheel/04.webp" alt="Llanta neumática para montacargas 14'' — vista 4" loading="lazy" />
+                </button>
+                <button type="button" class="product__thumb" data-full="assets/image/product/wheel/05.webp" role="option" aria-selected="false" aria-label="Imagen 5">
+                  <img src="assets/image/product/wheel/05.webp" alt="Llanta neumática para montacargas 14'' — vista 5" loading="lazy" />
+                </button>
+                <button type="button" class="product__thumb" data-full="assets/image/product/wheel/06.webp" role="option" aria-selected="false" aria-label="Imagen 6">
+                  <img src="assets/image/product/wheel/06.webp" alt="Llanta neumática para montacargas 14'' — vista 6" loading="lazy" />
+                </button>
+              </div>
+
+              <div class="product__main-media">
+                <img id="productMainImage"
+                     class="product__main-img"
+                     src="assets/image/product/wheel/01.webp"
+                     alt="Llanta neumática para montacargas 14'' — vista principal" />
+              </div>
+
+            </div>
+          </div>
+        </div>
+
+        <!-- Columna 2: información -->
+        <div class="product__info">
+
+          <h1 class="product__title">Llanta neumática para montacargas 14''</h1>
+
+          <div class="product__ids">
+            <span class="product__ids-item">SKU: <strong>VG-LL14-0234</strong></span>
+            <span class="product__ids-sep" aria-hidden="true">·</span>
+            <span class="product__ids-item">No. de parte: <strong>7137668</strong></span>
+          </div>
+
+          <div class="product__rating" aria-label="4.5 de 5 estrellas">
+            <span class="product__stars">
+              <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+              <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+              <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+              <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+              <i class="fa-solid fa-star-half-stroke is-filled" aria-hidden="true"></i>
+            </span>
+            <a href="#reviews" class="product__rating-count">32 reseñas</a>
+          </div>
+
+          <p class="product__price">
+            $3,450.00
+            <span class="product__price-old">$3,900.00</span>
+          </p>
+
+          <p class="product__short-desc">Llanta neumática de alta resistencia para montacargas y minicargadores, fabricada con goma resistente a cortes y perforaciones. Ideal para uso industrial continuo en interiores y exteriores.</p>
+
+          <div class="product__quantity">
+            <span class="product__quantity-label">Cantidad</span>
+            <div class="qty">
+              <button type="button" class="qty__btn" data-qty-minus aria-label="Disminuir cantidad">
+                <i class="fa-solid fa-minus" aria-hidden="true"></i>
+              </button>
+              <input type="number" class="qty__input" id="productQty" value="1" min="1" max="99" inputmode="numeric" aria-label="Cantidad a comprar" />
+              <button type="button" class="qty__btn" data-qty-plus aria-label="Aumentar cantidad">
+                <i class="fa-solid fa-plus" aria-hidden="true"></i>
+              </button>
+            </div>
+          </div>
+
+          <div class="product__actions">
+            <button type="button" class="btn-add-cart">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+              Agregar al carrito
+            </button>
+            <button type="button" class="btn-fav" aria-pressed="false">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+              Favorito
+            </button>
+          </div>
+
+          <div class="product__trust">
+            <ul class="product__trust-list">
+              <li>
+                <i class="fa-solid fa-rotate-left" aria-hidden="true"></i>
+                Garantía de devolución de 30 días
+              </li>
+              <li>
+                <i class="fa-solid fa-truck-fast" aria-hidden="true"></i>
+                Envío: 3-5 días hábiles
+              </li>
+            </ul>
+            <a href="/terms" class="product__terms-link">
+              Ver términos y condiciones
+              <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+            </a>
+          </div>
+
+          <div class="product__attributes">
+            <h2 class="product__attributes-title">Especificaciones</h2>
+            <table class="attr-table">
+              <tbody>
+                <tr>
+                  <th scope="row">Rin</th>
+                  <td>14''</td>
+                </tr>
+                <tr>
+                  <th scope="row">Material</th>
+                  <td>Goma</td>
+                </tr>
+                <tr>
+                  <th scope="row">Ancho</th>
+                  <td>7.00 in</td>
+                </tr>
+                <tr>
+                  <th scope="row">Índice de carga</th>
+                  <td>14 PR</td>
+                </tr>
+                <tr>
+                  <th scope="row">Tipo</th>
+                  <td>Neumática</td>
+                </tr>
+                <tr>
+                  <th scope="row">Marca compatible</th>
+                  <td>Bobcat, Unicarriers</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+
+          <div class="product__compatibility">
+            <h2 class="product__attributes-title">Compatibilidad</h2>
+            <div class="compat-table-wrap">
+              <table class="compat-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Marca</th>
+                    <th scope="col">Modelo</th>
+                    <th scope="col">Tipo de equipo</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Bobcat</td>
+                    <td>S650, S740</td>
+                    <td>Minicargador</td>
+                  </tr>
+                  <tr>
+                    <td>Bobcat</td>
+                    <td>T590, T650</td>
+                    <td>Minicargador de orugas</td>
+                  </tr>
+                  <tr>
+                    <td>Unicarriers</td>
+                    <td>FGE25, FGE30</td>
+                    <td>Montacargas</td>
+                  </tr>
+                  <tr>
+                    <td>Unicarriers</td>
+                    <td>PF50, PF60</td>
+                    <td>Montacargas</td>
+                  </tr>
+                  <tr>
+                    <td>Dongfeng</td>
+                    <td>CPCD30</td>
+                    <td>Montacargas</td>
+                  </tr>
+                  <tr>
+                    <td>JLG</td>
+                    <td>260MRT</td>
+                    <td>Plataforma de elevación</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+        </div>
+
+      </div>
+    </section>
+
+    <!-- DESCRIPCIÓN — grid de 3 columnas iguales, contenido solo en la columna central -->
+    <section class="description" id="description" data-name="Descripción del producto">
+      <div class="description__layout">
+        <div class="description__col description__col--main">
+
+          <h2 class="description__title">Descripción</h2>
+
+          <div class="description__content" id="productDescription">
+            <p>La llanta neumática para montacargas 14'' de Refacciones Vegusa está diseñada para ofrecer un rendimiento confiable en operaciones de carga y descarga continuas, tanto en interiores como en superficies irregulares de patios y almacenes. Su perfil está optimizado para distribuir el peso de manera uniforme, reduciendo el desgaste prematuro y mejorando la estabilidad del equipo durante maniobras de precisión.</p>
+            <p>Está fabricada con una mezcla de goma de alta resistencia que soporta cargas pesadas sin perder tracción, incluso en condiciones de humedad o superficies con polvo y escombros. El compuesto está formulado para resistir cortes, perforaciones y el desgaste típico del uso industrial intensivo, prolongando la vida útil de la pieza y reduciendo la frecuencia de reemplazo.</p>
+            <p>Es compatible con una amplia gama de montacargas y minicargadores de marcas como Bobcat, Unicarriers, Dongfeng y JLG (consulta la tabla de compatibilidad para verificar el modelo exacto de tu equipo). La instalación puede realizarse con herramienta estándar de taller; recomendamos que el montaje y el ajuste de presión sean realizados por personal capacitado para garantizar un sellado correcto y evitar daños al rin.</p>
+            <p>Para prolongar su vida útil, se recomienda revisar periódicamente la presión de inflado, inspeccionar la banda de rodadura en busca de cortes o desgaste irregular, y evitar el contacto prolongado con aceites o solventes que puedan degradar el caucho. Esta refacción es 100% original y cuenta con garantía de devolución de 30 días, respaldada por Refacciones Vegusa como distribuidor autorizado.</p>
+          </div>
+
+          <button type="button" class="description__toggle" id="descriptionToggle" aria-expanded="false" aria-controls="productDescription">
+            <span class="description__toggle-label">Leer más</span>
+            <i class="fa-solid fa-chevron-down" aria-hidden="true"></i>
+          </button>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- PRODUCTOS RELACIONADOS — mismo diseño de tarjeta que "Productos recomendados" -->
+    <section class="products" data-name="Productos relacionados">
+      <div class="products__header">
+        <h2 class="products__title">Productos relacionados</h2>
+        <a href="/shop/category/llantas-y-rodaje" class="products__link">
+          Ver todos
+          <i class="fa-solid fa-arrow-right" aria-hidden="true"></i>
+        </a>
+      </div>
+
+      <div class="prod-scroll">
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/01.jpg" alt="Filtro de aceite para motor diésel" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4.5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star-half-stroke is-filled" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Filtro de aceite para motor diésel</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$450.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/02.webp" alt="Kit de balatas delanteras de alto rendimiento para montacargas" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Kit de balatas delanteras de alto rendimiento para montacargas</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$1,250.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/03.webp" alt="Bomba hidráulica" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Bomba hidráulica</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$3,890.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/04.webp" alt="Sensor de posición del cigüeñal compatible con múltiples modelos" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="3.5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star-half-stroke is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Sensor de posición del cigüeñal compatible con múltiples modelos</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$680.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/05.webp" alt="Correa de distribución reforzada" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Correa de distribución reforzada</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$920.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/06.jpg" alt="Juego de bujías de iridio para motor a gasolina" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4.5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star-half-stroke is-filled" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Juego de bujías de iridio para motor a gasolina</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$540.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/07.webp" alt="Filtro de aire" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="5 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Filtro de aire</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$310.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+
+        <article class="prod-card">
+          <div class="prod-card__media">
+            <img src="assets/image/product/08.webp" alt="Amortiguador trasero para suspensión independiente de alto impacto" class="prod-card__img" loading="lazy" />
+            <button type="button" class="prod-card__fav" aria-label="Agregar a favoritos">
+              <i class="fa-regular fa-heart" aria-hidden="true"></i>
+            </button>
+          </div>
+          <div class="prod-card__rating" aria-label="4 de 5 estrellas">
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star is-filled" aria-hidden="true"></i>
+            <i class="fa-solid fa-star" aria-hidden="true"></i>
+          </div>
+          <h3 class="prod-card__title">Amortiguador trasero para suspensión independiente de alto impacto</h3>
+          <div class="prod-card__footer">
+            <span class="prod-card__price">$1,780.00</span>
+            <button type="button" class="prod-card__cart" aria-label="Agregar al carrito">
+              <i class="fa-solid fa-cart-plus" aria-hidden="true"></i>
+            </button>
+          </div>
+        </article>
+      </div>
+    </section>
+
+    <!-- COMENTARIOS Y CALIFICACIÓN -->
+    <section class="reviews" id="reviews" data-name="Comentarios y calificación">
+      <div class="reviews__header">
+        <h2 class="reviews__title">Comentarios y calificación</h2>
+        <div class="reviews__summary">
+          <span class="reviews__average">4.5</span>
+          <span class="reviews__stars" aria-hidden="true">
+            <i class="fa-solid fa-star"></i>
+            <i class="fa-solid fa-star"></i>
+            <i class="fa-solid fa-star"></i>
+            <i class="fa-solid fa-star"></i>
+            <i class="fa-solid fa-star-half-stroke"></i>
+          </span>
+          <span class="reviews__count">Basado en 32 reseñas</span>
+        </div>
+      </div>
+
+      <div class="reviews__list">
+        <article class="review-card">
+          <div class="review-card__head">
+            <span class="review-card__avatar" aria-hidden="true"><i class="fa fa-user"></i></span>
+            <div>
+              <p class="review-card__name">Carlos R.</p>
+              <div class="review-card__stars" aria-label="5 de 5 estrellas">
+                <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>
+              </div>
+            </div>
+            <span class="review-card__date">12 ago 2026</span>
+          </div>
+          <p class="review-card__text">Excelente calidad, ajustó perfecto en mi montacargas Bobcat. La entrega fue rápida y el precio muy competitivo comparado con el distribuidor local.</p>
+        </article>
+
+        <article class="review-card">
+          <div class="review-card__head">
+            <span class="review-card__avatar" aria-hidden="true"><i class="fa fa-user"></i></span>
+            <div>
+              <p class="review-card__name">Miriam G.</p>
+              <div class="review-card__stars" aria-label="4 de 5 estrellas">
+                <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-regular fa-star"></i>
+              </div>
+            </div>
+            <span class="review-card__date">03 ago 2026</span>
+          </div>
+          <p class="review-card__text">Buen producto, cumple con las especificaciones descritas. El empaque llegó en buen estado, aunque tardó un par de días más de lo esperado.</p>
+        </article>
+
+        <article class="review-card">
+          <div class="review-card__head">
+            <span class="review-card__avatar" aria-hidden="true"><i class="fa fa-user"></i></span>
+            <div>
+              <p class="review-card__name">José Luis T.</p>
+              <div class="review-card__stars" aria-label="5 de 5 estrellas">
+                <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i>
+              </div>
+            </div>
+            <span class="review-card__date">28 jul 2026</span>
+          </div>
+          <p class="review-card__text">Ya es la segunda vez que compro esta refacción con Vegusa, siempre llega original y bien identificada. Totalmente recomendado.</p>
+        </article>
+
+        <article class="review-card">
+          <div class="review-card__head">
+            <span class="review-card__avatar" aria-hidden="true"><i class="fa fa-user"></i></span>
+            <div>
+              <p class="review-card__name">Ana P.</p>
+              <div class="review-card__stars" aria-label="4 de 5 estrellas">
+                <i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-solid fa-star"></i><i class="fa-regular fa-star"></i>
+              </div>
+            </div>
+            <span class="review-card__date">15 jul 2026</span>
+          </div>
+          <p class="review-card__text">Buena relación calidad-precio. El material de la goma se ve resistente, esperamos que dure lo suficiente en uso pesado.</p>
+        </article>
+      </div>
+    </section>
+
+    <!-- =========================================================
+         FOOTER (idéntico al de la página principal)
+         ========================================================= -->
+    <footer class="site-footer" id="bottom" data-name="Footer">
+      <div class="site-footer__inner">
+
+        <div class="footer-brand">
+          <img class="footer-brand__logo"
+               src="assets/image/logo/logo-inverted.png"
+               alt="Grupo Vegusa" loading="lazy" />
+          <div class="footer-social">
+            <h2 class="footer-social__title">Síguenos en redes</h2>
+            <div class="footer-social__links">
+              <a href="/website/social/facebook" target="_blank" rel="noopener" aria-label="Facebook"><i class="fa-brands fa-facebook-f" aria-hidden="true"></i></a>
+              <a href="/website/social/instagram" target="_blank" rel="noopener" aria-label="Instagram"><i class="fa-brands fa-instagram" aria-hidden="true"></i></a>
+              <a href="/website/social/youtube" target="_blank" rel="noopener" aria-label="YouTube"><i class="fa-brands fa-youtube" aria-hidden="true"></i></a>
+              <a href="/website/social/tiktok" target="_blank" rel="noopener" aria-label="TikTok"><i class="fa-brands fa-tiktok" aria-hidden="true"></i></a>
+            </div>
+          </div>
+        </div>
+
+        <div class="site-footer__cols">
+
+          <div class="footer-col">
+            <h2>Nuestra empresa</h2>
+            <div class="footer-col__list">
+              <a href="/quienes-somos">Quiénes somos</a>
+              <a href="/sucursales">Sucursales</a>
+              <a href="/trabaja-con-nosotros">Trabaja con nosotros</a>
+              <a href="/ventas-mayoreo">Ventas por mayoreo</a>
+            </div>
+          </div>
+
+          <div class="footer-col">
+            <h2>Ayuda y mi cuenta</h2>
+            <div class="footer-col__list">
+              <a href="/mi-cuenta">Mi cuenta</a>
+              <a href="/rastrear-pedido">Rastrear mi pedido</a>
+              <a href="/como-comprar">Cómo comprar</a>
+            </div>
+          </div>
+
+          <div class="footer-col">
+            <h2>Atención al cliente</h2>
+            <div class="footer-col__list">
+              <a href="mailto:contacto@refaccionesvegusa.com">contacto@refaccionesvegusa.com</a>
+              <a href="tel:4778134999">477 813 4999</a>
+              <address>Boulevard Aeropuerto 1401, San Carlos la Roncha, 37544 León de los Aldama, Guanajuato.</address>
+              <span>Abierto de 9:00 a 18:00 horas.</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="site-footer__bottom">
+        <div class="footer-payments">
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/americanexpress.svg" alt="American Express" loading="lazy" />
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/mastercard.svg" alt="Mastercard" loading="lazy" />
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/visa.svg" alt="Visa" loading="lazy" />
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/paypal.svg" alt="PayPal" loading="lazy" />
+          <img src="https://refaccionesvegusa.com/website_vegusa/static/src/img/content/mercadopago.svg" alt="Mercado Pago" loading="lazy" />
+        </div>
+
+        <div class="footer-bottom__legal">
+          <nav class="footer-legal" aria-label="Legal">
+            <a href="/politica-de-reembolso">Política de devoluciones</a>
+            <a href="/terms">Términos y condiciones</a>
+            <a href="/aviso-de-privacidad">Aviso de privacidad</a>
+          </nav>
+          <div class="footer-copyright">© 2024 - 2026 Vegusa. Todos los derechos reservados.</div>
+        </div>
+      </div>
+    </footer>
+
+  </main>
+
+  <!-- =========================================================
+       QUOTE BAR — barra inferior del shell (idéntica a la principal)
+       ========================================================= -->
+  <div class="quote-bar">
+    <div class="quote-bar__inner">
+
+      <div class="quote-bar__chat">
+        <i class="fa-solid fa-comment-dots quote-bar__icon" aria-hidden="true"></i>
+        <input type="text" class="quote-bar__input" placeholder="¿En qué podemos ayudarte?" aria-label="Escribe tu mensaje" />
+        <span class="quote-bar__send quote-bar__send--disabled" title="Enviar" aria-hidden="true">
+          <i class="fa fa-arrow-up"></i>
+        </span>
+      </div>
+
+      <a href="/contactus" class="quote-bar__quote" title="Solicitar cotización">
+        <i class="fa fa-tags quote-bar__quote-icon" aria-hidden="true"></i>
+        <span class="quote-bar__label">Solicitar cotización</span>
+      </a>
+
+      <button type="button" class="quote-bar__whatsapp" title="Hablar por WhatsApp" aria-label="Hablar por WhatsApp">
+        <i class="fa-brands fa-whatsapp" aria-hidden="true"></i>
+      </button>
+
+    </div>
+  </div>
+
+  <script src="assets/js/header.js"></script>
+  <script src="assets/js/product.js"></script>
+</body>
+</html>

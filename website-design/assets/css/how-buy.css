@@ -1,0 +1,209 @@
+/* ============================================================
+   ¿CÓMO COMPRAR? — bento grid de 4 pasos (4 columnas × 2 filas)
+   Sección 1: 2 columnas × 2 filas, alto automático según contenido.
+   Sección 2: 2 columnas × 1 fila.
+   Secciones 3 y 4: 1 columna × 1 fila cada una.
+   ============================================================ */
+
+.how-buy {
+  padding: 2.5rem calc(var(--vg-space-4) * 6);
+  background: var(--vg-color-brand-white);
+}
+
+.how-buy__header {
+  max-width: 60ch;
+  margin: 0 auto 1.75rem;
+  text-align: center;
+}
+
+.how-buy__title {
+  margin: 0 0 .5rem;
+  font-family: var(--vg-font-heading);
+  font-size: var(--vg-font-size-h3);
+  font-weight: var(--vg-font-weight-bold);
+  color: var(--vg-color-heading);
+}
+
+.how-buy__subtitle {
+  margin: 0 auto;
+  color: var(--vg-color-text-muted);
+  font-size: var(--vg-font-size-base);
+}
+
+/* ---------- Bento grid ---------- */
+.how-buy__grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-rows: repeat(2, auto);
+  gap: 1rem;
+}
+
+.how-buy__card {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  position: relative;
+  z-index: 0;
+  overflow: hidden;
+  min-width: 0;
+  padding: 1.5rem;
+  border: 1px solid var(--vg-border-color);
+  border-radius: var(--vg-radius-lg);
+  background: var(--vg-bg-card);
+  color: var(--vg-color-text);
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+.how-buy__card:hover {
+  border-color: var(--vg-color-brand-red);
+  box-shadow: var(--vg-shadow-sm);
+  transform: translateY(-2px);
+}
+
+/* Número de paso — gigante, de fondo, cubriendo el alto total de la
+   tarjeta (padding-box, sin importar el padding); vive detrás de
+   .how-buy__content. El right negativo compensa el espacio en blanco
+   que deja la propia fuente a la derecha del glifo, para que el
+   número quede pegado de verdad al borde; .how-buy__card recorta
+   (overflow: hidden) lo que se sale de la tarjeta.
+   .how-buy__step ocupa el alto completo de la tarjeta y actúa como
+   contenedor de consulta (container query) para que .how-buy__step-num
+   pueda usar unidades cqh y escalar exactamente a ese alto, sin importar
+   cuánto mida la tarjeta en cada breakpoint o por su contenido. */
+.how-buy__step {
+  position: absolute;
+  top: 0;
+  right: -1rem;
+  bottom: 0;
+  left: 0;
+  z-index: 0;
+  container-type: size;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  pointer-events: none;
+  user-select: none;
+}
+
+.how-buy__step-num {
+  line-height: .75;
+  font-family: var(--vg-font-heading);
+  font-weight: 900;
+  /* sobredimensionado a propósito: el "tinta" visible de un dígito ocupa
+     ~70% de su font-size, así que se necesita más de 100cqh para que la
+     forma cubra ≥95% del alto real */
+  font-size: 145cqh;
+  color: rgba(0, 0, 0, .05);
+}
+
+.how-buy__content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  width: 100%;
+}
+
+/* Sección 1 — 2 columnas × 2 filas, siempre cuadrada, tarjeta destacada */
+.how-buy__card--1 {
+  grid-column: span 2;
+  grid-row: span 2;
+  justify-content: center;
+  border-color: transparent;
+  background: linear-gradient(135deg, var(--vg-color-brand-red) 0%, var(--vg-color-link-hover) 100%);
+  box-shadow: var(--vg-shadow);
+}
+.how-buy__card--1:hover {
+  border-color: var(--vg-color-brand-white);
+  box-shadow: var(--vg-shadow-lg);
+  transform: translateY(-4px);
+}
+.how-buy__card--1 .how-buy__step-num {
+  color: rgba(255, 255, 255, .16);
+}
+.how-buy__card--1 .how-buy__name {
+  font-size: var(--vg-font-size-h4);
+  color: var(--vg-color-text-on-dark);
+}
+.how-buy__card--1 .how-buy__text {
+  color: rgba(255, 255, 255, .85);
+}
+
+/* Sección 2 — 2 columnas × 1 fila */
+.how-buy__card--2 {
+  grid-column: span 2;
+  grid-row: span 1;
+}
+
+/* Secciones 3 y 4 — 1 columna × 1 fila */
+.how-buy__card--3,
+.how-buy__card--4 {
+  grid-column: span 1;
+  grid-row: span 1;
+}
+
+/* Sección 4 — tarjeta oscura (negro casi puro, no negro absoluto) */
+.how-buy__card--4 {
+  border-color: transparent;
+  background: var(--vg-gray-900);
+}
+.how-buy__card--4:hover {
+  border-color: var(--vg-color-brand-white);
+}
+.how-buy__card--4 .how-buy__step-num {
+  color: rgba(255, 255, 255, .1);
+}
+.how-buy__card--4 .how-buy__name {
+  color: var(--vg-color-text-on-dark);
+}
+.how-buy__card--4 .how-buy__text {
+  color: rgba(255, 255, 255, .75);
+}
+
+.how-buy__name {
+  margin: 0 0 .4rem;
+  font-family: var(--vg-font-heading);
+  font-size: var(--vg-font-size-lead);
+  font-weight: var(--vg-font-weight-bold);
+  color: var(--vg-color-heading);
+}
+
+.how-buy__text {
+  margin: 0;
+  color: var(--vg-color-text-muted);
+  font-size: var(--vg-font-size-sm);
+  line-height: var(--vg-line-height-body);
+}
+
+.how-buy__cta {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  margin-top: 1rem;
+  font-size: var(--vg-font-size-sm);
+  font-weight: var(--vg-font-weight-medium);
+  color: var(--vg-color-brand-white);
+  text-decoration: none;
+}
+.how-buy__cta i { transition: transform .15s ease; }
+.how-buy__card--1:hover .how-buy__cta i { transform: translateX(3px); }
+
+/* ---------- Móvil: una sola columna, tarjetas apiladas ---------- */
+@media (max-width: 767.98px) {
+  .how-buy { padding: 1.75rem var(--vg-gutter-mobile); }
+
+  .how-buy__title { font-size: var(--vg-font-size-h5); }
+
+  .how-buy__grid {
+    grid-template-columns: 1fr;
+    grid-template-rows: none;
+  }
+
+  .how-buy__card--1,
+  .how-buy__card--2,
+  .how-buy__card--3,
+  .how-buy__card--4 {
+    grid-column: span 1;
+    grid-row: span 1;
+  }
+}

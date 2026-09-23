@@ -1,0 +1,98 @@
+/* ============================================================
+   Indicador de scroll — dots verticales (sustituye la scrollbar)
+   Solo en escritorio con puntero fino: en móvil/touch no aplica,
+   porque ahí no aparece scrollbar por defecto.
+   ============================================================ */
+
+.scroll-dots {
+  position: fixed;
+  top: 50%;
+  right: 1.1rem;
+  transform: translateY(-50%);
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: .65rem;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  transition: opacity .3s ease, visibility .3s ease;
+}
+
+.scroll-dots.is-visible {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+}
+
+.scroll-dots__item {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scroll-dots__btn {
+  display: block;
+  width: .5rem;
+  height: .5rem;
+  border-radius: 50%;
+  border: 1px solid rgba(33, 37, 41, .3);
+  background: rgba(33, 37, 41, .25);
+  padding: 0;
+  cursor: pointer;
+  transition: background .25s ease, border-color .25s ease, transform .25s ease,
+              height .4s cubic-bezier(.65, 0, .35, 1), border-radius .4s cubic-bezier(.65, 0, .35, 1);
+}
+
+.scroll-dots__btn:hover {
+  transform: scale(1.25);
+  background: rgba(197, 23, 51, .55);
+  border-color: rgba(197, 23, 51, .55);
+}
+
+.scroll-dots__item.is-active .scroll-dots__btn {
+  height: 1.5rem;
+  border-radius: 999px;
+  background: var(--vg-color-brand-red);
+  border-color: var(--vg-color-brand-red);
+}
+
+.scroll-dots__item.is-active .scroll-dots__btn:hover {
+  transform: none;
+}
+
+.scroll-dots__label {
+  position: absolute;
+  right: calc(100% + .6rem);
+  top: 50%;
+  transform: translateY(-50%) translateX(4px);
+  white-space: nowrap;
+  background: var(--vg-color-text);
+  color: #fff;
+  font-size: .7rem;
+  font-weight: var(--vg-font-weight-medium);
+  line-height: 1;
+  padding: .35rem .6rem;
+  border-radius: var(--vg-radius-sm);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .2s ease, transform .2s ease;
+}
+
+.scroll-dots__item:hover .scroll-dots__label {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+/* Solo escritorio con mouse (donde por defecto se vería una scrollbar) */
+@media not all and (hover: hover) and (pointer: fine) {
+  .scroll-dots { display: none; }
+}
+@media (max-width: 767.98px) {
+  .scroll-dots { display: none; }
+}

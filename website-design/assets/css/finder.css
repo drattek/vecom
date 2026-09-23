@@ -1,0 +1,179 @@
+/* ============================================================
+   BUSCADOR (estilo garage) — sección semi-híbrida Maquinaria / Vehículo
+   Card a todo el ancho de la sección, misma sombra sutil que las
+   tarjetas de "Productos recomendados" (prod-card, products.css).
+   Pestañas cambian los campos visibles: Maquinaria no usa año
+   (marca, modelo, serie, motor opcional); Vehículo sí usa año y
+   motor como datos relevantes.
+   ============================================================ */
+
+.finder {
+  padding: 2rem calc(var(--vg-space-4) * 2) 2.5rem;
+}
+
+/* ---------- Panel ---------- */
+.finder__panel {
+  padding: 1.5rem;
+  border: 1px solid var(--vg-border-color);
+  border-radius: var(--vg-radius-lg);
+  background: var(--vg-bg-card);
+  box-shadow: var(--vg-shadow-sm);
+}
+
+/* ---------- Pestañas (segmented control) ---------- */
+.finder__tabs {
+  display: inline-flex;
+  gap: .25rem;
+  margin-bottom: 1.25rem;
+  padding: .25rem;
+  border-radius: var(--vg-radius);
+  background: var(--vg-bg-subtle);
+}
+
+.finder__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: .5rem;
+  padding: .55rem 1.1rem;
+  border: 0;
+  border-radius: calc(var(--vg-radius) - .15rem);
+  background: transparent;
+  font: inherit;
+  font-family: var(--vg-font-navbar);
+  font-weight: var(--vg-font-weight-medium);
+  color: var(--vg-color-text-muted);
+  cursor: pointer;
+  transition: background-color .15s ease, color .15s ease;
+}
+.finder__tab i { font-size: 1rem; }
+.finder__tab:hover { color: var(--vg-color-text); }
+.finder__tab.is-active {
+  background: var(--vg-color-brand-red);
+  color: #fff;
+  box-shadow: var(--vg-shadow-sm);
+}
+
+/* ---------- Campos ---------- */
+.finder__fields {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr)) auto;
+  align-items: end;
+  gap: 1rem;
+}
+.finder__fields.is-hidden { display: none; }
+
+.finder__field {
+  display: flex;
+  flex-direction: column;
+  gap: .4rem;
+  min-width: 0;
+}
+
+.finder__field label {
+  display: flex;
+  align-items: center;
+  gap: .35rem;
+  font-size: var(--vg-font-size-sm);
+  font-weight: var(--vg-font-weight-medium);
+  color: var(--vg-color-text);
+}
+
+.finder__optional {
+  font-weight: var(--vg-font-weight-regular);
+  color: var(--vg-color-text-muted);
+}
+
+.finder__field select,
+.finder__field input {
+  width: 100%;
+  padding: .625rem .75rem;
+  border: 1px solid var(--vg-border-color);
+  border-radius: var(--vg-radius-sm);
+  background: var(--vg-bg-subtle);
+  font: inherit;
+  font-size: var(--vg-font-size-sm);
+  color: var(--vg-color-text);
+}
+.finder__field select:focus,
+.finder__field input:focus {
+  outline: 2px solid var(--vg-color-brand-red);
+  outline-offset: -1px;
+  background: var(--vg-bg-card);
+}
+.finder__field input::placeholder { color: var(--vg-color-text-muted); }
+
+/* ---------- Tooltip del campo "Tipo de motor" (maquinaria) ---------- */
+.finder__hint {
+  position: relative;
+  display: inline-flex;
+  color: var(--vg-color-text-muted);
+  cursor: help;
+}
+.finder__hint::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + .5rem);
+  left: 50%;
+  z-index: 5;
+  width: max-content;
+  max-width: 240px;
+  padding: .55rem .7rem;
+  border-radius: var(--vg-radius-sm);
+  background: var(--vg-gray-900);
+  color: #fff;
+  font-size: .75rem;
+  font-weight: var(--vg-font-weight-regular);
+  line-height: 1.35;
+  text-align: left;
+  white-space: normal;
+  box-shadow: var(--vg-shadow);
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, 4px);
+  transition: opacity .15s ease, transform .15s ease;
+}
+.finder__hint:hover::after,
+.finder__hint:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+/* ---------- Botón buscar (misma fila que los campos, alineado a su base) ---------- */
+.finder__submit {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5625rem;
+  padding: .625rem 1.4rem;
+  border: 1px solid var(--vg-color-brand-red);
+  border-radius: var(--vg-radius-sm);
+  background: var(--vg-color-brand-red);
+  font: inherit;
+  font-family: var(--vg-font-button);
+  font-size: var(--vg-font-size-sm);
+  font-weight: var(--vg-font-weight-medium);
+  color: #fff;
+  white-space: nowrap;
+  cursor: pointer;
+  transition: filter .15s ease;
+}
+.finder__submit:hover { filter: brightness(.94); }
+
+/* ---------- Pantallas medianas: 2 columnas + botón en fila completa ---------- */
+@media (max-width: 991.98px) {
+  .finder__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .finder__submit { grid-column: 1 / -1; padding: .75rem 1.2rem; }
+}
+
+/* ---------- Móvil ---------- */
+@media (max-width: 767.98px) {
+  .finder { padding: 1.5rem var(--vg-gutter-mobile) 2rem; }
+  .finder__panel { padding: 1.25rem 1rem; border-radius: var(--vg-radius); }
+  .finder__tabs { display: flex; width: 100%; }
+  .finder__tab { flex: 1; justify-content: center; }
+  .finder__fields { grid-template-columns: 1fr; }
+  .finder__submit { grid-column: 1 / -1; }
+  .finder__hint::after { left: auto; right: -.5rem; transform: translateY(4px); }
+  .finder__hint:hover::after,
+  .finder__hint:focus-visible::after { transform: translateY(0); }
+}

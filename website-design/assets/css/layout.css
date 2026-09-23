@@ -1,0 +1,271 @@
+/* ============================================================
+   Layout base — Refacciones Vegusa
+   Reset + shell de página (header fijo · área scroll · barra inferior)
+   ============================================================ */
+
+*,
+*::before,
+*::after { box-sizing: border-box; }
+
+a { text-decoration: none; color: inherit; }
+img { max-width: 100%; height: auto; display: block; }
+.is-hidden { display: none !important; }
+
+/* ---------- Shell ----------
+   body ocupa exactamente el viewport y NO scrollea.
+   Header y barra inferior son filas fijas; solo .site-scroll scrollea.
+   Resultado: la barra inferior queda siempre por debajo del contenido
+   (y del footer al llegar al final), nunca tapándolo.                */
+html { -webkit-text-size-adjust: 100%; }
+
+body {
+  margin: 0;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  font-family: var(--vg-font-base);
+  font-size: var(--vg-font-size-base);
+  font-weight: var(--vg-font-weight-regular);
+  line-height: var(--vg-line-height-body);
+  color: var(--vg-color-text);
+  background: var(--vg-bg-body);
+}
+
+.site-header {
+  flex: 0 0 auto;
+  position: relative;
+  z-index: 20;
+}
+
+.site-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: none;      /* Firefox */
+  -ms-overflow-style: none;   /* Edge legacy */
+}
+.site-scroll::-webkit-scrollbar { display: none; } /* Chrome/Safari/Edge */
+
+.quote-bar { flex: 0 0 auto; }
+
+/* ============================================================
+   HERO — piezas compartidas (bento-item, hero-intro, trust, hero-cta)
+   La rejilla del hero vive en hero.css
+   ============================================================ */
+.bento-item {
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px dashed var(--vg-gray-400);
+  border-radius: var(--vg-radius-lg);
+  background: var(--vg-gray-100);
+  color: var(--vg-gray-500);
+  font-size: var(--vg-font-size-h3);
+  font-weight: var(--vg-font-weight-bold);
+}
+
+/* ---------- Valores de confianza en una línea ----------
+   Glassmorphism: fondo translúcido + blur, para que se integre con el
+   desborde de la imagen (sección 2) que queda detrás en escritorio. */
+.trust {
+  flex-direction: row;
+  align-items: center;
+  gap: 0;
+  list-style: none;
+  margin: 0;
+  border: 1px solid rgba(255, 255, 255, .5);
+  background: rgba(255, 255, 255, .55);
+  backdrop-filter: blur(16px) saturate(160%);
+  -webkit-backdrop-filter: blur(16px) saturate(160%);
+  box-shadow: 0 8px 32px rgba(15, 23, 42, .1);
+  padding: .75rem 0;
+  font-size: 1rem;
+  font-weight: var(--vg-font-weight-regular);
+  color: var(--vg-color-text);
+  text-align: left;
+}
+.trust__item {
+  flex: 1 1 0;
+  display: flex;
+  align-items: center;
+  gap: .7rem;
+  min-width: 0;
+  padding: 0 1.1rem;
+}
+.trust__item + .trust__item {
+  border-left: 1px solid rgba(255, 255, 255, .6);
+}
+.trust__item i {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.4rem;
+  height: 2.4rem;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, .85);
+  color: var(--vg-color-brand-red);
+  font-size: 1.15rem;
+  box-shadow: 0 2px 8px rgba(15, 23, 42, .08);
+}
+.trust__text {
+  display: flex;
+  flex-direction: column;
+  line-height: 1.15;
+  min-width: 0;
+  font-size: var(--vg-font-size-sm);
+  color: var(--vg-color-text-muted);
+}
+.trust__text strong {
+  font-weight: var(--vg-font-weight-bold);
+  font-size: clamp(.95rem, 1.15vw, 1.1rem);
+  color: var(--vg-color-text);
+}
+
+/* ---------- Bento item 1: título + CTA ---------- */
+.hero-intro {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 1rem;
+  border: 0;
+  background: transparent;
+  padding: clamp(1.5rem, 4vw, 3rem);
+  color: var(--vg-color-text);
+  text-align: left;
+}
+.hero-intro__title {
+  margin: 0;
+  font-family: var(--vg-font-heading);
+  font-size: clamp(1.75rem, 3.4vw, var(--vg-font-size-h1));
+  line-height: var(--vg-line-height-heading);
+  font-weight: var(--vg-font-weight-bold);
+}
+.hero-intro__text {
+  margin: 0;
+  max-width: 44ch;
+  font-size: var(--vg-font-size-lead);
+  color: var(--vg-color-text-muted);
+}
+.hero-intro__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  margin-top: .5rem;
+}
+
+.hero-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: .5625rem;
+  padding: .6rem 1.2rem;
+  border-radius: var(--vg-radius-sm);
+  border: 1px solid transparent;
+  font-family: var(--vg-font-button);
+  font-size: calc(var(--vg-font-size-sm) * 1.3);
+  font-weight: var(--vg-font-weight-medium);
+}
+.hero-cta--primary {
+  background: var(--vg-color-brand-red);
+  border-color: var(--vg-color-brand-red);
+  color: #fff;
+}
+.hero-cta--primary:hover { filter: brightness(.94); }
+
+/* ---------- Animaciones de entrada (una sola vez, al cargar) ---------- */
+@keyframes heroFadeIn {
+  from { opacity: 0; transform: translateX(-24px); } /* entra en sentido de lectura (izq. -> der.) */
+  to   { opacity: 1; transform: translateX(0); }
+}
+@keyframes heroCtaIn {
+  from { opacity: 0; transform: translateY(10px) scale(.85); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+@keyframes heroTrustIn {
+  from { opacity: 0; transform: translateY(18px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.hero-intro__title {
+  animation: heroFadeIn .6s ease .1s both;
+}
+.hero-intro__text {
+  animation: heroFadeIn .6s ease .25s both;
+}
+
+.hero-intro__actions .hero-cta {
+  animation: heroCtaIn .6s cubic-bezier(.34, 1.56, .64, 1) .45s both;
+}
+
+.trust__item {
+  animation: heroTrustIn .6s ease both;
+}
+.trust__item:nth-child(1) { animation-delay: .55s; }
+.trust__item:nth-child(2) { animation-delay: .65s; }
+.trust__item:nth-child(3) { animation-delay: .75s; }
+.trust__item:nth-child(4) { animation-delay: .85s; }
+
+@media (prefers-reduced-motion: reduce) {
+  .hero-intro__title,
+  .hero-intro__text,
+  .hero-intro__actions .hero-cta,
+  .trust__item {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/* ---------- Pantallas chicas ---------- */
+@media (max-width: 767.98px) {
+  .hero-intro {
+    align-items: flex-start;
+    justify-content: center;
+    text-align: left;
+    gap: .4rem;
+    padding: .85rem;
+    background: transparent;
+  }
+  .hero-intro__title {
+    font-size: 1.3rem;
+    line-height: 1.2;
+  }
+  .hero-intro__text { display: none; }
+  .hero-intro__actions {
+    justify-content: flex-start;
+    margin-top: .25rem;
+  }
+  .hero-cta {
+    padding: .4rem .8rem;
+    font-size: .7rem;
+  }
+
+  /* valores de confianza: rejilla 2×2 en móvil */
+  .trust {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: .75rem 0;
+    padding: 1rem 0;
+    border-left: 0;
+    border-right: 0;
+  }
+  .trust__item {
+    padding: 0 .6rem;
+    gap: .5rem;
+  }
+  .trust__item + .trust__item { border-left: 0; }
+  .trust__item:nth-child(even) { border-left: 1px solid rgba(255, 255, 255, .6); }
+  .trust__item i {
+    width: 2rem;
+    height: 2rem;
+    font-size: 1rem;
+  }
+  .trust__text { font-size: .75rem; }
+  .trust__text strong { font-size: .85rem; }
+}

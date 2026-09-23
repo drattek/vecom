@@ -1,0 +1,156 @@
+/* ============================================================
+   Footer — Refacciones Vegusa
+   Copia del footer del sitio original, sobre el sistema de tokens
+   ============================================================ */
+
+.site-footer {
+  background:
+    linear-gradient(180deg, rgba(0, 0, 0, .25), rgba(0, 0, 0, .45)),
+    var(--vg-color-brand-graphite);
+  color: #fff;
+}
+
+.site-footer a { color: #fff; }
+.site-footer a:hover { color: rgba(255, 255, 255, .75); }
+
+.site-footer__inner {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 2rem;
+  padding: 2.5rem 3rem;
+}
+
+.site-footer__cols {
+  flex: 0 1 1000px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-start;
+  gap: 2rem;
+}
+
+.footer-col {
+  flex: 0 1 220px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .75rem;
+  text-align: left;
+}
+
+.footer-col h2 {
+  margin: 0;
+  font-family: var(--vg-font-heading);
+  font-size: var(--vg-font-size-h5);
+  font-weight: var(--vg-font-weight-bold);
+}
+/* subrayado rojo de marca bajo cada título */
+.footer-col h2::after {
+  content: "";
+  display: block;
+  width: 100px;
+  height: 3px;
+  margin-top: .5rem;
+  background: var(--vg-color-brand-red);
+}
+
+.footer-col__list {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: .4rem;
+  font-size: var(--vg-font-size-sm);
+  text-align: left;
+}
+.footer-col__list address {
+  font-style: normal;
+  color: rgba(255, 255, 255, .8);
+}
+
+/* ---------- Columna de marca ---------- */
+.footer-brand {
+  flex: 0 1 300px;
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+.footer-brand__logo { width: 100%; max-width: 300px; }
+
+.footer-social__title {
+  margin: 0 0 .25rem;
+  font-family: var(--vg-font-heading);
+  font-size: var(--vg-font-size-h5);
+  font-weight: var(--vg-font-weight-bold);
+}
+.footer-social__links {
+  display: flex;
+  gap: .5rem;
+}
+.footer-social__links a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.25rem;
+  height: 2.25rem;
+  border-radius: 50%;
+  background: var(--vg-gray-800);
+  box-shadow: var(--vg-shadow-sm);
+  font-size: 1rem;
+}
+.footer-social__links a:hover { background: var(--vg-color-brand-red); color: #fff; }
+
+/* ---------- Barra inferior: pagos + copyright ---------- */
+.site-footer__bottom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem 2rem;
+  padding: 1.25rem 3rem;
+  border-top: 1px solid rgba(255, 255, 255, .12);
+}
+
+.footer-payments {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .375rem;
+}
+.footer-payments img {
+  max-width: 55px;
+  border-radius: 3px;
+}
+
+.footer-copyright {
+  font-size: var(--vg-font-size-sm);
+  color: rgba(255, 255, 255, .8);
+}
+
+.footer-bottom__legal {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: .25rem 1rem;
+}
+
+.footer-legal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .25rem .75rem;
+  font-size: var(--vg-font-size-sm);
+}
+.footer-legal a { color: rgba(255, 255, 255, .8); }
+.footer-legal a:hover { color: #fff; }
+.footer-legal a:not(:last-child)::after {
+  content: "\2022";
+  margin-left: .75rem;
+  color: rgba(255, 255, 255, .4);
+}
+
+@media (max-width: 767.98px) {
+  .site-footer__inner { padding-left: var(--vg-gutter-mobile); padding-right: var(--vg-gutter-mobile); }
+  .site-footer__bottom { justify-content: center; text-align: center; padding-left: var(--vg-gutter-mobile); padding-right: var(--vg-gutter-mobile); }
+  .footer-payments { justify-content: center; }
+  .footer-bottom__legal { justify-content: center; }
+  .footer-legal { justify-content: center; }
+}

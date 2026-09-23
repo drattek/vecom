@@ -1,0 +1,178 @@
+/* ============================================================
+   CATEGORÍAS
+   ============================================================ */
+
+.categories {
+  /* padding lateral = mismo gutter externo que el header (--vg-space-4) */
+  padding: 2.5rem calc(var(--vg-space-4) * 2);
+  background: var(--vg-color-brand-white);
+}
+
+/* Grid de 6 columnas en escritorio
+   (sin scroll, todo visible desde el inicio); en móvil, fila
+   única con scroll horizontal. Card sin borde ni fondo; el
+   círculo central contiene el icono. Con hover (solo en
+   dispositivos con puntero fino) el círculo se convierte en un
+   cuadrado con borde-radius y sube un poco para dejar espacio al
+   nombre y al enlace, que aparecen con fade-in. Sin hover
+   (táctil/móvil) solo se ve el círculo y el nombre.
+   ============================================================ */
+
+.cat-scroll {
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 1.5rem;
+  /* padding-top >= el translateY que sube el círculo en hover (.975rem),
+     para que no se corte */
+  padding: 1.875rem .375rem 2.25rem;
+}
+
+.cat-circle {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-width: 0;
+  text-align: center;
+  text-decoration: none;
+  color: var(--vg-color-text);
+}
+
+.cat-circle__shape {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  width: clamp(6rem, 13vw, 9.375rem);
+  height: clamp(6rem, 13vw, 9.375rem);
+  transition: transform .3s ease;
+}
+
+/* Forma de respaldo: círculo blanco del mismo tamaño que la imagen, detrás
+   de ella. En hover crece, se vuelve cuadrado y cambia a rojo. */
+.cat-circle__bg {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  border-radius: 50%;
+  background: var(--vg-color-brand-white);
+  transition: border-radius .3s ease, transform .3s ease, box-shadow .3s ease, background-color .3s ease;
+}
+
+.cat-circle__img {
+  position: relative;
+  z-index: 1;
+  width: 78%;
+  height: 78%;
+  object-fit: contain;
+  display: block;
+}
+
+.cat-circle__name {
+  margin-top: 1.125rem;
+  font-family: var(--vg-font-heading);
+  font-size: 1rem;
+  font-weight: var(--vg-font-weight-medium);
+  color: var(--vg-color-heading);
+}
+
+.cat-circle__cta {
+  display: none;
+  align-items: center;
+  gap: .4rem;
+  margin-top: .45rem;
+  font-size: .875rem;
+  font-weight: var(--vg-font-weight-medium);
+  color: var(--vg-color-link);
+  white-space: nowrap;
+}
+
+/* ---------- Tarjeta "Ver todas" (última columna) ---------- */
+.cat-circle__icon {
+  position: relative;
+  z-index: 1;
+  font-size: 2.5rem;
+  color: var(--vg-color-brand-red);
+  transition: color .3s ease;
+}
+
+/* ---------- Dispositivos con hover real (mouse / trackpad) ---------- */
+/* El nombre siempre es visible (para identificar la categoría); solo el
+   enlace "Ver productos" aparece con fade-in al hacer hover, mientras el
+   círculo se convierte en cuadrado con borde-radius y sube un poco. */
+@media (hover: hover) and (pointer: fine) {
+  .cat-circle__name {
+    transition: transform .3s ease;
+  }
+
+  .cat-circle__cta {
+    display: flex;
+    justify-content: center;
+    opacity: 0;
+    transform: translateY(-6px);
+    transition: opacity .25s ease, transform .25s ease;
+  }
+
+  .cat-circle:hover .cat-circle__shape,
+  .cat-circle:focus-visible .cat-circle__shape {
+    transform: translateY(-.975rem);
+  }
+
+  .cat-circle:hover .cat-circle__bg,
+  .cat-circle:focus-visible .cat-circle__bg {
+    border-radius: 22%;
+    transform: scale(1.18);
+    box-shadow: var(--vg-shadow);
+    background: var(--vg-color-brand-red);
+  }
+
+  .cat-circle:hover .cat-circle__name,
+  .cat-circle:focus-visible .cat-circle__name {
+    transform: translateY(-.975rem);
+  }
+
+  .cat-circle:hover .cat-circle__cta,
+  .cat-circle:focus-visible .cat-circle__cta {
+    opacity: 1;
+    transform: translateY(0);
+    transition-delay: .08s;
+  }
+
+  .cat-circle:hover .cat-circle__icon,
+  .cat-circle:focus-visible .cat-circle__icon {
+    color: var(--vg-color-brand-white);
+  }
+}
+
+/* ---------- Móvil / táctil: fila con scroll horizontal,
+   solo círculo + nombre, sin hover ---------- */
+@media (max-width: 767.98px) {
+  .cat-scroll {
+    display: flex;
+    gap: 1.25rem;
+    overflow-x: auto;
+    overflow-y: hidden;
+    scrollbar-width: none;
+    -webkit-overflow-scrolling: touch;
+  }
+  .cat-scroll::-webkit-scrollbar { display: none; }
+
+  .cat-circle { flex: 0 0 auto; width: 5.75rem; }
+
+  .cat-circle__shape {
+    width: 4.75rem;
+    height: 4.75rem;
+  }
+
+  .cat-circle__name {
+    margin-top: .6rem;
+    font-size: .8rem;
+  }
+
+  .cat-circle__icon { font-size: 1.75rem; }
+}
+
+/* ---------- Móvil: gutter de sección ---------- */
+@media (max-width: 767.98px) {
+  .categories { padding: 1.75rem var(--vg-gutter-mobile); }
+}
