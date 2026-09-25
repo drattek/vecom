@@ -30,15 +30,18 @@ SQL_COPT_SS_ACCESS_TOKEN = 1256
 
 
 def load_env(path):
-    """KEY=valor, admite CRLF y comillas (mismo criterio que setup-containerapps.sh)."""
+    """KEY=valor con la semántica de docker-compose/dotenv (igual que setup-containerapps.sh):
+    CRLF, comillas simples literales y dobles con escapes \\" y \\\\."""
     values = {}
     for line in path.read_text().splitlines():
         line = line.strip()
         if not line or line.startswith("#") or "=" not in line:
             continue
         key, value = line.split("=", 1)
-        if len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'":
+        if len(value) >= 2 and value[0] == value[-1] == "'":
             value = value[1:-1]
+        elif len(value) >= 2 and value[0] == value[-1] == '"':
+            value = value[1:-1].replace("\\\\", "\x01").replace('\\"', '"').replace("\x01", "\\")
         values[key] = value
     return values
 

@@ -3,20 +3,23 @@
 # Bootstrap de Azure Container Apps para el middleware vecom.
 #
 # Crea (o actualiza) en el resource group VECOM:
-#   - Entorno de Container Apps sobre vecom-vnet/containerapps-subnet
+#   - Entorno de Container Apps INTERNO (sin IP pública) sobre vecom-vnet/aca-subnet
+#     (10.50.0.0/23), con peering a odoo-vegusa-vnet para que OVEG (VM de Odoo,
+#     10.0.1.4) vea el middleware, y zona DNS privada del entorno enlazada a ambas redes
 #   - Identidad administrada para hacer pull del ACR sin contraseñas
 #   - Azure Files (cuenta vecomacafiles) para que Redis y RabbitMQ no pierdan
 #     sus datos al reiniciarse
-#   - 5 Container Apps, todas con ingress INTERNO (ninguna URL pública de Azure):
-#       vecom-dashboard     admin-dashboard (nginx + cloudflared en la misma imagen)
-#       vecom-orchestrator  core-orchestrator (HTTP 8080)
+#   - 5 Container Apps. En un entorno interno, ingress "external" = visible desde la
+#     VNet y sus peerings (OVEG), nunca desde internet; "internal" = solo entorno:
+#       vecom-dashboard     admin-dashboard (nginx + cloudflared), visible en la VNet
+#       vecom-orchestrator  core-orchestrator (HTTP 8080), visible en la VNet
 #       vecom-synapse       synapse-bridge    (HTTP 8080)
 #       vecom-redis         redis             (TCP 6379, datos en Azure Files)
 #       vecom-rabbitmq      rabbitmq          (TCP 5672, datos en Azure Files)
 #   - Cloudflare Tunnel "vecom-middleware" gestionado desde Cloudflare:
 #       https://vecom-api.odo.mx -> cloudflared -> nginx del dashboard (localhost:80)
 #     No toca el túnel de Odoo (odoo19-tunnel-vegusa) ni el DNS de vecom.odo.mx.
-#   - Reglas de firewall de MySQL para las IPs de salida del entorno
+#   - Private endpoint de MySQL (vecomdb) en la VNet, sin reglas de firewall por IP
 #   - Credencial federada OIDC para que GitHub Actions despliegue desde 'vecom'
 #
 # Secretos: se leen de vecom.env (raíz del repo, en .gitignore). Toda clave que
@@ -47,7 +50,12 @@ LOCATION="${LOCATION:-southcentralus}"
 ACR_NAME="${ACR_NAME:-acrvecom}"
 ENVIRONMENT_NAME="${ENVIRONMENT_NAME:-vecom-env}"
 VNET_NAME="${VNET_NAME:-vecom-vnet}"
-SUBNET_NAME="${SUBNET_NAME:-containerapps-subnet}"
+# containerapps-subnet (172.30.0.0/23) no sirve: Container Apps reserva 172.30.0.0/16
+# y 172.31.0.0/16. Se añade un rango 10.50.0.0/16 a la VNet con su propia subnet.
+SUBNET_NAME="${SUBNET_NAME:-aca-subnet}"
+VNET_EXTRA_PREFIX="${VNET_EXTRA_PREFIX:-10.50.0.0/16}"
+SUBNET_PREFIX="${SUBNET_PREFIX:-10.50.0.0/23}"
+PE_SUBNET_PREFIX="${PE_SUBNET_PREFIX:-10.50.2.0/27}"
 LOG_WORKSPACE="${LOG_WORKSPACE:-workspace-hNab}"
 IDENTITY_NAME="${IDENTITY_NAME:-vecom-apps}"
 STORAGE_ACCOUNT="${STORAGE_ACCOUNT:-vecomacafiles}"
@@ -56,6 +64,10 @@ GITHUB_REPO="${GITHUB_REPO:-drattek/vecom}"
 APP_REGISTRATION="${APP_REGISTRATION:-gh-actions-vecom}"
 DEPLOY_BRANCH="${DEPLOY_BRANCH:-vecom}"
 ENV_FILE="${ENV_FILE:-$REPO_ROOT/vecom.env}"
+
+# Red de OVEG (VM de Odoo de refaccionesvegusa.com): debe ver el middleware
+ODOO_VNET_RG="${ODOO_VNET_RG:-odoo19-rg-vegusa}"
+ODOO_VNET="${ODOO_VNET:-odoo-vegusa-vnet}"
 
 # Cloudflare
 CF_ZONE="${CF_ZONE:-odo.mx}"
@@ -85,7 +97,8 @@ for bin in az gh jq python3 curl; do
 done
 
 # ---------- Lectura de vecom.env (sin imprimir valores) ----------
-# Admite finales CRLF y valores entre comillas simples o dobles.
+# Misma semántica que docker-compose/dotenv: admite finales CRLF, comillas
+# simples (literal) y dobles (donde \" y \\ son escapes).
 env_get() {
   local line value
   line="$(tr -d '\r' < "$ENV_FILE" | grep -E "^${1}=" | tail -1 || true)"
@@ -93,8 +106,13 @@ env_get() {
   value="${line#*=}"
   if [[ ${#value} -ge 2 ]]; then
     local first="${value:0:1}" last="${value: -1}"
-    if [[ ( "$first" == '"' && "$last" == '"' ) || ( "$first" == "'" && "$last" == "'" ) ]]; then
+    if [[ "$first" == "'" && "$last" == "'" ]]; then
       value="${value:1:${#value}-2}"
+    elif [[ "$first" == '"' && "$last" == '"' ]]; then
+      value="${value:1:${#value}-2}"
+      value="${value//\\\\/$'\x01'}"   # \\ -> marcador temporal
+      value="${value//\\\"/\"}"         # \" -> "
+      value="${value//$'\x01'/\\}"       # marcador -> \
     fi
   fi
   printf '%s' "$value"
@@ -185,19 +203,73 @@ done
 # ---------------------------------------------------------------------
 say "4/10 Entorno de Container Apps: $ENVIRONMENT_NAME"
 if ! az containerapp env show --name "$ENVIRONMENT_NAME" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+  if ! az network vnet subnet show --resource-group "$RESOURCE_GROUP" --vnet-name "$VNET_NAME" \
+      --name "$SUBNET_NAME" &>/dev/null; then
+    if ! az network vnet show --resource-group "$RESOURCE_GROUP" --name "$VNET_NAME" \
+        --query addressSpace.addressPrefixes -o tsv | grep -qx "$VNET_EXTRA_PREFIX"; then
+      az network vnet update --resource-group "$RESOURCE_GROUP" --name "$VNET_NAME" \
+        --add addressSpace.addressPrefixes "$VNET_EXTRA_PREFIX" --output none
+      echo "     + rango $VNET_EXTRA_PREFIX en $VNET_NAME"
+    fi
+    az network vnet subnet create --resource-group "$RESOURCE_GROUP" --vnet-name "$VNET_NAME" \
+      --name "$SUBNET_NAME" --address-prefixes "$SUBNET_PREFIX" \
+      --delegations Microsoft.App/environments --output none
+    echo "     + subnet $SUBNET_NAME ($SUBNET_PREFIX)"
+  fi
   SUBNET_ID="$(az network vnet subnet show --resource-group "$RESOURCE_GROUP" \
     --vnet-name "$VNET_NAME" --name "$SUBNET_NAME" --query id -o tsv)"
   LOG_ID="$(az monitor log-analytics workspace show --resource-group "$RESOURCE_GROUP" \
     --workspace-name "$LOG_WORKSPACE" --query customerId -o tsv)"
   LOG_KEY="$(az monitor log-analytics workspace get-shared-keys --resource-group "$RESOURCE_GROUP" \
     --workspace-name "$LOG_WORKSPACE" --query primarySharedKey -o tsv)"
-  # La VNet es necesaria para el ingress TCP de Redis y RabbitMQ.
+  # La VNet es necesaria para el ingress TCP de Redis y RabbitMQ y para que OVEG
+  # llegue por peering. --internal-only: sin IP pública; lo público va por Cloudflare.
   az containerapp env create --name "$ENVIRONMENT_NAME" --resource-group "$RESOURCE_GROUP" \
     --location "$LOCATION" \
-    --infrastructure-subnet-resource-id "$SUBNET_ID" \
+    --infrastructure-subnet-resource-id "$SUBNET_ID" --internal-only true \
     --logs-workspace-id "$LOG_ID" --logs-workspace-key "$LOG_KEY" \
     --output none
 fi
+
+ENV_DOMAIN="$(az containerapp env show --name "$ENVIRONMENT_NAME" --resource-group "$RESOURCE_GROUP" \
+  --query properties.defaultDomain -o tsv)"
+ENV_STATIC_IP="$(az containerapp env show --name "$ENVIRONMENT_NAME" --resource-group "$RESOURCE_GROUP" \
+  --query properties.staticIp -o tsv)"
+echo "     dominio $ENV_DOMAIN -> $ENV_STATIC_IP"
+
+say "     Peering con $ODOO_VNET (OVEG) y DNS privado del entorno"
+VECOM_VNET_ID="$(az network vnet show --resource-group "$RESOURCE_GROUP" --name "$VNET_NAME" --query id -o tsv)"
+ODOO_VNET_ID="$(az network vnet show --resource-group "$ODOO_VNET_RG" --name "$ODOO_VNET" --query id -o tsv)"
+if ! az network vnet peering show --resource-group "$RESOURCE_GROUP" --vnet-name "$VNET_NAME" \
+    --name vecom-to-odoo-vegusa &>/dev/null; then
+  az network vnet peering create --resource-group "$RESOURCE_GROUP" --vnet-name "$VNET_NAME" \
+    --name vecom-to-odoo-vegusa --remote-vnet "$ODOO_VNET_ID" --allow-vnet-access --output none
+  echo "     + peering $VNET_NAME -> $ODOO_VNET"
+fi
+if ! az network vnet peering show --resource-group "$ODOO_VNET_RG" --vnet-name "$ODOO_VNET" \
+    --name odoo-vegusa-to-vecom &>/dev/null; then
+  az network vnet peering create --resource-group "$ODOO_VNET_RG" --vnet-name "$ODOO_VNET" \
+    --name odoo-vegusa-to-vecom --remote-vnet "$VECOM_VNET_ID" --allow-vnet-access --output none
+  echo "     + peering $ODOO_VNET -> $VNET_NAME"
+fi
+# Las apps se resuelven como <app>.<defaultDomain>: comodín a la IP privada del entorno.
+if ! az network private-dns zone show --resource-group "$RESOURCE_GROUP" --name "$ENV_DOMAIN" &>/dev/null; then
+  az network private-dns zone create --resource-group "$RESOURCE_GROUP" --name "$ENV_DOMAIN" --output none
+fi
+if ! az network private-dns record-set a show --resource-group "$RESOURCE_GROUP" \
+    --zone-name "$ENV_DOMAIN" --name '*' &>/dev/null; then
+  az network private-dns record-set a add-record --resource-group "$RESOURCE_GROUP" \
+    --zone-name "$ENV_DOMAIN" --record-set-name '*' --ipv4-address "$ENV_STATIC_IP" --output none
+fi
+for link in "vecom:$VECOM_VNET_ID" "odoo-vegusa:$ODOO_VNET_ID"; do
+  if ! az network private-dns link vnet show --resource-group "$RESOURCE_GROUP" \
+      --zone-name "$ENV_DOMAIN" --name "${link%%:*}" &>/dev/null; then
+    az network private-dns link vnet create --resource-group "$RESOURCE_GROUP" \
+      --zone-name "$ENV_DOMAIN" --name "${link%%:*}" --virtual-network "${link#*:}" \
+      --registration-enabled false --output none
+    echo "     + DNS privado enlazado a ${link%%:*}"
+  fi
+done
 
 # ---------------------------------------------------------------------
 say "5/10 Azure Files para Redis y RabbitMQ: $STORAGE_ACCOUNT"
@@ -351,7 +423,8 @@ build_config \
   EXCHANGE_RATE_RUN_AT_HOUR EXCHANGE_RATE_RUN_AT_MINUTE \
   SERVER_SHUTDOWN_TIMEOUT_SECONDS
 ENVVARS+=("${PLATFORM_ENV[@]}")
-upsert_app "$APP_ORCH" "$(initial_image core-orchestrator)" internal http 8080 0 0.5 1Gi
+# external en entorno interno = visible desde la VNet y OVEG, no desde internet
+upsert_app "$APP_ORCH" "$(initial_image core-orchestrator)" external http 8080 0 0.5 1Gi
 
 # ---------------------------------------------------------------------
 say "8/10 Cloudflare Tunnel $CF_TUNNEL_NAME -> $CF_HOSTNAME"
@@ -405,22 +478,41 @@ CF_TUNNEL_TOKEN="$(cf_api GET "accounts/${CF_ACCOUNT_ID}/cfd_tunnel/${CF_TUNNEL_
 say "9/10 admin-dashboard (nginx + cloudflared)"
 SECRETS=("cloudflare-tunnel-token=${CF_TUNNEL_TOKEN}")
 ENVVARS=("API_UPSTREAM=http://${APP_ORCH}" "TUNNEL_TOKEN=secretref:cloudflare-tunnel-token")
-# Ingress interno: la única entrada pública es el túnel de Cloudflare.
+# Visible en la VNet (entorno interno); desde internet solo por el túnel de Cloudflare.
 # nginx y cloudflared comparten 0.25 vCPU / 0.5 GiB (ambos consumen muy poco).
-upsert_app "$APP_DASHBOARD" "$(initial_image admin-dashboard)" internal http 80 0 0.25 0.5Gi
+upsert_app "$APP_DASHBOARD" "$(initial_image admin-dashboard)" external http 80 0 0.25 0.5Gi
 unset CF_TUNNEL_TOKEN
 
 # ---------------------------------------------------------------------
-say "10/10 Firewall de MySQL y OIDC de GitHub Actions"
-OUTBOUND_IPS="$(az containerapp show --name "$APP_ORCH" --resource-group "$RESOURCE_GROUP" \
-  --query 'properties.outboundIpAddresses' -o tsv | tr '\t' '\n' | sort -u)"
-for ip in $OUTBOUND_IPS; do
-  rule="aca-${ENVIRONMENT_NAME}-${ip//./-}"
-  az mysql flexible-server firewall-rule create --resource-group "$RESOURCE_GROUP" \
-    --name "$MYSQL_SERVER" --rule-name "$rule" \
-    --start-ip-address "$ip" --end-ip-address "$ip" --output none
-  echo "     + MySQL permite $ip"
-done
+say "10/10 MySQL por private endpoint y OIDC de GitHub Actions"
+# Nada de reglas de firewall por IP: las IPs de salida del entorno son el grupo
+# compartido de la región (~180, de muchos clientes). MySQL se alcanza por un
+# private endpoint en la VNet; MYSQL_HOST (vecomdb.mysql.database.azure.com)
+# resuelve a la IP privada gracias a la zona privatelink enlazada a la VNet.
+if ! az network vnet subnet show --resource-group "$RESOURCE_GROUP" --vnet-name "$VNET_NAME" \
+    --name private-endpoints &>/dev/null; then
+  az network vnet subnet create --resource-group "$RESOURCE_GROUP" --vnet-name "$VNET_NAME" \
+    --name private-endpoints --address-prefixes "$PE_SUBNET_PREFIX" --output none
+fi
+if ! az network private-endpoint show --resource-group "$RESOURCE_GROUP" --name "${MYSQL_SERVER}-pe" &>/dev/null; then
+  az network private-endpoint create --resource-group "$RESOURCE_GROUP" --name "${MYSQL_SERVER}-pe" \
+    --location "$LOCATION" --vnet-name "$VNET_NAME" --subnet private-endpoints \
+    --private-connection-resource-id "$(az mysql flexible-server show --resource-group "$RESOURCE_GROUP" \
+      --name "$MYSQL_SERVER" --query id -o tsv)" \
+    --group-id mysqlServer --connection-name "${MYSQL_SERVER}-pe-conn" --output none
+  echo "     + private endpoint ${MYSQL_SERVER}-pe"
+fi
+MYSQL_ZONE=privatelink.mysql.database.azure.com
+az network private-dns zone show --resource-group "$RESOURCE_GROUP" --name "$MYSQL_ZONE" &>/dev/null \
+  || az network private-dns zone create --resource-group "$RESOURCE_GROUP" --name "$MYSQL_ZONE" --output none
+az network private-dns link vnet show --resource-group "$RESOURCE_GROUP" --zone-name "$MYSQL_ZONE" --name vecom &>/dev/null \
+  || az network private-dns link vnet create --resource-group "$RESOURCE_GROUP" --zone-name "$MYSQL_ZONE" \
+    --name vecom --virtual-network "$VNET_NAME" --registration-enabled false --output none
+az network private-endpoint dns-zone-group show --resource-group "$RESOURCE_GROUP" \
+    --endpoint-name "${MYSQL_SERVER}-pe" --name default &>/dev/null \
+  || az network private-endpoint dns-zone-group create --resource-group "$RESOURCE_GROUP" \
+    --endpoint-name "${MYSQL_SERVER}-pe" --name default \
+    --private-dns-zone "$MYSQL_ZONE" --zone-name mysql --output none
 
 CLIENT_ID="$(az ad app list --display-name "$APP_REGISTRATION" --query '[0].appId' -o tsv)"
 [[ -n "$CLIENT_ID" ]] || die "no existe la app registration $APP_REGISTRATION"
@@ -447,6 +539,10 @@ say "LISTO"
 echo "  Dashboard:                      https://${CF_HOSTNAME}"
 echo "  MercadoLibre redirect_uri:      https://${CF_HOSTNAME}/meli_callback"
 echo "  MercadoLibre notificaciones:    https://${CF_HOSTNAME}/meli_notifications"
+echo
+echo "  Desde OVEG (red privada, peering):"
+echo "    https://${APP_ORCH}.${ENV_DOMAIN}      (core-orchestrator)"
+echo "    https://${APP_DASHBOARD}.${ENV_DOMAIN}         (dashboard)"
 echo
 echo "  Si alguna app quedó con la imagen temporal, lanza el primer despliegue:"
 echo "    gh workflow run deploy-containerapps.yml --repo ${GITHUB_REPO} --ref ${DEPLOY_BRANCH}"

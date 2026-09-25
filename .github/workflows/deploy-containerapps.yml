@@ -159,9 +159,11 @@ jobs:
             --query properties.latestRevisionName -o tsv)
           echo "Revisión: $REVISION"
           for i in $(seq 1 30); do
-            read -r HEALTH RUNNING < <(az containerapp revision show --name "$APP" \
-              --resource-group "$RESOURCE_GROUP" --revision "$REVISION" \
-              --query '[properties.healthState, properties.runningState]' -o tsv | tr '\n' ' ')
+            # Sin 'read': con bash -e, un read sin salto de línea final aborta el paso.
+            HEALTH=$(az containerapp revision show --name "$APP" --resource-group "$RESOURCE_GROUP" \
+              --revision "$REVISION" --query properties.healthState -o tsv || true)
+            RUNNING=$(az containerapp revision show --name "$APP" --resource-group "$RESOURCE_GROUP" \
+              --revision "$REVISION" --query properties.runningState -o tsv || true)
             echo "  intento $i: health=$HEALTH running=$RUNNING"
             if [ "$HEALTH" = "Healthy" ] && [[ "$RUNNING" == Running* ]]; then
               echo "::notice::$APP desplegado ($REVISION)"
