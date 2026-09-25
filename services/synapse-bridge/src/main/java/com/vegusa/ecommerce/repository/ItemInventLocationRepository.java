@@ -12,7 +12,7 @@ import java.util.List;
 public class ItemInventLocationRepository {
     private final JdbcTemplate jdbcTemplate;
 
-    public ItemInventLocationRepository(@Qualifier("erpJdbcTemplate") JdbcTemplate jdbcTemplate) {
+    public ItemInventLocationRepository(@Qualifier("fabricJdbcTemplate") JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 

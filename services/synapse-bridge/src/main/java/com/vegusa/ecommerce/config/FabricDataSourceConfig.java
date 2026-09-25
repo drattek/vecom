@@ -5,14 +5,19 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 import org.springframework.boot.jdbc.DataSourceBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 
 import javax.sql.DataSource;
 
 /**
- * Conexión de solo lectura al SQL analytics endpoint de Microsoft Fabric
- * (lakehouse / warehouse). Habla TDS igual que SQL Server, por lo que reutiliza
- * el driver mssql-jdbc y el flujo AAD (msal4j) ya presentes para Synapse.
+ * Conexión de solo lectura al SQL analytics endpoint del lakehouse del Link to
+ * Fabric (espejo de D365 F&O, workspace DYN365-Fabric). Es el origen de los datos
+ * del ERP: sustituye a Synapse serverless, que se retira. Las vistas dyn.* que
+ * leen los repositorios se despliegan con infrastructure/fabric/deploy_views.py.
+ *
+ * Habla TDS igual que SQL Server, por lo que usa el driver mssql-jdbc y el flujo
+ * AAD de msal4j.
  *
  * Autenticación headless vía service principal: en el JDBC URL
  * {@code authentication=ActiveDirectoryServicePrincipal}, con
@@ -27,12 +32,14 @@ import javax.sql.DataSource;
 public class FabricDataSourceConfig {
 
     @Bean(name = "fabricDataSource")
+    @Primary
     @ConfigurationProperties(prefix = "spring.datasource.fabric")
     public DataSource fabricDataSource() {
         return DataSourceBuilder.create().build();
     }
 
     @Bean(name = "fabricJdbcTemplate")
+    @Primary
     public JdbcTemplate fabricJdbcTemplate(@Qualifier("fabricDataSource") DataSource dataSource) {
         return new JdbcTemplate(dataSource);
     }

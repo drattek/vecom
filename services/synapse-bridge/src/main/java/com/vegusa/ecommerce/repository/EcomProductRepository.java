@@ -12,7 +12,7 @@ import java.util.List;
 public class EcomProductRepository {
     private final JdbcTemplate jdbcTemplate;
 
-    public EcomProductRepository(@Qualifier("erpJdbcTemplate") JdbcTemplate jdbcTemplate) {
+    public EcomProductRepository(@Qualifier("fabricJdbcTemplate") JdbcTemplate jdbcTemplate) {
         this.jdbcTemplate = jdbcTemplate;
     }
 

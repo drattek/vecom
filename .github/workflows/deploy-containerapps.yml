@@ -141,8 +141,10 @@ jobs:
       - name: Actualizar la Container App
         if: github.event_name != 'pull_request'
         run: |
+          # El contenedor principal se llama igual que la app (setup-containerapps.sh)
           az containerapp update \
             --name "${{ steps.vars.outputs.app }}" \
+            --container-name "${{ steps.vars.outputs.app }}" \
             --resource-group "$RESOURCE_GROUP" \
             --image "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}" \
             --output none
