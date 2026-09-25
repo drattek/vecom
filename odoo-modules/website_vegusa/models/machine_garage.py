@@ -39,6 +39,48 @@ class MachineGarage(models.Model):
                 str(garage.vehicle_year) if garage.vehicle_year else '',
             ]).strip(' /')
 
+    @api.model
+    def _get_header_entries(self, machine_model_id=None, vehicle_year=None):
+        """Saved machines/vehicles of the current customer, for the header's garage panel.
+
+        An entry is "active" when it matches the machine model (and year) the shop is
+        currently filtered by, so the panel can highlight it and the header button can
+        show it. A vehicle model is stored as one row per year range, so the match is by
+        brand/type/name, like the shop's own model filter.
+        """
+        partner = self.env.user.partner_id.commercial_partner_id
+        active_model = self.env['machine.model'].browse()
+        try:
+            active_model = self.env['machine.model'].browse(int(machine_model_id)).exists()
+        except (TypeError, ValueError):
+            pass
+        try:
+            active_year = int(vehicle_year)
+        except (TypeError, ValueError):
+            active_year = 0
+
+        entries = []
+        for garage in self.search([('partner_id', '=', partner.id)]):
+            model = garage.machine_model_id
+            is_active = bool(active_model) and garage.vehicle_year == active_year and (
+                model == active_model or (
+                    model.name == active_model.name
+                    and model.brand_id == active_model.brand_id
+                    and model.machine_type_id == active_model.machine_type_id
+                )
+            )
+            entries.append({
+                'id': garage.id,
+                'brand': garage.brand_id.name,
+                'type': garage.machine_type_id.name,
+                'model': model.name,
+                'year': garage.vehicle_year or False,
+                'label': '%s %s' % (model.name, garage.vehicle_year) if garage.vehicle_year else model.name,
+                'url': garage.get_shop_url(),
+                'active': is_active,
+            })
+        return entries
+
     def get_shop_url(self):
         self.ensure_one()
         url = '/shop/brand/%s?machine_type=%s&machine_model_id=%s' % (

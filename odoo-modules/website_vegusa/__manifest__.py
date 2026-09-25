@@ -34,6 +34,8 @@
             'website_vegusa/static/src/js/machine_catalog/machine_search_snippet.js',
             'website_vegusa/static/src/js/machine_catalog/machine_filter_checkbox.js',
             'website_vegusa/static/src/scss/machine_catalog.scss',
+            'website_vegusa/static/src/scss/header.scss',
+            'website_vegusa/static/src/js/header/vg_offcanvas.js',
         ],
         'web._assets_primary_variables': [
             'website_vegusa/static/src/scss/primary_variables.scss',

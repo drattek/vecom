@@ -1,0 +1,583 @@
+// Header and side panels (user menu, garage). Ported from website-design/assets/css/header.css.
+// Colors come from the theme palette (primary_variables.scss): --o-color-1 red (primary),
+// --o-color-2 graphite, --o-color-3 light gray, --o-color-4 white, --o-color-5 black. The
+// non-palette tokens (radius, shadows, gutter) live in theme.scss (:root, "Design tokens").
+// Classes are prefixed "vg-" to stay clear of Bootstrap's own .offcanvas/.btn/.search.
+
+// ---------------------------------------------------------------------------
+// Header (single row: logo · search · Mi garage · cart · menu)
+// ---------------------------------------------------------------------------
+.vg-header {
+    --vg-header-control-h: 2.75rem; // shared height: search box and garage button
+    box-shadow: var(--vg-shadow-sm);
+
+    // Always white. Odoo's header scroll behavior sets `background-color: transparent !important`
+    // on `header.o_header_is_scrolled` / `header.o_transitioning.o_header_affixed`, so the
+    // background has to be forced for those states too.
+    &,
+    &.o_header_is_scrolled,
+    &.o_header_affixed,
+    &.o_transitioning.o_header_affixed {
+        background-color: var(--o-color-4) !important;
+    }
+
+    .vg-header__inner {
+        display: flex;
+        align-items: center;
+        gap: 1rem;
+        padding: 0.625rem 3rem;
+    }
+}
+
+@media (max-width: 767.98px) {
+    .vg-header .vg-header__inner {
+        padding-left: var(--vg-gutter-mobile);
+        padding-right: var(--vg-gutter-mobile);
+    }
+}
+
+.vg-brand {
+    flex-shrink: 0;
+    display: block;
+
+    picture {
+        display: block;
+    }
+
+    img {
+        width: 95px;
+        height: 40px;
+        object-fit: contain;
+    }
+}
+
+// Odoo's search box (website.website_search_box_input) restyled as the design's input group:
+// icon as a suffix inside a light box.
+.vg-search {
+    flex: 1 1 auto;
+    min-width: 0;
+
+    form,
+    .o_searchbar_form {
+        width: 100%;
+        margin: 0;
+    }
+
+    .input-group {
+        flex-wrap: nowrap;
+        align-items: center;
+        height: var(--vg-header-control-h);
+        padding-right: 0.375rem;
+        border: 0;
+        border-radius: var(--vg-radius-sm);
+        background: var(--o-color-3);
+
+        &:focus-within {
+            outline: 2px solid var(--o-color-1);
+            outline-offset: -2px;
+        }
+    }
+
+    .oe_search_box,
+    .form-control {
+        height: 100%;
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        box-shadow: none;
+        padding: 0.625rem 0.875rem;
+        color: var(--bs-body-color, #212529);
+
+        &::placeholder {
+            color: var(--bs-secondary-color, #6c757d);
+        }
+
+        &:focus {
+            outline: none;
+            box-shadow: none;
+        }
+    }
+
+    .oe_search_button,
+    .btn {
+        border: 0;
+        border-radius: 0;
+        background: transparent;
+        color: var(--bs-secondary-color, #6c757d);
+        box-shadow: none;
+
+        &:hover {
+            color: var(--o-color-1);
+        }
+    }
+}
+
+// "Mi garage" button next to the search (a link to sign-in for visitors)
+.vg-garage-btn {
+    flex-shrink: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: var(--vg-header-control-h);
+    padding: 0 0.875rem;
+    border: 1px solid var(--o-color-1);
+    border-radius: var(--vg-radius);
+    background: var(--o-color-1);
+    color: var(--o-color-4);
+    font: inherit;
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.2;
+    white-space: nowrap;
+    text-decoration: none;
+    cursor: pointer;
+
+    &:hover {
+        color: var(--o-color-4);
+        filter: brightness(0.94);
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--o-color-5);
+        outline-offset: 2px;
+    }
+
+    // Long models are cut with an ellipsis
+    .vg-garage-btn__label {
+        max-width: 10rem;
+        overflow: hidden;
+        text-overflow: ellipsis;
+    }
+}
+
+.vg-header__actions {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    flex-shrink: 0;
+}
+
+.vg-icon-btn {
+    position: relative;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 2.5rem;
+    height: 2.5rem;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--bs-body-color, #212529);
+    font-size: 1.15rem;
+    text-decoration: none;
+    cursor: pointer;
+    transition: background-color 0.15s ease;
+
+    &:hover {
+        background: var(--o-color-3);
+        color: var(--bs-body-color, #212529);
+    }
+
+    .vg-icon-btn__badge {
+        position: absolute;
+        top: 0.1rem;
+        right: 0.1rem;
+        min-width: 1.1em;
+        padding: 0.1em 0.35em;
+        border-radius: 999px;
+        background: var(--o-color-1);
+        color: var(--o-color-4);
+        font-size: 0.7rem;
+        line-height: 1;
+        text-align: center;
+    }
+}
+
+// Small screens: everything is compacted to give the search box the most width
+@media (max-width: 575.98px) {
+    .vg-header {
+        --vg-header-control-h: 2.5rem;
+
+        .vg-header__inner {
+            gap: 0.5rem;
+        }
+    }
+
+    .vg-brand img {
+        width: 32px;
+        height: 32px;
+    }
+
+    // Icon only (the text stays for screen readers)
+    .vg-garage-btn {
+        justify-content: center;
+        width: var(--vg-header-control-h);
+        padding: 0;
+
+        .vg-garage-btn__label {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip: rect(0 0 0 0);
+            white-space: nowrap;
+        }
+    }
+
+    .vg-header__actions {
+        gap: 0;
+    }
+
+    .vg-icon-btn {
+        width: 2rem;
+        height: 2rem;
+        font-size: 1rem;
+    }
+
+    .vg-search .input-group {
+        padding-right: 0.25rem;
+    }
+
+    .vg-search .oe_search_box,
+    .vg-search .form-control {
+        padding: 0.5rem 0.75rem;
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Side panels (offcanvas)
+// ---------------------------------------------------------------------------
+// Page scroll lock while a panel is open. The page scrolls on the document (#wrapwrap has no
+// overflow), so it is the body's overflow that reaches the viewport; the theme forces
+// `overflow-x: hidden !important` on body, hence the !important here too.
+body.vg-offcanvas-open {
+    overflow: hidden !important;
+}
+
+// The panels are rendered next to #wrapwrap (body level, see side_panels in website_templates.xml)
+// so they can sit above the livechat sticky bar: its root is forced to z-index 1000000 in
+// livechat_sticky_bar.scss, and the panels must stay above that.
+.vg-offcanvas {
+    position: fixed;
+    inset: 0;
+    z-index: 1000001;
+
+    &[hidden] {
+        display: none;
+    }
+
+    .vg-offcanvas__backdrop {
+        position: absolute;
+        inset: 0;
+        background: var(--o-color-5);
+        opacity: 0;
+        transition: opacity 0.25s ease;
+    }
+
+    &.is-open .vg-offcanvas__backdrop {
+        opacity: 0.5;
+    }
+
+    .vg-offcanvas__panel {
+        position: absolute;
+        top: 0;
+        right: 0;
+        display: flex;
+        flex-direction: column;
+        width: 88vw;
+        max-width: 380px;
+        height: 100%;
+        background: var(--o-color-4);
+        box-shadow: var(--vg-shadow-lg);
+        transform: translateX(100%);
+        transition: transform 0.25s ease;
+    }
+
+    &.is-open .vg-offcanvas__panel {
+        transform: translateX(0);
+    }
+
+    // Top (fixed): user card / title
+    .vg-offcanvas__top {
+        position: relative;
+        flex-shrink: 0;
+        padding: 1.25rem;
+        border-bottom: 1px solid var(--bs-border-color, #dee2e6);
+    }
+
+    .vg-offcanvas__close {
+        position: absolute;
+        top: 0.5rem;
+        right: 0.5rem;
+        padding: 0.5rem;
+        border: 0;
+        background: transparent;
+        color: var(--bs-secondary-color, #6c757d);
+        font-size: 1.15rem;
+        line-height: 1;
+        cursor: pointer;
+
+        &:hover {
+            color: var(--o-color-1);
+        }
+    }
+
+    .vg-offcanvas__title {
+        margin: 0;
+        padding-right: 1.75rem;
+        font-size: 1.125rem;
+        font-weight: 700;
+        color: var(--bs-body-color, #212529);
+    }
+
+    // Middle (scrollable): grouped menu
+    .vg-offcanvas__menu {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        padding: 0.5rem 0;
+
+        ul {
+            margin: 0;
+            padding: 0;
+            list-style: none;
+        }
+
+        a {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.875rem 1.25rem;
+            color: var(--bs-body-color, #212529);
+            text-decoration: none;
+
+            i {
+                width: 1.25rem;
+                text-align: center;
+                color: var(--bs-secondary-color, #6c757d);
+            }
+
+            &:hover {
+                background: var(--o-color-3);
+                color: var(--o-color-1);
+
+                i {
+                    color: var(--o-color-1);
+                }
+            }
+        }
+
+        .vg-menu-badge {
+            margin-left: auto;
+            padding: 0.1em 0.45em;
+            border-radius: 999px;
+            background: var(--o-color-1);
+            color: var(--o-color-4);
+            font-size: 0.7rem;
+        }
+    }
+
+    .vg-offcanvas__group + .vg-offcanvas__group {
+        margin-top: 0.5rem;
+        padding-top: 0.5rem;
+        border-top: 1px solid var(--bs-border-color, #dee2e6);
+    }
+
+    .vg-offcanvas__group-title {
+        margin: 0;
+        padding: 0.5rem 1.25rem 0.25rem;
+        font-size: 0.875rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--bs-secondary-color, #6c757d);
+    }
+
+    // Middle (scrollable): garage list
+    .vg-offcanvas__scroll {
+        flex: 1;
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        padding: 1rem 1.25rem;
+    }
+
+    // Bottom (fixed): sign out / sign in / manage garage
+    .vg-offcanvas__bottom {
+        flex-shrink: 0;
+    }
+}
+
+// User card
+.vg-user {
+    display: flex;
+    align-items: center;
+    gap: 0.875rem;
+    padding-right: 1.75rem;
+
+    .vg-user__avatar {
+        flex-shrink: 0;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 3rem;
+        height: 3rem;
+        border-radius: 50%;
+        background: var(--o-color-3);
+        overflow: hidden;
+
+        img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+    }
+
+    .vg-user__info {
+        display: flex;
+        flex: 1;
+        flex-direction: column;
+        gap: 0.1rem;
+        min-width: 0;
+        overflow: hidden;
+    }
+
+    .vg-user__name,
+    .vg-user__link {
+        display: block;
+        max-width: 100%;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+    }
+
+    .vg-user__name {
+        font-weight: 500;
+        color: var(--bs-body-color, #212529);
+    }
+
+    .vg-user__link {
+        font-size: 0.875rem;
+        color: var(--o-color-1);
+
+        &:hover {
+            text-decoration: underline;
+        }
+    }
+}
+
+// Garage list
+.vg-garage-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+    margin: 0;
+    padding: 0;
+    list-style: none;
+}
+
+.vg-garage-empty {
+    margin: 0;
+    color: var(--bs-secondary-color, #6c757d);
+}
+
+.vg-vehicle-card {
+    position: relative;
+    display: block;
+    padding: 0.75rem 0.875rem;
+    border: 1px solid var(--bs-border-color, #dee2e6);
+    border-radius: var(--vg-radius);
+    background: var(--o-color-4);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+
+    &:hover {
+        border-color: var(--o-color-1);
+        color: inherit;
+    }
+
+    &:focus-visible {
+        outline: 2px solid var(--o-color-1);
+        outline-offset: 2px;
+    }
+
+    &.is-selected {
+        border-color: var(--o-color-1);
+        box-shadow: 0 0 0 1px var(--o-color-1);
+
+        &::after {
+            content: "\f00c";
+            position: absolute;
+            top: 0.625rem;
+            right: 0.75rem;
+            color: var(--o-color-1);
+            font-family: "FontAwesome";
+        }
+    }
+
+    .vg-vehicle-card__brand,
+    .vg-vehicle-card__type {
+        display: block;
+    }
+
+    .vg-vehicle-card__brand {
+        font-weight: 700;
+        color: var(--bs-body-color, #212529);
+    }
+
+    .vg-vehicle-card__type {
+        margin-bottom: 0.375rem;
+        font-size: 0.875rem;
+        color: var(--bs-secondary-color, #6c757d);
+    }
+
+    .vg-vehicle-card__spec {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.125rem 1rem;
+    }
+
+    .vg-vehicle-card__spec-item {
+        display: flex;
+        gap: 0.35rem;
+        font-size: 0.875rem;
+    }
+
+    .vg-vehicle-card__spec-label {
+        color: var(--bs-secondary-color, #6c757d);
+    }
+
+    .vg-vehicle-card__spec-value {
+        font-weight: 500;
+        color: var(--bs-body-color, #212529);
+    }
+}
+
+// Full-width primary button at the bottom of a panel
+.vg-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.9rem 0.75rem;
+    border: 1px solid transparent;
+    border-radius: 0;
+    font: inherit;
+    font-weight: 500;
+    text-align: center;
+    text-decoration: none;
+    cursor: pointer;
+
+    &.vg-btn--primary {
+        border-color: var(--o-color-1);
+        background: var(--o-color-1);
+        color: var(--o-color-4);
+
+        &:hover {
+            color: var(--o-color-4);
+            filter: brightness(0.94);
+        }
+    }
+}

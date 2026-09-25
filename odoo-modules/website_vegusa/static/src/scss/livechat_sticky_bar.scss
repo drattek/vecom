@@ -1,21 +1,36 @@
-// This file is compiled both for the website frontend page and for the
-// im_livechat shadow-DOM embed bundle (which does not load the website
-// theme's color palette map), so the vegusa brand colors are hardcoded
-// here instead of read from $o-color-palettes.
-// Also mirrors the website theme's primary brand color (o-color-1 in
-// website_vegusa/static/src/scss/primary_variables.scss) — used for the
-// "reopen conversation" state and the "Solicitar cotización" CTA.
-$o-vegusa-sticky-bar-accent: #C51733;
-$o-vegusa-sticky-bar-dark: #343A40;
-$o-vegusa-sticky-bar-icon: #5C5E62;
-$o-vegusa-sticky-bar-pill-bg: #f2f2f2;
-$o-vegusa-sticky-bar-bg: #ffffff;
+// Compiled both for the website frontend and for the im_livechat shadow-DOM embed bundle.
+// Inside the shadow DOM the theme palette is available as CSS variables (--o-color-1..5, plus
+// the Bootstrap ones), so brand colors are read from them instead of being hardcoded: 1 red
+// (primary), 2 graphite, 3 light gray, 4 white. Fallbacks are the vegusa palette values.
+// The WhatsApp green is the brand color of WhatsApp itself, not part of the theme.
+$o-vegusa-sticky-bar-accent: var(--o-color-1, #C51733);
+$o-vegusa-sticky-bar-dark: var(--o-color-2, #343A40);
+$o-vegusa-sticky-bar-icon: var(--gray-600, #6C757D);
+$o-vegusa-sticky-bar-placeholder: var(--gray-600, #6C757D);
+$o-vegusa-sticky-bar-pill-bg: var(--o-color-3, #f2f2f2);
+$o-vegusa-sticky-bar-bg: var(--o-color-4, #ffffff);
 $o-vegusa-sticky-bar-whatsapp: #25D366;
-// Height reserved above the sticky bar so an opened chat window never
-// visually overlaps it. Matches the bar's actual rendered height (12px
-// top/bottom padding + ~40px content row + 1px border) so the window
-// sits flush against the bar instead of leaving a gap.
+// Height reserved for the bar: an opened chat window sits above it (see .o-mail-ChatWindow
+// below) and the page gets this much bottom padding so the bar never covers the footer.
+// Matches the bar's rendered height (12px top/bottom padding + ~40px content row + 1px border).
 $o-vegusa-sticky-bar-clearance: 65px;
+
+// Page-level rules (they match elements of the website, not of the shadow DOM, so they are
+// inert in the embed bundle).
+//
+// The livechat root is appended to <body> with an inline z-index of calc(9e999), which puts
+// the bar above absolutely everything, including the side menus. Bring it down to just above
+// the header (999999) and below the side panels (1000001, see header.scss), so the chat
+// window still covers the header on mobile but an open side panel covers the bar.
+.o-livechat-root {
+    z-index: 1000000 !important;
+}
+
+// The bar is fixed to the viewport bottom: reserve its height at the end of the page so it
+// never hides the footer (in the design it is a row below the scrollable area).
+body:has(.o-livechat-root.o-livechat-LivechatButton-isVisible) #wrapwrap {
+    padding-bottom: $o-vegusa-sticky-bar-clearance;
+}
 
 .o-vegusa-StickyBar {
     // Stays below the chat window itself (see the .o-mail-ChatWindow
@@ -178,7 +193,7 @@ $o-vegusa-sticky-bar-clearance: 65px;
     font-weight: 500;
 
     &::placeholder {
-        color: #8a8d91;
+        color: $o-vegusa-sticky-bar-placeholder;
         font-weight: 400;
     }
 

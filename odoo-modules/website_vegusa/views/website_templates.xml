@@ -1,110 +1,209 @@
 <?xml version="1.0" encoding="UTF-8" ?>
 <odoo>
+    <!-- Single-row header (logo, search, Mi garage, cart, menu) with two side panels: the user
+         menu (vegusa_side_menu) and the garage (vegusa_garage_panel). Design reference:
+         website-design/index.html. The template id stays: the website builder header option
+         (header_template_option.xml) activates it by name. -->
     <template id="header" inherit_id="website.layout" name="Vegusa - Header" active="True">
         <xpath expr="//header" position="replace">
-            <header class="o_header_fixed o_top_fixed_element">
-                <div class="container-fluid ps-4 pe-4 flex-column d-none d-lg-block bg-o-color-4">
-                    <div class="d-flex align-items-center justify-content-between gap-4 py-2">
-                        <div class="d-flex align-items-center gap-4 justify-content-start">
-                            <t t-call="website.placeholder_header_brand" _link_class.f="vegusa-brand" />
-                            <xpath expr="//t[@t-call='website.placeholder_header_search_box']" position="replace">
-                                <div class="d-none d-xl-block vegusa-search-box">
-                                    <t t-call="website.website_search_box_input">
-                                        <t t-set="search_type" t-valuef="all"/>
-                                        <t t-set="action" t-valuef="/website/search"/>
-                                        <t t-set="limit" t-value="limit or '5'"/>
-                                        <t t-set="display_image" t-valuef="true"/>
-                                        <t t-set="display_description" t-valuef="true"/>
-                                        <t t-set="display_extra_link" t-valuef="true"/>
-                                        <t t-set="display_detail" t-valuef="true"/>
-                                    </t>
-                                </div>
-                            </xpath>
-                        </div>
-                        <div class="d-flex align-items-center gap-2 justify-content-end">
-                            <t t-call="website.placeholder_header_language_selector"
-                                _div_classes.f="d-flex align-items-center h-100"
-                                _btn_class.f="btn btn-sm btn-outline-secondary border-0"
-                            />
-                            <a href="/contactus" t-attf-class="o_navlink_background btn position-relative rounded-circle p-1 text-center text-reset" aria-label="eCommerce contact us">
-                                <div t-attf-class="#{_icon_wrap_class}">
-                                    <i class="fa fa-envelope fa-stack"/>
-                                </div>
-                            </a>
-                            <t t-call="website_vegusa.vegusa_header_wishlist_button" />
-                            <a href="/shop/cart" t-attf-class="o_navlink_background btn position-relative rounded-circle p-1 text-center text-reset" aria-label="eCommerce cart">
-                                <div t-attf-class="#{_icon_wrap_class}">
-                                    <i class="fa fa-shopping-cart fa-stack"/>
-                                    <sup t-attf-class="my_cart_quantity badge bg-primary position-absolute top-0 end-0 mt-n1 me-n1 rounded-pill #{'d-none' if (website_sale_cart_quantity == 0) else ''}" t-out="website_sale_cart_quantity" t-att-data-order-id="request.session.get('sale_order_id', '')"/>
-                                </div>
-                            </a>
-                        </div>
+            <t t-set="vg_logged_in" t-value="not request.env.user._is_public()"/>
+            <header class="o_header_fixed o_top_fixed_element vg-header" data-name="Header">
+                <div class="vg-header__inner">
+                    <a href="/" class="vg-brand" t-att-aria-label="website.name">
+                        <picture>
+                            <source media="(max-width: 575.98px)" t-attf-srcset="/web/image/website/#{website.id}/favicon"/>
+                            <img class="vg-brand__logo" t-attf-src="/web/image/website/#{website.id}/logo" t-att-alt="website.name" width="95" height="40"/>
+                        </picture>
+                    </a>
+
+                    <div class="vg-search">
+                        <t t-call="website.website_search_box_input">
+                            <t t-set="search_type" t-valuef="all"/>
+                            <t t-set="action" t-valuef="/website/search"/>
+                            <t t-set="placeholder" t-valuef="Encuentra tu refacción por número de parte"/>
+                            <t t-set="limit" t-value="limit or '5'"/>
+                            <t t-set="display_image" t-valuef="true"/>
+                            <t t-set="display_description" t-valuef="true"/>
+                            <t t-set="display_extra_link" t-valuef="true"/>
+                            <t t-set="display_detail" t-valuef="true"/>
+                        </t>
                     </div>
-                    <div class="d-flex align-items-center justify-content-between gap-4 bg-o-color-5 pe-3 vegusa-navigation">
-                        <div class="d-flex align-items-center gap-2 justify-content-start">
-                            <div class="vegusa-category-dropdown bg-o-color-1 ps-3">
-                                <div class="dropdown d-none d-xl-block w-100 h-100">
-                                    <button class="w-100 h-100 py-2 gap-2" type="button" id="dropdownMenuButton1" data-bs-toggle="dropdown" aria-expanded="false">
-                                        <i class="fa fa-bars"></i>
-                                        <span>Nuestras categorías</span>
-                                    </button>
-                                    <div class="dropdown-menu vw-100 px-4 py-0 margin-0 border-0 shadow-none bg-transparent" aria-labelledby="dropdownMenuButton1">
-                                        <div class="d-flex flex-row gap-3 p-4 border rounded-bottom-3 bg-white vegusa-megamenu">
-                                            <t t-set="parent_categories" t-value="request.env['product.public.category'].search([('parent_id', '=', False)])"/>
-                                            <t t-set="total_cols" t-value="4"/>
-                                            <t t-set="cols_per_category" t-value="(total_cols + len(parent_categories) - 1) // len(parent_categories) if parent_categories else 4"/>
-                                            <t t-foreach="parent_categories" t-as="category">
-                                                <div t-attf-class="border-right w-100 d-flex flex-column gap-2">
-                                                    <h5 class="vegusa-category-title"><t t-out="category.name"/></h5>
-                                                    <div class="d-grid gap-1" t-attf-style="grid-template-columns: repeat(#{cols_per_category}, 1fr);">
-                                                        <t t-foreach="category.child_id" t-as="child_category">
-                                                            <a class="dropdown_item" t-attf-title="#{child_category.name}" t-attf-href="/shop?category=#{child_category.id}">
-                                                                <img class="vegusa-category-image" t-attf-src="/web/image/product.public.category/#{child_category.id}/image_128"/>
-                                                                <t t-out="child_category.name"/>
-                                                            </a>
-                                                        </t>
-                                                    </div>
-                                                </div>
-                                            </t>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
-                            <nav class="navbar navbar-expand-lg p-0 d-none d-lg-block">
-                                <ul class="navbar-nav">
-                                    <t t-foreach="website.menu_id.child_id" t-as="submenu">
-                                        <t t-call="website.submenu"
-                                            item_class.f="nav-item"
-                                            link_class.f="nav-link text-o-color-4" />
-                                    </t>
-                                </ul>
-                            </nav>
-                        </div>
-                        <ul class="list-unstyled list-group">
-                            <t t-call="portal.placeholder_user_sign_in"
-                                _item_class.f="nav-item vg-signup-item ml-lg-3"
-                                _link_class.f="nav-link"
-                            />
-                            <t t-call="portal.user_dropdown"
-                                _user_name="true"
-                                _icon="false"
-                                _avatar="false"
-                                _item_class.f="nav-item dropdown ml-lg-3"
-                                _link_class.f="nav-link font-weight-bold"
-                                _dropdown_menu_class.f="" 
-                            />
-                        </ul>
+
+                    <t t-if="vg_logged_in">
+                        <t t-set="vg_garage_entries" t-value="request.env['machine.garage'].sudo()._get_header_entries(request.params.get('machine_model_id'), request.params.get('vehicle_year'))"/>
+                        <t t-set="vg_garage_active" t-value="[entry for entry in vg_garage_entries if entry['active']][:1]"/>
+                        <button type="button" class="vg-garage-btn" data-offcanvas-open="vgGaragePanel" aria-expanded="false" aria-controls="vgGaragePanel" title="Mi garage">
+                            <i class="fa fa-truck" aria-hidden="true"/>
+                            <span class="vg-garage-btn__label">
+                                <t t-if="vg_garage_active" t-out="vg_garage_active[0]['label']"/>
+                                <t t-else="">Mi garage</t>
+                            </span>
+                        </button>
+                    </t>
+                    <a t-else="" href="/web/login" class="vg-garage-btn" title="Iniciar sesión para usar Mi garage">
+                        <i class="fa fa-truck" aria-hidden="true"/>
+                        <span class="vg-garage-btn__label">Mi garage</span>
+                    </a>
+
+                    <div class="vg-header__actions">
+                        <a href="/shop/cart" class="vg-icon-btn" aria-label="Carrito">
+                            <i class="fa fa-shopping-cart" aria-hidden="true"/>
+                            <sup t-attf-class="my_cart_quantity vg-icon-btn__badge #{'d-none' if (website_sale_cart_quantity == 0) else ''}" t-out="website_sale_cart_quantity" t-att-data-order-id="request.session.get('sale_order_id', '')"/>
+                        </a>
+                        <button type="button" class="vg-icon-btn" data-offcanvas-open="vgSideMenu" aria-label="Abrir menú" aria-expanded="false" aria-controls="vgSideMenu">
+                            <i class="fa fa-bars" aria-hidden="true"/>
+                        </button>
                     </div>
                 </div>
             </header>
-            <t t-call="website_vegusa.template_header_mobile"/>
         </xpath>
     </template>
 
-    <template id="template_header_mobile" inherit_id="website.template_header_mobile" name="Vegusa - Template Header Mobile">
-        <xpath expr="//t[@t-call='website.placeholder_header_brand']" position="replace">
-            <t t-call="website.placeholder_header_brand" _link_class.f="vegusa-mobile-logo"/>
+    <!-- The side panels are rendered next to #wrapwrap, not inside the header. #wrapwrap has
+         z-index: 0 (a stacking context), so anything inside it can never get above the livechat
+         sticky bar, whose root element lives at body level. See header.scss (.vg-offcanvas). -->
+    <template id="side_panels" inherit_id="website.layout" name="Vegusa - Side Panels" active="True">
+        <xpath expr="//div[@id='wrapwrap']" position="after">
+            <t t-set="vg_logged_in" t-value="not request.env.user._is_public()"/>
+            <t t-call="website_vegusa.vegusa_side_menu"/>
+            <t t-if="vg_logged_in" t-call="website_vegusa.vegusa_garage_panel"/>
         </xpath>
+    </template>
+
+    <!-- User menu. Items that need a session (Favoritos, Mis compras, Mi garage, Mis direcciones)
+         and the user card only exist for logged-in users; the bottom button turns into
+         "Iniciar sesión" for visitors. Rastrear pedido, Mis cotizaciones, Ofertas and Ventas
+         por mayoreo are in the design but hidden for now. -->
+    <template id="vegusa_side_menu" name="Vegusa - Side Menu">
+        <div class="vg-offcanvas" id="vgSideMenu" hidden="hidden">
+            <div class="vg-offcanvas__backdrop" data-offcanvas-close="1"/>
+            <div class="vg-offcanvas__panel" role="dialog" aria-modal="true" aria-label="Menú de usuario">
+                <div class="vg-offcanvas__top">
+                    <button type="button" class="vg-offcanvas__close" data-offcanvas-close="1" aria-label="Cerrar">
+                        <i class="fa fa-times" aria-hidden="true"/>
+                    </button>
+                    <div t-if="vg_logged_in" class="vg-user">
+                        <span class="vg-user__avatar" aria-hidden="true">
+                            <img t-attf-src="/web/image/res.partner/#{request.env.user.partner_id.id}/avatar_128" alt=""/>
+                        </span>
+                        <div class="vg-user__info">
+                            <span class="vg-user__name" t-out="request.env.user.name"/>
+                            <a href="/my/home" class="vg-user__link">Mi perfil</a>
+                        </div>
+                    </div>
+                    <p t-else="" class="vg-offcanvas__title">Menú</p>
+                </div>
+
+                <nav class="vg-offcanvas__menu" aria-label="Opciones de cuenta">
+                    <div class="vg-offcanvas__group">
+                        <p class="vg-offcanvas__group-title">General</p>
+                        <ul>
+                            <li>
+                                <a href="/"><i class="fa fa-home" aria-hidden="true"/><span>Inicio</span></a>
+                            </li>
+                            <li>
+                                <a href="/shop"><i class="fa fa-th" aria-hidden="true"/><span>Categorías</span></a>
+                            </li>
+                            <t t-if="vg_logged_in" t-call="website_vegusa.vegusa_side_wishlist_item"/>
+                        </ul>
+                    </div>
+
+                    <div t-if="vg_logged_in" class="vg-offcanvas__group">
+                        <p class="vg-offcanvas__group-title">Mis pedidos</p>
+                        <ul>
+                            <li>
+                                <a href="/my/orders"><i class="fa fa-shopping-bag" aria-hidden="true"/><span>Mis compras</span></a>
+                            </li>
+                        </ul>
+                    </div>
+
+                    <div t-if="vg_logged_in" class="vg-offcanvas__group">
+                        <p class="vg-offcanvas__group-title">Mi cuenta</p>
+                        <ul>
+                            <li>
+                                <a href="/my/garage"><i class="fa fa-truck" aria-hidden="true"/><span>Mi garage</span></a>
+                            </li>
+                            <li>
+                                <a href="/my/addresses"><i class="fa fa-map-marker" aria-hidden="true"/><span>Mis direcciones</span></a>
+                            </li>
+                        </ul>
+                    </div>
+                </nav>
+
+                <div class="vg-offcanvas__bottom">
+                    <a t-if="vg_logged_in" href="/web/session/logout?redirect=/" class="vg-btn vg-btn--primary">
+                        <i class="fa fa-sign-out" aria-hidden="true"/>
+                        <span>Cerrar sesión</span>
+                    </a>
+                    <a t-else="" href="/web/login" class="vg-btn vg-btn--primary">
+                        <i class="fa fa-sign-in" aria-hidden="true"/>
+                        <span>Iniciar sesión</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Garage panel (logged-in users only). Each card is a saved machine/vehicle and links to the
+         shop with that combination applied; the card matching the current shop filters is
+         highlighted and its model/year is shown on the header button. -->
+    <template id="vegusa_garage_panel" name="Vegusa - Garage Panel">
+        <t t-set="vg_garage_entries" t-value="request.env['machine.garage'].sudo()._get_header_entries(request.params.get('machine_model_id'), request.params.get('vehicle_year'))"/>
+        <div class="vg-offcanvas" id="vgGaragePanel" hidden="hidden">
+            <div class="vg-offcanvas__backdrop" data-offcanvas-close="1"/>
+            <div class="vg-offcanvas__panel" role="dialog" aria-modal="true" aria-labelledby="vgGarageTitle">
+                <div class="vg-offcanvas__top">
+                    <button type="button" class="vg-offcanvas__close" data-offcanvas-close="1" aria-label="Cerrar">
+                        <i class="fa fa-times" aria-hidden="true"/>
+                    </button>
+                    <h2 class="vg-offcanvas__title" id="vgGarageTitle">Mi garage</h2>
+                </div>
+
+                <div class="vg-offcanvas__scroll">
+                    <ul t-if="vg_garage_entries" class="vg-garage-list">
+                        <li t-foreach="vg_garage_entries" t-as="entry" t-key="entry['id']">
+                            <a t-att-href="entry['url']" t-attf-class="vg-vehicle-card #{'is-selected' if entry['active'] else ''}" t-att-aria-current="'true' if entry['active'] else None">
+                                <span class="vg-vehicle-card__brand" t-out="entry['brand']"/>
+                                <span class="vg-vehicle-card__type" t-out="entry['type']"/>
+                                <span class="vg-vehicle-card__spec">
+                                    <span class="vg-vehicle-card__spec-item">
+                                        <span class="vg-vehicle-card__spec-label">Modelo</span>
+                                        <span class="vg-vehicle-card__spec-value" t-out="entry['model']"/>
+                                    </span>
+                                    <span t-if="entry['year']" class="vg-vehicle-card__spec-item">
+                                        <span class="vg-vehicle-card__spec-label">Año</span>
+                                        <span class="vg-vehicle-card__spec-value" t-out="entry['year']"/>
+                                    </span>
+                                </span>
+                            </a>
+                        </li>
+                    </ul>
+                    <p t-else="" class="vg-garage-empty">
+                        Aún no has guardado ninguna maquinaria ni vehículo. Filtra la tienda por tu equipo y usa "Agregar a Mi garage".
+                    </p>
+                </div>
+
+                <div class="vg-offcanvas__bottom">
+                    <a href="/my/garage" class="vg-btn vg-btn--primary">
+                        <i class="fa fa-cog" aria-hidden="true"/>
+                        <span>Administrar Mi garage</span>
+                    </a>
+                </div>
+            </div>
+        </div>
+    </template>
+
+    <!-- Favoritos item of the side menu. Reuses what the header wishlist button used to check:
+         the shop must be accessible; the count comes from product.wishlist. -->
+    <template id="vegusa_side_wishlist_item" name="Vegusa - Side Menu Wishlist Item">
+        <t t-set="wishcount" t-value="len(request.env['product.wishlist'].current())"/>
+        <li t-if="website.has_ecommerce_access()">
+            <a href="/shop/wishlist">
+                <i class="fa fa-heart" aria-hidden="true"/>
+                <span>Favoritos</span>
+                <sup t-out="wishcount" t-attf-class="my_wish_quantity vg-menu-badge #{'d-none' if (wishcount == 0) else ''}"/>
+            </a>
+        </li>
     </template>
 
     <template id="footer" inherit_id="website.layout" name="Vegusa - Footer" active="True">
@@ -177,16 +276,5 @@
                 <img class="img-fluid" src="/website_vegusa/static/src/img/content/vegusa_footer_under.png" />
             </div>
         </xpath>
-    </template>
-
-    <template id="vegusa_header_wishlist_button" name="Vegusa Header Wishlist Button">
-        <t t-set="wishcount" t-value="len(request.env['product.wishlist'].current())"/>
-        <t t-set="show_wishes" t-value="website.has_ecommerce_access()"/>
-        <a t-if="show_wishes" href="/shop/wishlist" class="o_navlink_background btn position-relative rounded-circle p-1 text-center text-reset" aria-label="eCommerce wishlist">
-            <div class="#{_icon_wrap_class or ''}">
-                <i class="fa fa-heart fa-stack"/>
-                <sup t-out="wishcount" t-attf-class="my_wish_quantity badge bg-primary position-absolute top-0 end-0 mt-n1 me-n1 rounded-pill #{'d-none' if (wishcount == 0) else ''}" />
-            </div>
-        </a>
     </template>
 </odoo>
