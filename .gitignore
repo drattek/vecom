@@ -12,9 +12,21 @@
 *.pem
 *.key
 
-# Local-only tool state (machine-specific, not shared project config)
+# AI assistant files — local only, never committed
 .claude/
-.impeccable/config.local.json
+.impeccable/
+.codebase-memory/
+.cursor/
+.windsurf/
+.mcp.json
+CLAUDE.md
+AGENTS.md
+GEMINI.md
+AI_CONTENT_WORKFLOW.md
+.github/prompts/
+.github/hooks/
+.github/workflows/prompts/
+.github/workflows/copilot-instructions.md
 
 # Compiled binaries
 *.exe
