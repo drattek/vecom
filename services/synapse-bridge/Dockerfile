@@ -21,9 +21,13 @@ RUN ./gradlew bootJar --no-daemon
 # =========================
 FROM eclipse-temurin:21-jre
 
+RUN groupadd --system app && useradd --system --gid app app
+
 WORKDIR /app
 
 COPY --from=builder /app/build/libs/*.jar app.jar
+
+USER app
 
 EXPOSE 8080
 

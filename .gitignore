@@ -37,3 +37,8 @@ website-design/
 
 # IDE
 .idea/
+
+# Variables reales de despliegue (contraseñas): solo en local
+vecom.env
+*.env
+!*.env.example

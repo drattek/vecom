@@ -1,0 +1,176 @@
+name: Deploy Container Apps
+
+# Push a 'vecom' -> construye las imágenes de los servicios que cambiaron, las
+# sube al ACR y actualiza su Container App. Los PR solo validan el build.
+#
+# La infraestructura, los secretos y las variables los crea UNA VEZ
+# infrastructure/azure/setup-containerapps.sh. Este workflow solo cambia la
+# imagen: ninguna contraseña pasa por GitHub.
+on:
+  push:
+    branches: [vecom]
+    paths:
+      - 'services/**'
+      - '.github/workflows/deploy-containerapps.yml'
+  pull_request:
+    branches: [vecom]
+    paths:
+      - 'services/**'
+  workflow_dispatch:        # despliega los tres servicios a mano desde Actions
+
+env:
+  RESOURCE_GROUP: VECOM
+  ACR_NAME: acrvecom
+
+permissions:
+  id-token: write           # login OIDC contra Azure
+  contents: read
+
+# Un despliegue a la vez; el siguiente espera en vez de cancelar el que corre.
+concurrency:
+  group: deploy-containerapps-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      services: ${{ steps.pick.outputs.services }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            admin-dashboard:
+              - 'services/admin-dashboard/**'
+            core-orchestrator:
+              - 'services/core-orchestrator/**'
+            synapse-bridge:
+              - 'services/synapse-bridge/**'
+            workflow:
+              - '.github/workflows/deploy-containerapps.yml'
+
+      - name: Servicios a construir
+        id: pick
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.workflow }}" = "true" ]; then
+            services='["admin-dashboard","core-orchestrator","synapse-bridge"]'
+          else
+            services=$(echo '${{ steps.filter.outputs.changes }}' | jq -c 'map(select(. != "workflow"))')
+          fi
+          echo "services=$services" >> "$GITHUB_OUTPUT"
+          echo "Servicios: $services"
+
+  build-and-deploy:
+    needs: changes
+    if: needs.changes.outputs.services != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        service: ${{ fromJSON(needs.changes.outputs.services) }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Nombres de las Container Apps: deben coincidir con setup-containerapps.sh
+      - name: Parámetros del servicio
+        id: vars
+        run: |
+          case "${{ matrix.service }}" in
+            admin-dashboard)
+              echo "app=vecom-dashboard" >> "$GITHUB_OUTPUT"
+              echo "context=services/admin-dashboard" >> "$GITHUB_OUTPUT"
+              echo "dockerfile=services/admin-dashboard/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            core-orchestrator)
+              # Su Dockerfile copia rutas desde la raíz del repo
+              echo "app=vecom-orchestrator" >> "$GITHUB_OUTPUT"
+              echo "context=." >> "$GITHUB_OUTPUT"
+              echo "dockerfile=services/core-orchestrator/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            synapse-bridge)
+              echo "app=vecom-synapse" >> "$GITHUB_OUTPUT"
+              echo "context=services/synapse-bridge" >> "$GITHUB_OUTPUT"
+              echo "dockerfile=services/synapse-bridge/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+          esac
+          echo "image=${ACR_NAME}.azurecr.io/vecom/${{ matrix.service }}" >> "$GITHUB_OUTPUT"
+          echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      # --- PR: solo valida que la imagen compila, no toca Azure ---
+      - name: Build de validación (PR)
+        if: github.event_name == 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.vars.outputs.context }}
+          file: ${{ steps.vars.outputs.dockerfile }}
+          platforms: linux/amd64
+          push: false
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      # --- Deploy ---
+      - name: Login en Azure (OIDC)
+        if: github.event_name != 'pull_request'
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login en el ACR
+        if: github.event_name != 'pull_request'
+        run: az acr login --name "$ACR_NAME"
+
+      - name: Construir y subir la imagen
+        if: github.event_name != 'pull_request'
+        uses: docker/build-push-action@v6
+        with:
+          context: ${{ steps.vars.outputs.context }}
+          file: ${{ steps.vars.outputs.dockerfile }}
+          platforms: linux/amd64
+          push: true
+          tags: |
+            ${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}
+            ${{ steps.vars.outputs.image }}:latest
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      - name: Actualizar la Container App
+        if: github.event_name != 'pull_request'
+        run: |
+          az containerapp update \
+            --name "${{ steps.vars.outputs.app }}" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}" \
+            --output none
+
+      # orchestrator y synapse no son accesibles desde fuera: se comprueba el
+      # estado de la revisión nueva en Azure en lugar de hacer curl.
+      - name: Esperar a que la revisión nueva esté sana
+        if: github.event_name != 'pull_request'
+        run: |
+          APP="${{ steps.vars.outputs.app }}"
+          REVISION=$(az containerapp show --name "$APP" --resource-group "$RESOURCE_GROUP" \
+            --query properties.latestRevisionName -o tsv)
+          echo "Revisión: $REVISION"
+          for i in $(seq 1 30); do
+            read -r HEALTH RUNNING < <(az containerapp revision show --name "$APP" \
+              --resource-group "$RESOURCE_GROUP" --revision "$REVISION" \
+              --query '[properties.healthState, properties.runningState]' -o tsv | tr '\n' ' ')
+            echo "  intento $i: health=$HEALTH running=$RUNNING"
+            if [ "$HEALTH" = "Healthy" ] && [[ "$RUNNING" == Running* ]]; then
+              echo "::notice::$APP desplegado ($REVISION)"
+              exit 0
+            fi
+            if [ "$RUNNING" = "Failed" ] || [ "$RUNNING" = "Degraded" ]; then
+              break
+            fi
+            sleep 10
+          done
+          echo "::error::$APP no quedó sano. Últimos logs:"
+          az containerapp logs show --name "$APP" --resource-group "$RESOURCE_GROUP" \
+            --revision "$REVISION" --tail 80 || true
+          exit 1

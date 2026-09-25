@@ -1,0 +1,38 @@
+# Plantilla procesada por el entrypoint de la imagen oficial de nginx (envsubst):
+# /etc/nginx/templates/default.conf.template -> /etc/nginx/conf.d/default.conf.
+# Solo se sustituyen variables definidas en el entorno (API_UPSTREAM); las de
+# nginx ($host, $uri, ...) quedan intactas.
+#
+# API_UPSTREAM:
+#   - docker-compose: https://core-orchestrator:443 (default del Dockerfile)
+#   - Azure Container Apps: http://vecom-orchestrator (ingress interno del entorno)
+server {
+    listen 80;
+    listen [::]:80;
+    server_name localhost;
+
+    root /usr/share/nginx/html;
+    index index.html;
+
+    # /api/*          -> API del dashboard
+    # /meli_callback  -> redirect_uri OAuth de MercadoLibre (lo abre el navegador)
+    # /meli_notifications -> webhook de MercadoLibre
+    # core-orchestrator no tiene ingress público en Azure: todo entra por aquí.
+    location ~ ^/(api/|meli_callback|meli_notifications) {
+        proxy_pass ${API_UPSTREAM};
+        proxy_ssl_server_name on;
+        proxy_ssl_verify off;
+        proxy_http_version 1.1;
+        # Host del upstream, no el del navegador: el ingress de Container Apps
+        # enruta por Host y con el del dashboard devolvería 404.
+        proxy_set_header Host $proxy_host;
+        proxy_set_header X-Forwarded-Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

@@ -52,6 +52,11 @@ services:
     environment:
       SERVER_TLS_KEYSTORE_PATH: /app/keystore.p12
 
+    # El keystore no se hornea en la imagen (ver services/core-orchestrator/Dockerfile):
+    # en local se monta desde la raíz del repo.
+    volumes:
+      - ./keystore.p12:/app/keystore.p12:ro
+
     ports:
       - "443:443"
 
