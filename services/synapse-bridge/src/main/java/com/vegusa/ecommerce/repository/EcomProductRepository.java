@@ -19,7 +19,7 @@ public class EcomProductRepository {
     public List<EcomProductDTO> getAllItems(){
         return jdbcTemplate.query("SELECT * FROM dyn.ECOMProducts", (rs, rowNum) -> new EcomProductDTO(
                 SourceSystem.ERP,
-                rs.getInt("RECID"),
+                rs.getLong("RECID"),
                 rs.getString("Articulo"),
                 rs.getString("Descripción"),
                 rs.getString("Num.Parte"),
@@ -35,7 +35,7 @@ public class EcomProductRepository {
                 FETCH NEXT ? ROWS ONLY
                 """, (rs, rowNum) -> new EcomProductDTO(
                         SourceSystem.ERP,
-                        rs.getInt("RECID"),
+                        rs.getLong("RECID"),
                         rs.getString("Articulo"),
                         rs.getString("Descripción"),
                         rs.getString("Num.Parte"),

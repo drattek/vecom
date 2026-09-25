@@ -2,7 +2,7 @@ package com.vegusa.ecommerce.dto;
 
 public record EcomProductDTO(
         SourceSystem source,
-        Integer id, // RECID
+        Long id, // RECID (bigint en D365: los RecId superan el rango de int)
         String code, // Articulo
         String description, // Descripción
         String partNumber, // Num.Parte
