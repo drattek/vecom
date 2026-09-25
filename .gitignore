@@ -18,3 +18,7 @@
 
 # Compiled binaries
 *.exe
+
+# Odoo modules and storefront design (not part of the three services)
+odoo-modules/
+website-design/
