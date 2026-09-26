@@ -45,3 +45,9 @@ vecom.env
 
 # Python
 __pycache__/
+
+# PSec satellite: binario compilado y certs de nodo (identidad)
+infrastructure/psec/build/
+*.crt
+*.token
+auth.token
