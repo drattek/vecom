@@ -68,10 +68,17 @@ say "1/5 Compilando el satélite (linux/amd64 estático) desde $PSEC_SRC"
     go build -trimpath -ldflags="-s -w" -o "$PSEC_DIR/build/psec-satellite" ./cmd/psec-satellite )
 echo "     binario: $(du -h "$PSEC_DIR/build/psec-satellite" | cut -f1)"
 
+# Etiqueta por contenido del binario: cambia cuando cambia el código y así
+# fuerza una revisión nueva (con :latest fijo, az containerapp update no ve
+# cambio en la plantilla y NO baja la imagen nueva ni recrea la revisión).
+TAG="$(shasum -a 256 "$PSEC_DIR/build/psec-satellite" | cut -c1-12)"
+IMAGE="${ACR_SERVER}/psec/satellite:${TAG}"
+
 # ---------------------------------------------------------------------
 say "2/5 Imagen $IMAGE -> ACR"
 az acr login --name "$ACR_NAME"
-docker buildx build --platform linux/amd64 -t "$IMAGE" "$PSEC_DIR" --push
+docker buildx build --platform linux/amd64 \
+  -t "$IMAGE" -t "${ACR_SERVER}/psec/satellite:latest" "$PSEC_DIR" --push
 
 # ---------------------------------------------------------------------
 say "3/5 Azure Files para la identidad del nodo: $SHARE"
