@@ -49,7 +49,30 @@ set -- psec-satellite -netstack \
   -auth "$(cat "$CERTS/auth.token")"
 
 [ -n "${PSEC_REGION:-}" ] && set -- "$@" -region "$PSEC_REGION"
-[ -n "${PSEC_PUBLISH:-}" ] && set -- "$@" -publish "$PSEC_PUBLISH"
+
+PUBLISH="${PSEC_PUBLISH:-}"
+
+# Rol proxy: el SOCKS5 SOLO arranca con credenciales (PSEC_PROXY_USER/PASS). Así
+# no queda un proxy abierto en la malla. Escucha autenticado en 0.0.0.0:1080
+# (interno del contenedor) y se expone a la malla con un publish 1080. Sin
+# credenciales no se pasan flags de proxy: el satélite salta el rol sin reiniciar.
+case ",$ROLES," in
+  *,proxy,*)
+    if [ -n "${PSEC_PROXY_USER:-}" ] && [ -n "${PSEC_PROXY_PASS:-}" ]; then
+      PROXY_LISTEN="${PSEC_PROXY_LISTEN:-0.0.0.0:1080}"
+      PROXY_PORT="${PROXY_LISTEN##*:}"
+      set -- "$@" -proxy-listen "$PROXY_LISTEN" \
+        -proxy-user "$PSEC_PROXY_USER" -proxy-pass "$PSEC_PROXY_PASS"
+      # Publica el SOCKS5 en la malla (overlayIP:PORT -> localhost:PORT).
+      PUBLISH="${PUBLISH:+$PUBLISH,}${PROXY_PORT}:localhost:${PROXY_PORT}"
+      echo "[psec] rol proxy: SOCKS5 autenticado en $PROXY_LISTEN, publicado en la malla puerto $PROXY_PORT"
+    else
+      echo "[psec] rol proxy configurado pero sin PSEC_PROXY_USER/PSEC_PROXY_PASS: el SOCKS5 NO arranca (evita un proxy abierto); la malla sigue"
+    fi
+    ;;
+esac
+
+[ -n "$PUBLISH" ] && set -- "$@" -publish "$PUBLISH"
 
 echo "[psec] arrancando satélite '$NODE' (roles=$ROLES) contra $SERVER"
 exec "$@"
