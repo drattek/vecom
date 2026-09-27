@@ -241,9 +241,10 @@ GROUP BY s.itemid, id.configid, id.inventcolorid, id.inventsizeid, id.inventstyl
 -- @view dyn.Companies
 -- Compañías (entidades legales) desde el maestro dataarea: msb='MSB LEON',
 -- vrs='VEGUSA RENTAL STORE'. Excluye 'dat' (compañía de sistema).
-SELECT da.dataareaid AS [Empresa], da.name AS [Nombre]
+-- El código de compañía vive en fno_id (MSB/VRS); dataareaid es la partición ('dat').
+SELECT LOWER(da.fno_id) AS [Empresa], da.name AS [Nombre]
 FROM dbo.dataarea da
-WHERE ISNULL(da.IsDelete, 0) = 0 AND da.dataareaid <> 'dat'
+WHERE ISNULL(da.IsDelete, 0) = 0 AND da.fno_id IS NOT NULL AND UPPER(da.fno_id) <> 'DAT'
 
 -- @view dyn.Warehouses
 -- Almacenes (InventLocation) por compañía y sitio. Un sitio (sucursal física)
