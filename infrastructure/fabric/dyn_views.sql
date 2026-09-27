@@ -239,12 +239,11 @@ WHERE ISNULL(s.IsDelete, 0) = 0
 GROUP BY s.itemid, id.configid, id.inventcolorid, id.inventsizeid, id.inventstyleid, id.inventversionid, id.inventsiteid
 
 -- @view dyn.Companies
--- Compañías (entidades legales / dataAreaId) presentes en operación: msb, vrs.
--- companyinfo solo trae la plantilla 'dat'; se derivan de los datos + nombre de ledger.
-SELECT DISTINCT il.dataareaid AS [Empresa], lg.name AS [Nombre]
-FROM dbo.inventlocation il
-         LEFT JOIN dbo.ledger lg ON UPPER(lg.name) = UPPER(il.dataareaid) AND ISNULL(lg.IsDelete, 0) = 0
-WHERE ISNULL(il.IsDelete, 0) = 0
+-- Compañías (entidades legales) desde el maestro dataarea: msb='MSB LEON',
+-- vrs='VEGUSA RENTAL STORE'. Excluye 'dat' (compañía de sistema).
+SELECT da.dataareaid AS [Empresa], da.name AS [Nombre]
+FROM dbo.dataarea da
+WHERE ISNULL(da.IsDelete, 0) = 0 AND da.dataareaid <> 'dat'
 
 -- @view dyn.Warehouses
 -- Almacenes (InventLocation) por compañía y sitio. Un sitio (sucursal física)
