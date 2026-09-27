@@ -237,3 +237,36 @@ FROM dbo.inventsum s
 WHERE ISNULL(s.IsDelete, 0) = 0
   AND s.availphysical > 0
 GROUP BY s.itemid, id.configid, id.inventcolorid, id.inventsizeid, id.inventstyleid, id.inventversionid, id.inventsiteid
+
+-- @view dyn.Companies
+-- Compañías (entidades legales / dataAreaId) presentes en operación: msb, vrs.
+-- companyinfo solo trae la plantilla 'dat'; se derivan de los datos + nombre de ledger.
+SELECT DISTINCT il.dataareaid AS [Empresa], lg.name AS [Nombre]
+FROM dbo.inventlocation il
+         LEFT JOIN dbo.ledger lg ON UPPER(lg.name) = UPPER(il.dataareaid) AND ISNULL(lg.IsDelete, 0) = 0
+WHERE ISNULL(il.IsDelete, 0) = 0
+
+-- @view dyn.Warehouses
+-- Almacenes (InventLocation) por compañía y sitio. Un sitio (sucursal física)
+-- agrupa varios almacenes. Sirve para mapear los almacenes de Odoo.
+SELECT il.dataareaid         AS [Empresa],
+       il.inventsiteid       AS [Sitio],
+       il.inventlocationid   AS [Almacen],
+       il.name               AS [Nombre],
+       il.inventlocationtype AS [Tipo]
+FROM dbo.inventlocation il
+WHERE ISNULL(il.IsDelete, 0) = 0
+
+-- @view dyn.FinDimValues
+-- Catálogo de valores de las dimensiones financieras de NEGOCIO
+-- (Sucursal, Marca, Negocio, Departamento). Excluye las de contabilidad
+-- (SystemGenerated*: Cliente/Proveedor/Activo/Proyecto/Banco, y MainAccount).
+-- La SUCURSAL vive aquí como dimensión financiera (7 valores: AGS/GDL/IRP/LEN/MEX/QRO/SLP).
+SELECT da.name          AS [Dimension],
+       dav.displayvalue AS [Valor]
+FROM dbo.dimensionattributevalue dav
+         JOIN dbo.dimensionattribute da
+              ON da.recid = dav.dimensionattribute AND ISNULL(da.IsDelete, 0) = 0
+WHERE ISNULL(dav.IsDelete, 0) = 0
+  AND da.name NOT LIKE 'SystemGenerated%'
+  AND da.name <> 'MainAccount'
