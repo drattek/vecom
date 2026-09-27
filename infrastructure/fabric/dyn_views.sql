@@ -177,32 +177,63 @@ GROUP BY s.dataareaid, t.modifieddatetime, t.namealias, et.description, t.recid,
          erv.TextValue
 
 -- @view dyn.ItemInventDetail
--- Detalle de inventario SIN colapsar dimensiones: una fila por unidad física con
--- existencia, con su serie/lote/config. Complementa a dyn.ItemInventLocation (que
--- sí colapsa y da la cantidad para el catálogo). Para máquinas: una fila por serie.
-SELECT s.itemid                                    AS [Articulo],
-       id.inventsiteid                             AS [Sucursal],
-       id.inventlocationid                         AS [Almacen],
-       NULLIF(LTRIM(RTRIM(id.inventserialid)), '') AS [Serie],
-       NULLIF(LTRIM(RTRIM(id.inventbatchid)), '')  AS [Lote],
-       NULLIF(LTRIM(RTRIM(id.configid)), '')       AS [Config],
-       CAST(s.availphysical AS INT)                AS [Disponible]
+-- Detalle de inventario A NIVEL UNIDAD FÍSICA, con TODAS las dimensiones:
+--   producto (config/color/talla/estilo/versión) -> definen la VARIANTE vendible,
+--   almacenamiento (sucursal/almacén/WMS) -> dónde está,
+--   seguimiento (lote/serie) -> qué unidad.
+-- Una fila por unidad con existencia. Para máquinas: una fila por serie, dentro de su variante.
+SELECT s.itemid                                     AS [Articulo],
+       NULLIF(LTRIM(RTRIM(id.configid)), '')        AS [Config],
+       NULLIF(LTRIM(RTRIM(id.inventcolorid)), '')   AS [Color],
+       NULLIF(LTRIM(RTRIM(id.inventsizeid)), '')    AS [Talla],
+       NULLIF(LTRIM(RTRIM(id.inventstyleid)), '')   AS [Estilo],
+       NULLIF(LTRIM(RTRIM(id.inventversionid)), '') AS [Version],
+       id.inventsiteid                              AS [Sucursal],
+       id.inventlocationid                          AS [Almacen],
+       NULLIF(LTRIM(RTRIM(id.wmslocationid)), '')   AS [UbicacionWMS],
+       NULLIF(LTRIM(RTRIM(id.inventbatchid)), '')   AS [Lote],
+       NULLIF(LTRIM(RTRIM(id.inventserialid)), '')  AS [Serie],
+       CAST(s.availphysical AS INT)                 AS [Disponible]
 FROM dbo.inventsum s
          JOIN dbo.inventdim id
               ON id.inventdimid = s.inventdimid AND ISNULL(id.IsDelete, 0) = 0
 WHERE ISNULL(s.IsDelete, 0) = 0
   AND s.availphysical <> 0
 
--- @view dyn.ItemInventSummary
--- Resumen por artículo y sucursal: disponible total y número de series distintas.
--- Responde directo "cuántas unidades tengo de este artículo y dónde".
-SELECT s.itemid                                                          AS [Articulo],
-       id.inventsiteid                                                   AS [Sucursal],
-       CAST(SUM(s.availphysical) AS INT)                                 AS [Disponible],
-       COUNT(DISTINCT NULLIF(LTRIM(RTRIM(id.inventserialid)), ''))       AS [Series]
+-- @view dyn.ItemVariantStock
+-- Stock por VARIANTE (artículo + dimensiones de producto), sumado en todas las
+-- sucursales. Es el "cuántas tengo de esta variante" para el catálogo/cotización.
+SELECT s.itemid                                     AS [Articulo],
+       NULLIF(LTRIM(RTRIM(id.configid)), '')        AS [Config],
+       NULLIF(LTRIM(RTRIM(id.inventcolorid)), '')   AS [Color],
+       NULLIF(LTRIM(RTRIM(id.inventsizeid)), '')    AS [Talla],
+       NULLIF(LTRIM(RTRIM(id.inventstyleid)), '')   AS [Estilo],
+       NULLIF(LTRIM(RTRIM(id.inventversionid)), '') AS [Version],
+       CAST(SUM(s.availphysical) AS INT)            AS [Disponible],
+       COUNT(DISTINCT NULLIF(LTRIM(RTRIM(id.inventserialid)), '')) AS [Series],
+       COUNT(DISTINCT id.inventsiteid)              AS [Sucursales]
 FROM dbo.inventsum s
          JOIN dbo.inventdim id
               ON id.inventdimid = s.inventdimid AND ISNULL(id.IsDelete, 0) = 0
 WHERE ISNULL(s.IsDelete, 0) = 0
   AND s.availphysical > 0
-GROUP BY s.itemid, id.inventsiteid
+GROUP BY s.itemid, id.configid, id.inventcolorid, id.inventsizeid, id.inventstyleid, id.inventversionid
+
+-- @view dyn.ItemInventSummary
+-- Stock por variante Y sucursal: disponible y # de series. "Cuántas tengo y dónde",
+-- ya distinguiendo variantes.
+SELECT s.itemid                                     AS [Articulo],
+       NULLIF(LTRIM(RTRIM(id.configid)), '')        AS [Config],
+       NULLIF(LTRIM(RTRIM(id.inventcolorid)), '')   AS [Color],
+       NULLIF(LTRIM(RTRIM(id.inventsizeid)), '')    AS [Talla],
+       NULLIF(LTRIM(RTRIM(id.inventstyleid)), '')   AS [Estilo],
+       NULLIF(LTRIM(RTRIM(id.inventversionid)), '') AS [Version],
+       id.inventsiteid                              AS [Sucursal],
+       CAST(SUM(s.availphysical) AS INT)            AS [Disponible],
+       COUNT(DISTINCT NULLIF(LTRIM(RTRIM(id.inventserialid)), '')) AS [Series]
+FROM dbo.inventsum s
+         JOIN dbo.inventdim id
+              ON id.inventdimid = s.inventdimid AND ISNULL(id.IsDelete, 0) = 0
+WHERE ISNULL(s.IsDelete, 0) = 0
+  AND s.availphysical > 0
+GROUP BY s.itemid, id.configid, id.inventcolorid, id.inventsizeid, id.inventstyleid, id.inventversionid, id.inventsiteid
