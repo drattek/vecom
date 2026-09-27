@@ -16,7 +16,7 @@ public class ProductService {
     private final RedisProductService redisProductService;
     private final EventPublisher eventPublisher;
 
-    //@Scheduled(cron = "${sync.items.cron-expression}", zone = "${sync.cron.zone}")
+    @Scheduled(cron = "${sync.items.cron-expression}", zone = "${sync.cron.zone}")
     public void getItems(){
         int pageSize = 1000;
         int offset = 0;
