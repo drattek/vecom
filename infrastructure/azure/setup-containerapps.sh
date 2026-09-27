@@ -9,13 +9,15 @@
 #   - Identidad administrada para hacer pull del ACR sin contraseñas
 #   - Azure Files (cuenta vecomacafiles) para que Redis y RabbitMQ no pierdan
 #     sus datos al reiniciarse
-#   - 5 Container Apps. En un entorno interno, ingress "external" = visible desde la
+#   - Container Apps. En un entorno interno, ingress "external" = visible desde la
 #     VNet y sus peerings (OVEG), nunca desde internet; "internal" = solo entorno:
 #       vecom-dashboard     admin-dashboard (nginx + cloudflared), visible en la VNet
 #       vecom-orchestrator  core-orchestrator (HTTP 8080), visible en la VNet
 #       vecom-synapse       synapse-bridge    (HTTP 8080)
+#       vecom-datalake      datalake-bridge   (sync de máquinas D365->Odoo; solo /healthz)
 #       vecom-redis         redis             (TCP 6379, datos en Azure Files)
 #       vecom-rabbitmq      rabbitmq          (TCP 5672, datos en Azure Files)
+#     vecom-datalake solo se crea si vecom.env trae ODOO_URL/ODOO_API_KEY.
 #   - Cloudflare Tunnel "vecom-middleware" gestionado desde Cloudflare:
 #       https://vecom-api.odo.mx -> cloudflared -> nginx del dashboard (localhost:80)
 #     No toca el túnel de Odoo (odoo19-tunnel-vegusa) ni el DNS de vecom.odo.mx.
@@ -78,6 +80,7 @@ CF_TUNNEL_NAME="${CF_TUNNEL_NAME:-vecom-middleware}"
 APP_DASHBOARD=vecom-dashboard
 APP_ORCH=vecom-orchestrator
 APP_SYNAPSE=vecom-synapse
+APP_DATALAKE=vecom-datalake
 APP_REDIS=vecom-redis
 APP_RABBIT=vecom-rabbitmq
 
@@ -427,6 +430,25 @@ ENVVARS+=("${PLATFORM_ENV[@]}")
 upsert_app "$APP_ORCH" "$(initial_image core-orchestrator)" external http 8080 0 0.5 1Gi
 
 # ---------------------------------------------------------------------
+say "     datalake-bridge (sync de máquinas D365 -> Odoo, por serie)"
+# Servicio autónomo: lee dyn.MachineUnits del Link to Fabric (FABRIC_*, ya
+# validadas arriba) y escribe por API JSON-2 en Odoo (ODOO_*). No usa
+# Redis/RabbitMQ/MySQL. Solo se crea si están las credenciales de Odoo, para no
+# romper una corrida del script cuando aún no se han cargado en vecom.env.
+if [[ -n "$(env_get ODOO_URL)" && -n "$(env_get ODOO_API_KEY)" ]]; then
+  build_config \
+    FABRIC_JDBC_URL FABRIC_USERNAME FABRIC_PASSWORD \
+    ODOO_URL ODOO_API_KEY ODOO_DATABASE \
+    SYNC_MACHINES_INTERVAL SYNC_MACHINES_RUN_AT_START SYNC_MACHINES_DRY_RUN \
+    ODOO_MACHINE_CATEGORY
+  ENVVARS+=("SERVER_PORT=8080")
+  # internal http = la sonda /healthz vive en el entorno; no recibe tráfico entrante.
+  upsert_app "$APP_DATALAKE" "$(initial_image datalake-bridge)" internal http 8080 0 0.5 1Gi
+else
+  echo "     (omitido: faltan ODOO_URL/ODOO_API_KEY en $(basename "$ENV_FILE"))"
+fi
+
+# ---------------------------------------------------------------------
 say "8/10 Cloudflare Tunnel $CF_TUNNEL_NAME -> $CF_HOSTNAME"
 cf_api() {
   local method=$1 path=$2 data=${3:-}
@@ -543,6 +565,11 @@ echo
 echo "  Desde OVEG (red privada, peering):"
 echo "    https://${APP_ORCH}.${ENV_DOMAIN}      (core-orchestrator)"
 echo "    https://${APP_DASHBOARD}.${ENV_DOMAIN}         (dashboard)"
+if [[ -z "$(env_get ODOO_URL)" || -z "$(env_get ODOO_API_KEY)" ]]; then
+  echo
+  echo "  vecom-datalake (sync de máquinas) NO se creó: falta ODOO_URL/ODOO_API_KEY"
+  echo "  en $(basename "$ENV_FILE"). Cárgalas y reejecuta este script."
+fi
 echo
 echo "  Si alguna app quedó con la imagen temporal, lanza el primer despliegue:"
 echo "    gh workflow run deploy-containerapps.yml --repo ${GITHUB_REPO} --ref ${DEPLOY_BRANCH}"

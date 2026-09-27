@@ -49,6 +49,8 @@ jobs:
               - 'services/core-orchestrator/**'
             synapse-bridge:
               - 'services/synapse-bridge/**'
+            datalake-bridge:
+              - 'services/datalake-bridge/**'
             workflow:
               - '.github/workflows/deploy-containerapps.yml'
 
@@ -56,7 +58,7 @@ jobs:
         id: pick
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ] || [ "${{ steps.filter.outputs.workflow }}" = "true" ]; then
-            services='["admin-dashboard","core-orchestrator","synapse-bridge"]'
+            services='["admin-dashboard","core-orchestrator","synapse-bridge","datalake-bridge"]'
           else
             services=$(echo '${{ steps.filter.outputs.changes }}' | jq -c 'map(select(. != "workflow"))')
           fi
@@ -93,6 +95,10 @@ jobs:
               echo "app=vecom-synapse" >> "$GITHUB_OUTPUT"
               echo "context=services/synapse-bridge" >> "$GITHUB_OUTPUT"
               echo "dockerfile=services/synapse-bridge/Dockerfile" >> "$GITHUB_OUTPUT" ;;
+            datalake-bridge)
+              echo "app=vecom-datalake" >> "$GITHUB_OUTPUT"
+              echo "context=services/datalake-bridge" >> "$GITHUB_OUTPUT"
+              echo "dockerfile=services/datalake-bridge/Dockerfile" >> "$GITHUB_OUTPUT" ;;
           esac
           echo "image=${ACR_NAME}.azurecr.io/vecom/${{ matrix.service }}" >> "$GITHUB_OUTPUT"
           echo "tag=${GITHUB_SHA::7}" >> "$GITHUB_OUTPUT"
@@ -139,12 +145,22 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ matrix.service }}
 
       - name: Actualizar la Container App
+        id: deploy
         if: github.event_name != 'pull_request'
         run: |
+          APP="${{ steps.vars.outputs.app }}"
+          # La app puede no existir aún (p.ej. vecom-datalake antes de correr
+          # setup-containerapps.sh con las credenciales de Odoo). La imagen ya
+          # quedó en el ACR; se omite el deploy sin romper el workflow.
+          if ! az containerapp show --name "$APP" --resource-group "$RESOURCE_GROUP" &>/dev/null; then
+            echo "::warning::$APP no existe todavía; se omite el deploy (imagen ya publicada en el ACR). Corre infrastructure/azure/setup-containerapps.sh para crearla."
+            echo "skipped=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           # El contenedor principal se llama igual que la app (setup-containerapps.sh)
           az containerapp update \
-            --name "${{ steps.vars.outputs.app }}" \
-            --container-name "${{ steps.vars.outputs.app }}" \
+            --name "$APP" \
+            --container-name "$APP" \
             --resource-group "$RESOURCE_GROUP" \
             --image "${{ steps.vars.outputs.image }}:${{ steps.vars.outputs.tag }}" \
             --output none
@@ -152,7 +168,7 @@ jobs:
       # orchestrator y synapse no son accesibles desde fuera: se comprueba el
       # estado de la revisión nueva en Azure en lugar de hacer curl.
       - name: Esperar a que la revisión nueva esté sana
-        if: github.event_name != 'pull_request'
+        if: github.event_name != 'pull_request' && steps.deploy.outputs.skipped != 'true'
         run: |
           APP="${{ steps.vars.outputs.app }}"
           REVISION=$(az containerapp show --name "$APP" --resource-group "$RESOURCE_GROUP" \
