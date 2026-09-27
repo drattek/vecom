@@ -175,3 +175,34 @@ WHERE ISNULL(s.IsDelete, 0) = 0
 GROUP BY s.dataareaid, t.modifieddatetime, t.namealias, et.description, t.recid,
          s.itemid, et.name, e.searchname, ig.itemgroupid, findim.Marca, ec.name,
          erv.TextValue
+
+-- @view dyn.ItemInventDetail
+-- Detalle de inventario SIN colapsar dimensiones: una fila por unidad física con
+-- existencia, con su serie/lote/config. Complementa a dyn.ItemInventLocation (que
+-- sí colapsa y da la cantidad para el catálogo). Para máquinas: una fila por serie.
+SELECT s.itemid                                    AS [Articulo],
+       id.inventsiteid                             AS [Sucursal],
+       id.inventlocationid                         AS [Almacen],
+       NULLIF(LTRIM(RTRIM(id.inventserialid)), '') AS [Serie],
+       NULLIF(LTRIM(RTRIM(id.inventbatchid)), '')  AS [Lote],
+       NULLIF(LTRIM(RTRIM(id.configid)), '')       AS [Config],
+       CAST(s.availphysical AS INT)                AS [Disponible]
+FROM dbo.inventsum s
+         JOIN dbo.inventdim id
+              ON id.inventdimid = s.inventdimid AND ISNULL(id.IsDelete, 0) = 0
+WHERE ISNULL(s.IsDelete, 0) = 0
+  AND s.availphysical <> 0
+
+-- @view dyn.ItemInventSummary
+-- Resumen por artículo y sucursal: disponible total y número de series distintas.
+-- Responde directo "cuántas unidades tengo de este artículo y dónde".
+SELECT s.itemid                                                          AS [Articulo],
+       id.inventsiteid                                                   AS [Sucursal],
+       CAST(SUM(s.availphysical) AS INT)                                 AS [Disponible],
+       COUNT(DISTINCT NULLIF(LTRIM(RTRIM(id.inventserialid)), ''))       AS [Series]
+FROM dbo.inventsum s
+         JOIN dbo.inventdim id
+              ON id.inventdimid = s.inventdimid AND ISNULL(id.IsDelete, 0) = 0
+WHERE ISNULL(s.IsDelete, 0) = 0
+  AND s.availphysical > 0
+GROUP BY s.itemid, id.inventsiteid
