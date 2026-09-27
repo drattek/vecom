@@ -22,7 +22,18 @@ type Client struct {
 	baseURL  string
 	apiKey   string
 	database string
+
+	// capacidadField es el nombre del campo custom de capacidad ("x_capacidad")
+	// cuando existe; vacío si no. Cuando está, FindProduct lo lee y el sync lo
+	// escribe. Se fija con SetCapacidadField tras EnsureCapacidadField.
+	capacidadField string
 }
+
+// SetCapacidadField registra el campo custom de capacidad a leer/escribir.
+func (c *Client) SetCapacidadField(name string) { c.capacidadField = name }
+
+// CapacidadField devuelve el campo de capacidad activo ("" si no hay).
+func (c *Client) CapacidadField() string { return c.capacidadField }
 
 // NewClient crea el cliente. apiKey y database son las credenciales de la API
 // JSON-2 (bearer + cabecera X-Odoo-Database).

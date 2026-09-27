@@ -26,6 +26,22 @@ type Unit struct {
 	Available int    // disponible físico (normalmente 1 por serie)
 }
 
+// Model son los datos a nivel MODELO (una fila por artículo MAQ con existencia),
+// para enriquecer el producto en Odoo (marca, precio, costo, unidad, peso, volumen).
+// Corresponde 1:1 a una fila de dyn.MachineModels.
+type Model struct {
+	Company   string  // dataareaid
+	ItemID    string  // itemid (default_code)
+	Name      string  // nombre ES-MX
+	BrandCode string  // brandcodeid_mx (nombre legible; puede venir vacío)
+	MarcaCod  string  // dim. financiera Marca (código: UCA/BOB/JLG...)
+	SalePrice float64 // precio de venta (inventtablemodule moduletype=2)
+	Cost      float64 // costo (inventtablemodule moduletype=0)
+	Unit      string  // unidad (unitid, p.ej. "pz")
+	Weight    float64 // netweight
+	Volume    float64 // unitvolume
+}
+
 // Reader consulta el datalake de Fabric.
 type Reader struct {
 	db *sql.DB
@@ -106,6 +122,46 @@ func (r *Reader) Machines(ctx context.Context) ([]Unit, error) {
 	}
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("iterar dyn.MachineUnits: %w", err)
+	}
+	return out, nil
+}
+
+// Models devuelve los datos a nivel modelo (uno por artículo MAQ con existencia).
+func (r *Reader) Models(ctx context.Context) ([]Model, error) {
+	const q = `SELECT [Empresa],[Articulo],[Nombre],[BrandCode],[MarcaCod],
+	                  [PrecioVenta],[Costo],[Unidad],[Peso],[Volumen]
+	           FROM dyn.MachineModels`
+	rows, err := r.db.QueryContext(ctx, q)
+	if err != nil {
+		return nil, fmt.Errorf("consultar dyn.MachineModels: %w", err)
+	}
+	defer rows.Close()
+
+	var out []Model
+	for rows.Next() {
+		var m Model
+		var name, brand, marca, unit sql.NullString
+		var price, cost, weight, vol sql.NullFloat64
+		if err := rows.Scan(&m.Company, &m.ItemID, &name, &brand, &marca, &price, &cost, &unit, &weight, &vol); err != nil {
+			return nil, fmt.Errorf("leer fila de dyn.MachineModels: %w", err)
+		}
+		m.Company = strings.ToLower(strings.TrimSpace(m.Company))
+		m.ItemID = strings.TrimSpace(m.ItemID)
+		m.Name = strings.TrimSpace(name.String)
+		m.BrandCode = strings.TrimSpace(brand.String)
+		m.MarcaCod = strings.TrimSpace(marca.String)
+		m.Unit = strings.TrimSpace(unit.String)
+		m.SalePrice = price.Float64
+		m.Cost = cost.Float64
+		m.Weight = weight.Float64
+		m.Volume = vol.Float64
+		if m.ItemID == "" {
+			continue
+		}
+		out = append(out, m)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("iterar dyn.MachineModels: %w", err)
 	}
 	return out, nil
 }

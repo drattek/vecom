@@ -81,20 +81,33 @@ func (c *Client) EnsureCategory(ctx context.Context, name string) (int64, error)
 	return ids[0], nil
 }
 
-// Product es el producto (variante) resuelto por su default_code.
+// Product es el producto (variante) resuelto por su default_code, con los campos
+// de modelo que el sync mantiene (para el gate: solo escribe si cambian).
 type Product struct {
-	ID          int64  `json:"id"`
-	Tmpl        M2O    `json:"product_tmpl_id"`
-	DefaultCode string `json:"default_code"`
-	Tracking    string `json:"tracking"`
+	ID            int64   `json:"id"`
+	Tmpl          M2O     `json:"product_tmpl_id"`
+	DefaultCode   string  `json:"default_code"`
+	Tracking      string  `json:"tracking"`
+	ListPrice     float64 `json:"list_price"`
+	StandardPrice float64 `json:"standard_price"`
+	Weight        float64 `json:"weight"`
+	Volume        float64 `json:"volume"`
+	BrandID       M2O     `json:"product_brand_id"`
+	Capacidad     string  `json:"x_capacidad"`
 }
 
-// FindProduct busca la variante (product.product) por default_code.
+// FindProduct busca la variante (product.product) por default_code, leyendo los
+// campos de modelo (incluye x_capacidad solo si el campo custom existe).
 func (c *Client) FindProduct(ctx context.Context, code string) (Product, bool, error) {
+	fields := []string{"id", "product_tmpl_id", "default_code", "tracking",
+		"list_price", "standard_price", "weight", "volume", "product_brand_id"}
+	if c.capacidadField != "" {
+		fields = append(fields, c.capacidadField)
+	}
 	var res []Product
 	err := c.Call(ctx, "product.product", "search_read", map[string]any{
 		"domain": [][]any{{"default_code", "=", code}},
-		"fields": []string{"id", "product_tmpl_id", "default_code", "tracking"},
+		"fields": fields,
 		"limit":  1,
 	}, &res)
 	if err != nil {
@@ -108,9 +121,10 @@ func (c *Client) FindProduct(ctx context.Context, code string) (Product, bool, e
 
 // CreateMachineProduct crea un product.template de máquina (almacenable, con
 // seguimiento por número de serie, cotizable aunque esté en 0) y devuelve el id
-// de su variante (product.product). Odoo crea automáticamente una variante para
-// una plantilla sin atributos.
-func (c *Client) CreateMachineProduct(ctx context.Context, code, name string, categoryID int64) (Product, error) {
+// de su variante (product.product). extra son los campos de modelo a fijar al
+// crear (marca, precio, costo, peso, volumen, unidad, capacidad). Odoo crea
+// automáticamente una variante para una plantilla sin atributos.
+func (c *Client) CreateMachineProduct(ctx context.Context, code, name string, categoryID int64, extra map[string]any) (Product, error) {
 	vals := map[string]any{
 		"name":         name,
 		"default_code": code,
@@ -120,6 +134,9 @@ func (c *Client) CreateMachineProduct(ctx context.Context, code, name string, ca
 		"categ_id":     categoryID,
 		"sale_ok":      true,
 		"purchase_ok":  true,
+	}
+	for k, v := range extra {
+		vals[k] = v
 	}
 	var ids []int64
 	if err := c.Call(ctx, "product.template", "create", map[string]any{
@@ -276,4 +293,113 @@ func (c *Client) SetInventory(ctx context.Context, productID, lotID, locationID 
 		return fmt.Errorf("action_apply_inventory: %w", err)
 	}
 	return nil
+}
+
+// EnsureBrand devuelve el id del product.brand con ese nombre (búsqueda exacta),
+// creándolo si no existe. created indica si se creó en esta llamada.
+func (c *Client) EnsureBrand(ctx context.Context, name string) (id int64, created bool, err error) {
+	var found []struct {
+		ID int64 `json:"id"`
+	}
+	if err = c.Call(ctx, "product.brand", "search_read", map[string]any{
+		"domain": [][]any{{"name", "=", name}},
+		"fields": []string{"id"},
+		"limit":  1,
+	}, &found); err != nil {
+		return 0, false, err
+	}
+	if len(found) > 0 {
+		return found[0].ID, false, nil
+	}
+	var ids []int64
+	if err = c.Call(ctx, "product.brand", "create", map[string]any{
+		"vals_list": []map[string]any{{"name": name}},
+	}, &ids); err != nil {
+		return 0, false, err
+	}
+	if len(ids) == 0 {
+		return 0, false, fmt.Errorf("product.brand.create no devolvió id")
+	}
+	return ids[0], true, nil
+}
+
+// ResolveUomID devuelve el id de una unidad de medida por nombre (p.ej. "Units").
+func (c *Client) ResolveUomID(ctx context.Context, name string) (int64, bool, error) {
+	var res []struct {
+		ID int64 `json:"id"`
+	}
+	if err := c.Call(ctx, "uom.uom", "search_read", map[string]any{
+		"domain": [][]any{{"name", "=", name}},
+		"fields": []string{"id"},
+		"limit":  1,
+	}, &res); err != nil {
+		return 0, false, err
+	}
+	if len(res) == 0 {
+		return 0, false, nil
+	}
+	return res[0].ID, true, nil
+}
+
+// EnsureCapacidadField garantiza el campo custom de capacidad en product.template.
+// Devuelve el nombre del campo si existe/queda creado, o "" en dry-run cuando no
+// existe (no se crea nada). El nombre es x_capacidad (campo manual, prefijo x_).
+func (c *Client) EnsureCapacidadField(ctx context.Context, dryRun bool) (string, error) {
+	const field = "x_capacidad"
+	var found []struct {
+		ID int64 `json:"id"`
+	}
+	if err := c.Call(ctx, "ir.model.fields", "search_read", map[string]any{
+		"domain": [][]any{{"model", "=", "product.template"}, {"name", "=", field}},
+		"fields": []string{"id"},
+		"limit":  1,
+	}, &found); err != nil {
+		return "", err
+	}
+	if len(found) > 0 {
+		return field, nil
+	}
+	if dryRun {
+		return "", nil
+	}
+	// Resolver el ir.model de product.template.
+	var models []struct {
+		ID int64 `json:"id"`
+	}
+	if err := c.Call(ctx, "ir.model", "search_read", map[string]any{
+		"domain": [][]any{{"model", "=", "product.template"}},
+		"fields": []string{"id"},
+		"limit":  1,
+	}, &models); err != nil {
+		return "", err
+	}
+	if len(models) == 0 {
+		return "", fmt.Errorf("no se encontró ir.model de product.template")
+	}
+	var ids []int64
+	if err := c.Call(ctx, "ir.model.fields", "create", map[string]any{
+		"vals_list": []map[string]any{{
+			"name":              field,
+			"field_description": "Capacidad",
+			"model_id":          models[0].ID,
+			"model":             "product.template",
+			"ttype":             "char",
+			"state":             "manual",
+		}},
+	}, &ids); err != nil {
+		return "", fmt.Errorf("crear campo %s: %w", field, err)
+	}
+	return field, nil
+}
+
+// UpdateModel escribe campos de modelo en un product.template (gate: el sync
+// solo llama con los campos que cambiaron).
+func (c *Client) UpdateModel(ctx context.Context, tmplID int64, vals map[string]any) error {
+	if len(vals) == 0 {
+		return nil
+	}
+	return c.Call(ctx, "product.template", "write", map[string]any{
+		"ids":  []int64{tmplID},
+		"vals": vals,
+	}, nil)
 }

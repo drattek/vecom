@@ -291,3 +291,34 @@ FROM dbo.inventsum s
                    ON et.product = t.product AND UPPER(et.languageid) = 'ES-MX' AND ISNULL(et.IsDelete, 0) = 0
 WHERE ig.itemgroupid = 'MAQ' AND ISNULL(s.IsDelete, 0) = 0 AND s.availphysical > 0
   AND NULLIF(LTRIM(RTRIM(id.inventserialid)), '') IS NOT NULL
+
+-- @view dyn.MachineModels
+-- Un renglon por MODELO de maquina (grupo MAQ) CON existencia, con los datos a
+-- nivel producto para enriquecer Odoo (datalake-bridge fase A/B):
+--   Marca: brandcodeid_mx (nombre) + dim. financiera Marca (codigo, mejor cobertura)
+--   Precio de venta (moduletype=2) y costo (moduletype=0) de inventtablemodule
+--   Unidad, peso (netweight) y volumen (unitvolume) del inventtable
+-- La CAPACIDAD no esta replicada en el datalake (solo el atributo, no su valor),
+-- por eso no va aqui; el sync la deriva del nombre.
+SELECT s.dataareaid                                   AS [Empresa],
+       s.itemid                                       AS [Articulo],
+       MAX(et.name)                                   AS [Nombre],
+       MAX(NULLIF(LTRIM(RTRIM(t.brandcodeid_mx)), '')) AS [BrandCode],
+       MAX(fd.Marca)                                  AS [MarcaCod],
+       MAX(tmv.price)                                 AS [PrecioVenta],
+       MAX(tmc.price)                                 AS [Costo],
+       MAX(tmv.unitid)                                AS [Unidad],
+       MAX(t.netweight)                               AS [Peso],
+       MAX(t.unitvolume)                              AS [Volumen]
+FROM dbo.inventsum s
+         JOIN dbo.inventitemgroupitem ig ON ig.itemid = s.itemid AND ISNULL(ig.IsDelete, 0) = 0 AND ig.itemgroupid = 'MAQ'
+         JOIN dbo.inventtable t ON t.itemid = s.itemid AND t.dataareaid = s.dataareaid AND ISNULL(t.IsDelete, 0) = 0
+         LEFT JOIN dbo.ecoresproducttranslation et
+                   ON et.product = t.product AND UPPER(et.languageid) = 'ES-MX' AND ISNULL(et.IsDelete, 0) = 0
+         LEFT JOIN dyn.FinDim fd ON fd.RECID = t.defaultdimension
+         LEFT JOIN dbo.inventtablemodule tmv
+                   ON tmv.itemid = s.itemid AND tmv.dataareaid = s.dataareaid AND tmv.moduletype = 2 AND ISNULL(tmv.IsDelete, 0) = 0
+         LEFT JOIN dbo.inventtablemodule tmc
+                   ON tmc.itemid = s.itemid AND tmc.dataareaid = s.dataareaid AND tmc.moduletype = 0 AND ISNULL(tmc.IsDelete, 0) = 0
+WHERE ISNULL(s.IsDelete, 0) = 0 AND s.availphysical > 0
+GROUP BY s.dataareaid, s.itemid
