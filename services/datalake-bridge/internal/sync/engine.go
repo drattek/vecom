@@ -344,10 +344,10 @@ func (e *Engine) createVals(model datalake.Model, brandID int64, capacidad strin
 		extra["standard_price"] = model.Cost
 	}
 	if model.Weight > 0 {
-		extra["weight"] = model.Weight
+		extra["weight"] = round2(model.Weight)
 	}
 	if model.Volume > 0 {
-		extra["volume"] = model.Volume
+		extra["volume"] = round2(model.Volume)
 	}
 	if st.uomID > 0 {
 		extra["uom_id"] = st.uomID
@@ -371,19 +371,24 @@ func modelDiff(p odoo.Product, model datalake.Model, brandID int64, capacidad st
 	if model.Cost > 0 && !floatEq(p.StandardPrice, model.Cost) {
 		diff["standard_price"] = model.Cost
 	}
-	if model.Weight > 0 && !floatEq(p.Weight, model.Weight) {
-		diff["weight"] = model.Weight
+	// Odoo guarda peso/volumen a 2 decimales; se redondea igual para que el gate
+	// converja (si no, el diff se repetiría en cada pasada).
+	if w := round2(model.Weight); w > 0 && !floatEq(p.Weight, w) {
+		diff["weight"] = w
 	}
-	if model.Volume > 0 && !floatEq(p.Volume, model.Volume) {
-		diff["volume"] = model.Volume
+	if v := round2(model.Volume); v > 0 && !floatEq(p.Volume, v) {
+		diff["volume"] = v
 	}
-	if capacidad != "" && p.Capacidad != capacidad {
+	if capacidad != "" && string(p.Capacidad) != capacidad {
 		diff["x_capacidad"] = capacidad
 	}
 	return diff
 }
 
 func floatEq(a, b float64) bool { return math.Abs(a-b) < 0.005 }
+
+// round2 redondea a 2 decimales (la precisión de peso/volumen en Odoo).
+func round2(v float64) float64 { return math.Round(v*100) / 100 }
 
 func keys(m map[string]any) []string {
 	out := make([]string, 0, len(m))

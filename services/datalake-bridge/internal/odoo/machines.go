@@ -7,6 +7,24 @@ import (
 	"strings"
 )
 
+// Str decodifica un campo de texto de Odoo, que en JSON-2 llega como string o,
+// cuando está vacío, como false. Ambos casos se normalizan a string.
+type Str string
+
+func (s *Str) UnmarshalJSON(b []byte) error {
+	t := strings.TrimSpace(string(b))
+	if t == "false" || t == "null" {
+		*s = ""
+		return nil
+	}
+	var str string
+	if err := json.Unmarshal(b, &str); err != nil {
+		return err
+	}
+	*s = Str(str)
+	return nil
+}
+
 // M2O decodifica un campo many2one de Odoo, que en JSON-2 llega como
 // [id, "display_name"] o como false. Solo interesa el id.
 type M2O struct{ ID int64 }
@@ -93,7 +111,7 @@ type Product struct {
 	Weight        float64 `json:"weight"`
 	Volume        float64 `json:"volume"`
 	BrandID       M2O     `json:"product_brand_id"`
-	Capacidad     string  `json:"x_capacidad"`
+	Capacidad     Str     `json:"x_capacidad"`
 }
 
 // FindProduct busca la variante (product.product) por default_code, leyendo los

@@ -42,3 +42,21 @@ func TestWarehouseDecode(t *testing.T) {
 		t.Fatalf("decodificado mal: %+v", w)
 	}
 }
+
+func TestStrUnmarshal(t *testing.T) {
+	cases := []struct{ in, want string }{
+		{`"5000 LBS"`, "5000 LBS"}, // texto normal
+		{`false`, ""},              // campo vacío en Odoo llega como false
+		{`null`, ""},
+		{`""`, ""},
+	}
+	for _, c := range cases {
+		var s Str
+		if err := json.Unmarshal([]byte(c.in), &s); err != nil {
+			t.Fatalf("Unmarshal(%s): %v", c.in, err)
+		}
+		if string(s) != c.want {
+			t.Errorf("Unmarshal(%s)=%q, quiero %q", c.in, string(s), c.want)
+		}
+	}
+}
