@@ -270,3 +270,24 @@ FROM dbo.dimensionattributevalue dav
 WHERE ISNULL(dav.IsDelete, 0) = 0
   AND da.name NOT LIKE 'SystemGenerated%'
   AND da.name <> 'MainAccount'
+
+-- @view dyn.MachineUnits
+-- Unidades fisicas de MAQUINAS (grupo MAQ) por numero de serie, para el sync a
+-- Odoo (datalake-bridge). Una fila por serie con existencia: compania, articulo,
+-- nombre, sucursal (InventSite), serie y lote. Solo MAQ con serie y disponible>0.
+SELECT s.dataareaid                              AS [Empresa],
+       s.itemid                                  AS [Articulo],
+       et.name                                   AS [Nombre],
+       id.inventsiteid                           AS [Sucursal],
+       NULLIF(LTRIM(RTRIM(id.inventserialid)), '') AS [Serie],
+       NULLIF(LTRIM(RTRIM(id.inventbatchid)), '')  AS [Lote],
+       CAST(s.availphysical AS INT)              AS [Disponible]
+FROM dbo.inventsum s
+         JOIN dbo.inventdim id ON id.inventdimid = s.inventdimid AND ISNULL(id.IsDelete, 0) = 0
+         JOIN dbo.inventitemgroupitem ig ON ig.itemid = s.itemid AND ISNULL(ig.IsDelete, 0) = 0
+         JOIN dbo.inventtable t ON t.itemid = s.itemid AND ISNULL(t.IsDelete, 0) = 0
+         LEFT JOIN dbo.ecoresproduct e ON e.recid = t.product AND ISNULL(e.IsDelete, 0) = 0
+         LEFT JOIN dbo.ecoresproducttranslation et
+                   ON et.product = t.product AND UPPER(et.languageid) = 'ES-MX' AND ISNULL(et.IsDelete, 0) = 0
+WHERE ig.itemgroupid = 'MAQ' AND ISNULL(s.IsDelete, 0) = 0 AND s.availphysical > 0
+  AND NULLIF(LTRIM(RTRIM(id.inventserialid)), '') IS NOT NULL
