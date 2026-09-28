@@ -2,7 +2,10 @@ module datalake-bridge
 
 go 1.26.4
 
-require github.com/microsoft/go-mssqldb v1.9.4
+require (
+	github.com/microsoft/go-mssqldb v1.9.4
+	golang.org/x/image v0.46.0
+)
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.18.0 // indirect
@@ -17,6 +20,6 @@ require (
 	github.com/pkg/browser v0.0.0-20240102092130-5ac0b6a4141c // indirect
 	golang.org/x/crypto v0.38.0 // indirect
 	golang.org/x/net v0.40.0 // indirect
-	golang.org/x/sys v0.33.0 // indirect
-	golang.org/x/text v0.25.0 // indirect
+	golang.org/x/sys v0.48.0 // indirect
+	golang.org/x/text v0.42.0 // indirect
 )
