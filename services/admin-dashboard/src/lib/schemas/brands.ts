@@ -8,6 +8,8 @@ export const brandSchema = z.object({
   createdAt: z.string(),
   updatedAt: z.string(),
   deletedAt: z.string().nullish(),
+  productCount: z.number().default(0),
+  vehicleFitmentCount: z.number().default(0),
 })
 
 export const paginatedBrandsResponseSchema = z.object({
