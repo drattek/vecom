@@ -38,6 +38,14 @@ const settingsMenuGroups: SettingsMenuGroup[] = [
             { label: 'Categorías', to: '/settings/marketplace-categories' },
         ],
     },
+    {
+        label: 'Vehículos/Maquinaria',
+        items: [
+            { label: 'Vehículos', to: '/settings/fitments-vehicles' },
+            { label: 'Maquinaria', to: '/settings/fitments-equipment' },
+            { label: 'Tipos de maquinaria', to: '/settings/fitments-equipment-types' },
+        ],
+    },
 ]
 
 export function SettingsPage() {

@@ -36,6 +36,9 @@ import { CurrenciesPage } from './pages/settings/CurrenciesPage.tsx'
 import { ExchangeRatesPage } from './pages/settings/ExchangeRatesPage.tsx'
 import { CategoriesPage } from './pages/settings/CategoriesPage.tsx'
 import { CategoryDetailPage } from './pages/settings/CategoryDetailPage.tsx'
+import { FitmentsVehiclesPage } from './pages/settings/FitmentsVehiclesPage.tsx'
+import { FitmentsEquipmentPage } from './pages/settings/FitmentsEquipmentPage.tsx'
+import { EquipmentTypesPage } from './pages/settings/EquipmentTypesPage.tsx'
 
 const queryClient = new QueryClient()
 
@@ -123,6 +126,18 @@ function AppRoutes() {
           <Route
             path="marketplace-categories/:categoryId"
             element={<CategoryDetailPage />}
+          />
+          <Route
+            path="fitments-vehicles"
+            element={<FitmentsVehiclesPage />}
+          />
+          <Route
+            path="fitments-equipment"
+            element={<FitmentsEquipmentPage />}
+          />
+          <Route
+            path="fitments-equipment-types"
+            element={<EquipmentTypesPage />}
           />
         </Route>
       </Route>

@@ -438,10 +438,10 @@ export const channelProductCategorySelectionSchema = z.object({
 export type ChannelProductCategorySelection = z.infer<typeof channelProductCategorySelectionSchema>
 
 // --- Compatibilidades ------------------------------------------------------
-// GET /api/products/{id}/details/compatibilities — solo lectura: las
-// compatibilidades de vehículo del producto, con el fitment ya resuelto a
-// marca/modelo/años y los calificadores motor/posición/lado de la tabla de
-// enlace.
+// GET /api/products/{id}/details/compatibilities — las compatibilidades de
+// vehículo del producto (fitment ya resuelto a marca/modelo/años, con los
+// calificadores motor/posición/lado de la tabla de enlace) y las de maquinaria
+// (marca/tipo/modelo/serie). El alta/baja va por /api/product-*-compatibilities.
 
 export const productVehicleCompatibilitySchema = z.object({
   id: z.number(),
@@ -456,11 +456,23 @@ export const productVehicleCompatibilitySchema = z.object({
   createdAt: z.string(),
 })
 
+export const productEquipmentCompatibilitySchema = z.object({
+  id: z.number(),
+  equipmentFitmentId: z.number(),
+  brandName: z.string().nullish(),
+  equipmentTypeName: z.string().nullish(),
+  model: z.string().nullish(),
+  serie: z.string().nullish(),
+  createdAt: z.string(),
+})
+
 export const productCompatibilitiesSectionSchema = z.object({
   vehicles: z.array(productVehicleCompatibilitySchema),
+  equipment: z.array(productEquipmentCompatibilitySchema).default([]),
 })
 
 export type ProductVehicleCompatibility = z.infer<typeof productVehicleCompatibilitySchema>
+export type ProductEquipmentCompatibility = z.infer<typeof productEquipmentCompatibilitySchema>
 export type ProductCompatibilitiesSection = z.infer<typeof productCompatibilitiesSectionSchema>
 
 // Publicar el producto en una conexión sin sincronización todavía (botón
