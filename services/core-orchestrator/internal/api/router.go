@@ -452,6 +452,8 @@ func NewRouter(
 		protected.Get("/api/vehicle-fitments", vehicleFitmentHandler.GetVehicleFitments)
 		protected.Get("/api/vehicle-fitments/{id}", vehicleFitmentHandler.GetVehicleFitmentByID)
 		protected.Post("/api/vehicle-fitments", vehicleFitmentHandler.CreateVehicleFitment)
+		// Reuses the fitment with the same brand/model/years or creates it.
+		protected.Post("/api/vehicle-fitments/find-or-create", vehicleFitmentHandler.FindOrCreateVehicleFitment)
 		protected.Post("/api/vehicle-fitments/bulk-import", vehicleFitmentHandler.BulkImportVehicleFitments)
 		protected.Post("/api/vehicle-fitments/resolve-pending", vehicleFitmentHandler.ResolvePendingFitments)
 		protected.Put("/api/vehicle-fitments/{id}", vehicleFitmentHandler.UpdateVehicleFitment)
@@ -461,6 +463,8 @@ func NewRouter(
 		protected.Get("/api/equipment-fitments", equipmentFitmentHandler.GetEquipmentFitments)
 		protected.Get("/api/equipment-fitments/{id}", equipmentFitmentHandler.GetEquipmentFitmentByID)
 		protected.Post("/api/equipment-fitments", equipmentFitmentHandler.CreateEquipmentFitment)
+		// Reuses the fitment with the same brand/type/model/serie or creates it.
+		protected.Post("/api/equipment-fitments/find-or-create", equipmentFitmentHandler.FindOrCreateEquipmentFitment)
 		protected.Put("/api/equipment-fitments/{id}", equipmentFitmentHandler.UpdateEquipmentFitment)
 		protected.Delete("/api/equipment-fitments/{id}", equipmentFitmentHandler.DeleteEquipmentFitment)
 

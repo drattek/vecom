@@ -986,13 +986,27 @@ type ProductVehicleCompatibilityDetailDTO struct {
 	CreatedAt        time.Time `json:"createdAt"`
 }
 
+// ProductEquipmentCompatibilityDetailDTO is one machinery fitment the product
+// is compatible with, with brand and equipment type already resolved.
+type ProductEquipmentCompatibilityDetailDTO struct {
+	ID                 int64     `json:"id"`
+	EquipmentFitmentID int64     `json:"equipmentFitmentId"`
+	BrandName          *string   `json:"brandName,omitempty"`
+	EquipmentTypeName  *string   `json:"equipmentTypeName,omitempty"`
+	Model              *string   `json:"model,omitempty"`
+	Serie              *string   `json:"serie,omitempty"`
+	CreatedAt          time.Time `json:"createdAt"`
+}
+
 type ProductCompatibilitiesSectionDTO struct {
-	Vehicles []ProductVehicleCompatibilityDetailDTO `json:"vehicles"`
+	Vehicles  []ProductVehicleCompatibilityDetailDTO   `json:"vehicles"`
+	Equipment []ProductEquipmentCompatibilityDetailDTO `json:"equipment"`
 }
 
 func (r *ProductDetailsRepository) FindCompatibilities(ctx context.Context, productID int64) (*ProductCompatibilitiesSectionDTO, error) {
 	section := &ProductCompatibilitiesSectionDTO{
-		Vehicles: make([]ProductVehicleCompatibilityDetailDTO, 0),
+		Vehicles:  make([]ProductVehicleCompatibilityDetailDTO, 0),
+		Equipment: make([]ProductEquipmentCompatibilityDetailDTO, 0),
 	}
 
 	const query = `
@@ -1035,8 +1049,43 @@ func (r *ProductDetailsRepository) FindCompatibilities(ctx context.Context, prod
 		}
 		section.Vehicles = append(section.Vehicles, c)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 
-	return section, rows.Err()
+	const equipmentQuery = `
+		SELECT pec.id, pec.equipment_fitment_id, b.name, et.name, ef.model, ef.serie, pec.created_at
+		FROM ecom_product_equipment_compatibility pec
+		JOIN ecom_equipment_fitment ef ON ef.id = pec.equipment_fitment_id AND ef.deleted_at IS NULL
+		LEFT JOIN ecom_brands b ON b.id = ef.brand_id AND b.deleted_at IS NULL
+		LEFT JOIN ecom_equipment_types et ON et.id = ef.equipment_type AND et.deleted_at IS NULL
+		WHERE pec.product_id = ? AND pec.deleted_at IS NULL
+		ORDER BY b.name ASC, et.name ASC, ef.model ASC, ef.serie ASC
+	`
+	equipmentRows, err := r.db.QueryContext(ctx, equipmentQuery, productID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying product equipment compatibilities: %w", err)
+	}
+	defer equipmentRows.Close()
+
+	for equipmentRows.Next() {
+		var (
+			c                                 ProductEquipmentCompatibilityDetailDTO
+			brandName, typeName, model, serie sql.NullString
+		)
+		if err := equipmentRows.Scan(
+			&c.ID, &c.EquipmentFitmentID, &brandName, &typeName, &model, &serie, &c.CreatedAt,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning product equipment compatibility: %w", err)
+		}
+		c.BrandName = nullStringPtr(brandName)
+		c.EquipmentTypeName = nullStringPtr(typeName)
+		c.Model = nullStringPtr(model)
+		c.Serie = nullStringPtr(serie)
+		section.Equipment = append(section.Equipment, c)
+	}
+
+	return section, equipmentRows.Err()
 }
 
 // nullStringPtr returns nil for a NULL/empty column and a pointer to its value

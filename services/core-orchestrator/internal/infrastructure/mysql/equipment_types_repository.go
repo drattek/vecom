@@ -9,15 +9,18 @@ import (
 )
 
 var ErrEquipmentTypeNotFound = errors.New("equipment type not found")
+var ErrEquipmentTypeAlreadyExists = errors.New("equipment type already exists")
 
 type EquipmentTypeDTO struct {
 	ID        int64      `json:"id"`
-	Name      string     `json:"name"`
-	CreatedBy int64      `json:"createdBy"`
-	UpdatedBy *int64     `json:"updatedBy,omitempty"`
-	CreatedAt time.Time  `json:"createdAt"`
-	UpdatedAt time.Time  `json:"updatedAt"`
-	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	Name string `json:"name"`
+	// FitmentCount is how many live equipment fitments use this type.
+	FitmentCount int64      `json:"fitmentCount"`
+	CreatedBy    int64      `json:"createdBy"`
+	UpdatedBy    *int64     `json:"updatedBy,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
+	DeletedAt    *time.Time `json:"deletedAt,omitempty"`
 }
 
 type PaginatedEquipmentTypes struct {
@@ -45,6 +48,14 @@ func NewEquipmentTypesRepository(db Querier) *EquipmentTypesRepository {
 	return &EquipmentTypesRepository{db: db}
 }
 
+const equipmentTypeSelect = `
+	SELECT et.id, et.name,
+	       (SELECT COUNT(*) FROM ecom_equipment_fitment ef
+	         WHERE ef.equipment_type = et.id AND ef.deleted_at IS NULL),
+	       et.created_by, et.updated_by, et.created_at, et.updated_at, et.deleted_at
+	FROM ecom_equipment_types et
+`
+
 func (r *EquipmentTypesRepository) FindPaginated(ctx context.Context, offset, pageSize int) (*PaginatedEquipmentTypes, error) {
 	var total int64
 	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM ecom_equipment_types WHERE deleted_at IS NULL").Scan(&total)
@@ -53,10 +64,9 @@ func (r *EquipmentTypesRepository) FindPaginated(ctx context.Context, offset, pa
 	}
 
 	query := `
-		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
-		FROM ecom_equipment_types
-		WHERE deleted_at IS NULL
-		ORDER BY id ASC
+		` + equipmentTypeSelect+`
+		WHERE et.deleted_at IS NULL
+		ORDER BY et.name ASC, et.id ASC
 		LIMIT ? OFFSET ?
 	`
 
@@ -89,14 +99,14 @@ func (r *EquipmentTypesRepository) FindPaginated(ctx context.Context, offset, pa
 }
 
 func (r *EquipmentTypesRepository) FindByID(ctx context.Context, id int64) (*EquipmentTypeDTO, error) {
-	query := `
-		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
-		FROM ecom_equipment_types
-		WHERE id = ? AND deleted_at IS NULL
-		LIMIT 1
-	`
+	row := r.db.QueryRowContext(ctx, equipmentTypeSelect+" WHERE et.id = ? AND et.deleted_at IS NULL LIMIT 1", id)
+	return scanEquipmentTypeRow(row)
+}
 
-	row := r.db.QueryRowContext(ctx, query, id)
+// FindByName looks up a live type by name, case-insensitively.
+func (r *EquipmentTypesRepository) FindByName(ctx context.Context, name string) (*EquipmentTypeDTO, error) {
+	row := r.db.QueryRowContext(ctx,
+		equipmentTypeSelect+" WHERE LOWER(et.name) = LOWER(?) AND et.deleted_at IS NULL LIMIT 1", name)
 	return scanEquipmentTypeRow(row)
 }
 
@@ -131,15 +141,12 @@ func (r *EquipmentTypesRepository) Update(ctx context.Context, id int64, input U
 		return nil, fmt.Errorf("error updating equipment type: %w", err)
 	}
 
-	affected, err := result.RowsAffected()
-	if err != nil {
+	if _, err := result.RowsAffected(); err != nil {
 		return nil, fmt.Errorf("error getting rows affected: %w", err)
 	}
 
-	if affected == 0 {
-		return nil, ErrEquipmentTypeNotFound
-	}
-
+	// 0 affected rows also happens when the name didn't change, so FindByID
+	// (ErrEquipmentTypeNotFound when absent) decides not-found.
 	return r.FindByID(ctx, id)
 }
 
@@ -172,6 +179,7 @@ func scanEquipmentType(rows *sql.Rows) (EquipmentTypeDTO, error) {
 	err := rows.Scan(
 		&equipmentType.ID,
 		&equipmentType.Name,
+		&equipmentType.FitmentCount,
 		&equipmentType.CreatedBy,
 		&equipmentType.UpdatedBy,
 		&equipmentType.CreatedAt,
@@ -189,6 +197,7 @@ func scanEquipmentTypeRow(row *sql.Row) (*EquipmentTypeDTO, error) {
 	err := row.Scan(
 		&equipmentType.ID,
 		&equipmentType.Name,
+		&equipmentType.FitmentCount,
 		&equipmentType.CreatedBy,
 		&equipmentType.UpdatedBy,
 		&equipmentType.CreatedAt,

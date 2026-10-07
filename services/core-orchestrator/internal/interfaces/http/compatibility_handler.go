@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -32,6 +33,27 @@ func parsePaginationParams(r *http.Request) (offset, pageSize int) {
 
 func parseIDParam(r *http.Request, name string) (int64, error) {
 	return strconv.ParseInt(chi.URLParam(r, name), 10, 64)
+}
+
+// parseOptionalID reads an optional positive int64 query param; absent or
+// malformed values mean "no filter" (0).
+func parseOptionalID(r *http.Request, name string) int64 {
+	value, err := strconv.ParseInt(r.URL.Query().Get(name), 10, 64)
+	if err != nil || value < 0 {
+		return 0
+	}
+	return value
+}
+
+// writeInUseError answers 409 when err is a *compatibilityApp.InUseError and
+// reports whether it did.
+func writeInUseError(w http.ResponseWriter, err error, hint string) bool {
+	var inUse *compatibilityApp.InUseError
+	if !errors.As(err, &inUse) {
+		return false
+	}
+	writeJSONError(w, http.StatusConflict, fmt.Sprintf("%s is in use by %d record(s)%s", inUse.Kind, inUse.Count, hint))
+	return true
 }
 
 // EquipmentTypeHandler
@@ -106,6 +128,10 @@ func (h *EquipmentTypeHandler) CreateEquipmentType(w http.ResponseWriter, r *htt
 			writeJSONError(w, http.StatusBadRequest, "name is required")
 			return
 		}
+		if errors.Is(err, mysqlInfra.ErrEquipmentTypeAlreadyExists) {
+			writeJSONError(w, http.StatusConflict, "equipment type already exists")
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -147,6 +173,10 @@ func (h *EquipmentTypeHandler) UpdateEquipmentType(w http.ResponseWriter, r *htt
 			writeJSONError(w, http.StatusNotFound, "equipment type not found")
 			return
 		}
+		if errors.Is(err, mysqlInfra.ErrEquipmentTypeAlreadyExists) {
+			writeJSONError(w, http.StatusConflict, "equipment type already exists")
+			return
+		}
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
 	}
@@ -166,6 +196,9 @@ func (h *EquipmentTypeHandler) DeleteEquipmentType(w http.ResponseWriter, r *htt
 	if err := h.service.DeleteEquipmentType(r.Context(), id); err != nil {
 		if errors.Is(err, mysqlInfra.ErrEquipmentTypeNotFound) {
 			writeJSONError(w, http.StatusNotFound, "equipment type not found")
+			return
+		}
+		if writeInUseError(w, err, "; reassign or delete its fitments first") {
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
@@ -192,10 +225,15 @@ func NewVehicleFitmentHandler(service *compatibilityApp.VehicleFitmentService) *
 	return &VehicleFitmentHandler{service: service}
 }
 
+// GetVehicleFitments lists vehicle fitments. Optional filters: q (brand, model
+// or a year inside the range) and brandId.
 func (h *VehicleFitmentHandler) GetVehicleFitments(w http.ResponseWriter, r *http.Request) {
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetPaginatedFitments(r.Context(), offset, pageSize)
+	result, err := h.service.GetPaginatedFitments(r.Context(), mysqlInfra.VehicleFitmentFilter{
+		Query:   r.URL.Query().Get("q"),
+		BrandID: parseOptionalID(r, "brandId"),
+	}, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -268,6 +306,64 @@ func (h *VehicleFitmentHandler) CreateVehicleFitment(w http.ResponseWriter, r *h
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(fitment)
+}
+
+type findOrCreateVehicleFitmentRequest struct {
+	BrandID   int64  `json:"brandId"`
+	BrandName string `json:"brandName"`
+	Model     string `json:"model"`
+	YearStart int    `json:"yearStart"`
+	YearEnd   *int   `json:"yearEnd"`
+}
+
+type findOrCreateVehicleFitmentResponse struct {
+	Fitment *mysqlInfra.VehicleFitmentDTO `json:"fitment"`
+	Created bool                          `json:"created"`
+}
+
+// FindOrCreateVehicleFitment returns the fitment with the given brand/model/
+// years, creating it only when it doesn't exist (201 created, 200 reused).
+func (h *VehicleFitmentHandler) FindOrCreateVehicleFitment(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req findOrCreateVehicleFitmentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	fitment, created, err := h.service.FindOrCreateFitment(r.Context(), compatibilityApp.FindOrCreateVehicleFitmentInput{
+		BrandID:   req.BrandID,
+		BrandName: req.BrandName,
+		Model:     req.Model,
+		YearStart: req.YearStart,
+		YearEnd:   req.YearEnd,
+		ActorID:   user.ID,
+	})
+	if err != nil {
+		if errors.Is(err, compatibilityApp.ErrInvalidVehicleFitment) {
+			writeJSONError(w, http.StatusBadRequest, "brand, model and yearStart (1900-2100) are required, and yearEnd cannot be before yearStart")
+			return
+		}
+		if errors.Is(err, mysqlInfra.ErrVehicleFitmentInvalidReference) {
+			writeJSONError(w, http.StatusBadRequest, "brand does not exist")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(findOrCreateVehicleFitmentResponse{Fitment: fitment, Created: created})
 }
 
 func (h *VehicleFitmentHandler) UpdateVehicleFitment(w http.ResponseWriter, r *http.Request) {
@@ -393,16 +489,28 @@ func (h *VehicleFitmentHandler) ResolvePendingFitments(w http.ResponseWriter, r 
 	json.NewEncoder(w).Encode(results)
 }
 
+// DeleteVehicleFitment soft-deletes a fitment. If products are still linked it
+// answers 409 unless ?force=true, which unlinks them as part of the delete.
 func (h *VehicleFitmentHandler) DeleteVehicleFitment(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id, err := parseIDParam(r, "id")
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid vehicle fitment id")
 		return
 	}
 
-	if err := h.service.DeleteFitment(r.Context(), id); err != nil {
+	force := r.URL.Query().Get("force") == "true"
+	if err := h.service.DeleteFitment(r.Context(), id, force, user.ID); err != nil {
 		if errors.Is(err, mysqlInfra.ErrVehicleFitmentNotFound) {
 			writeJSONError(w, http.StatusNotFound, "vehicle fitment not found")
+			return
+		}
+		if writeInUseError(w, err, "; retry with force=true to unlink them") {
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
@@ -429,10 +537,16 @@ func NewEquipmentFitmentHandler(service *compatibilityApp.EquipmentFitmentServic
 	return &EquipmentFitmentHandler{service: service}
 }
 
+// GetEquipmentFitments lists equipment fitments. Optional filters: q (brand,
+// type, model or serie), brandId and equipmentTypeId.
 func (h *EquipmentFitmentHandler) GetEquipmentFitments(w http.ResponseWriter, r *http.Request) {
 	offset, pageSize := parsePaginationParams(r)
 
-	result, err := h.service.GetPaginatedFitments(r.Context(), offset, pageSize)
+	result, err := h.service.GetPaginatedFitments(r.Context(), mysqlInfra.EquipmentFitmentFilter{
+		Query:           r.URL.Query().Get("q"),
+		BrandID:         parseOptionalID(r, "brandId"),
+		EquipmentTypeID: parseOptionalID(r, "equipmentTypeId"),
+	}, offset, pageSize)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
@@ -490,6 +604,10 @@ func (h *EquipmentFitmentHandler) CreateEquipmentFitment(w http.ResponseWriter, 
 			writeJSONError(w, http.StatusBadRequest, "brandId and equipmentTypeId are required, and either model or serie must be provided")
 			return
 		}
+		if errors.Is(err, compatibilityApp.ErrEquipmentFitmentAlreadyExists) {
+			writeJSONError(w, http.StatusConflict, "equipment fitment already exists")
+			return
+		}
 		if errors.Is(err, mysqlInfra.ErrEquipmentFitmentInvalidReference) {
 			writeJSONError(w, http.StatusBadRequest, "brand or equipment type does not exist")
 			return
@@ -501,6 +619,67 @@ func (h *EquipmentFitmentHandler) CreateEquipmentFitment(w http.ResponseWriter, 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	json.NewEncoder(w).Encode(fitment)
+}
+
+type findOrCreateEquipmentFitmentRequest struct {
+	BrandID           int64   `json:"brandId"`
+	BrandName         string  `json:"brandName"`
+	EquipmentTypeID   int64   `json:"equipmentTypeId"`
+	EquipmentTypeName string  `json:"equipmentTypeName"`
+	Model             *string `json:"model"`
+	Serie             *string `json:"serie"`
+}
+
+type findOrCreateEquipmentFitmentResponse struct {
+	Fitment *mysqlInfra.EquipmentFitmentDTO `json:"fitment"`
+	Created bool                            `json:"created"`
+}
+
+// FindOrCreateEquipmentFitment returns the fitment with the given brand/type/
+// model/serie, creating it only when it doesn't exist (201 created, 200
+// reused). Brand and type may be given by id or by name (created if missing).
+func (h *EquipmentFitmentHandler) FindOrCreateEquipmentFitment(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req findOrCreateEquipmentFitmentRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	fitment, created, err := h.service.FindOrCreateFitment(r.Context(), compatibilityApp.FindOrCreateEquipmentFitmentInput{
+		BrandID:           req.BrandID,
+		BrandName:         req.BrandName,
+		EquipmentTypeID:   req.EquipmentTypeID,
+		EquipmentTypeName: req.EquipmentTypeName,
+		Model:             req.Model,
+		Serie:             req.Serie,
+		ActorID:           user.ID,
+	})
+	if err != nil {
+		if errors.Is(err, compatibilityApp.ErrInvalidEquipmentFitment) {
+			writeJSONError(w, http.StatusBadRequest, "brand and equipment type are required, and either model or serie must be provided")
+			return
+		}
+		if errors.Is(err, mysqlInfra.ErrEquipmentFitmentInvalidReference) {
+			writeJSONError(w, http.StatusBadRequest, "brand or equipment type does not exist")
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	status := http.StatusOK
+	if created {
+		status = http.StatusCreated
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+	json.NewEncoder(w).Encode(findOrCreateEquipmentFitmentResponse{Fitment: fitment, Created: created})
 }
 
 func (h *EquipmentFitmentHandler) UpdateEquipmentFitment(w http.ResponseWriter, r *http.Request) {
@@ -534,6 +713,10 @@ func (h *EquipmentFitmentHandler) UpdateEquipmentFitment(w http.ResponseWriter, 
 			writeJSONError(w, http.StatusBadRequest, "brandId and equipmentTypeId are required, and either model or serie must be provided")
 			return
 		}
+		if errors.Is(err, compatibilityApp.ErrEquipmentFitmentAlreadyExists) {
+			writeJSONError(w, http.StatusConflict, "equipment fitment already exists")
+			return
+		}
 		if errors.Is(err, mysqlInfra.ErrEquipmentFitmentInvalidReference) {
 			writeJSONError(w, http.StatusBadRequest, "brand or equipment type does not exist")
 			return
@@ -551,16 +734,28 @@ func (h *EquipmentFitmentHandler) UpdateEquipmentFitment(w http.ResponseWriter, 
 	json.NewEncoder(w).Encode(fitment)
 }
 
+// DeleteEquipmentFitment soft-deletes a fitment. If products are still linked
+// it answers 409 unless ?force=true, which unlinks them as part of the delete.
 func (h *EquipmentFitmentHandler) DeleteEquipmentFitment(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
 	id, err := parseIDParam(r, "id")
 	if err != nil {
 		writeJSONError(w, http.StatusBadRequest, "invalid equipment fitment id")
 		return
 	}
 
-	if err := h.service.DeleteFitment(r.Context(), id); err != nil {
+	force := r.URL.Query().Get("force") == "true"
+	if err := h.service.DeleteFitment(r.Context(), id, force, user.ID); err != nil {
 		if errors.Is(err, mysqlInfra.ErrEquipmentFitmentNotFound) {
 			writeJSONError(w, http.StatusNotFound, "equipment fitment not found")
+			return
+		}
+		if writeInUseError(w, err, "; retry with force=true to unlink them") {
 			return
 		}
 		writeJSONError(w, http.StatusInternalServerError, "internal error")

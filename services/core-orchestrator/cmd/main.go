@@ -375,7 +375,7 @@ func main() {
 		pricingFormulaCalculator,
 		effectivePriceResolver,
 	)
-	equipmentTypeService := compatibilityApp.NewEquipmentTypeService(db, mysqlRepos.EquipmentTypesRepository)
+	equipmentTypeService := compatibilityApp.NewEquipmentTypeService(db, mysqlRepos.EquipmentTypesRepository, mysqlRepos.EquipmentFitmentsRepository)
 	vehicleFitmentService := compatibilityApp.NewVehicleFitmentService(db, mysqlRepos.VehicleFitmentsRepository, mysqlRepos.BrandsRepository, mysqlRepos.ProductRepository, mysqlRepos.ProductVehicleCompatibilityRepository, mysqlRepos.PendingProductVehicleFitmentsRepository)
 	equipmentFitmentService := compatibilityApp.NewEquipmentFitmentService(db, mysqlRepos.EquipmentFitmentsRepository)
 	productVehicleCompatibilityService := compatibilityApp.NewProductVehicleCompatibilityService(db, mysqlRepos.ProductVehicleCompatibilityRepository)

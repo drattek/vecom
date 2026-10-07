@@ -111,6 +111,13 @@ func (r *ProductEquipmentCompatibilityRepository) Create(ctx context.Context, in
 	result, err := r.db.ExecContext(ctx, query, input.ProductID, input.EquipmentFitmentID, input.CreatedBy)
 	if err != nil {
 		if isDuplicateKeyError(err) {
+			// uq_product_equipment_fitment also covers soft-deleted rows: a link
+			// the user removed earlier must be restorable, not reported as duplicate.
+			if revived, reviveErr := r.reviveDeleted(ctx, input); reviveErr != nil {
+				return nil, reviveErr
+			} else if revived != nil {
+				return revived, nil
+			}
 			return nil, ErrProductEquipmentCompatibilityAlreadyExists
 		}
 		if isForeignKeyConstraintError(err) {
@@ -122,6 +129,30 @@ func (r *ProductEquipmentCompatibilityRepository) Create(ctx context.Context, in
 	id, err := result.LastInsertId()
 	if err != nil {
 		return nil, fmt.Errorf("error getting last insert id: %w", err)
+	}
+
+	return r.FindByID(ctx, id)
+}
+
+func (r *ProductEquipmentCompatibilityRepository) reviveDeleted(ctx context.Context, input CreateProductEquipmentCompatibilityInput) (*ProductEquipmentCompatibilityDTO, error) {
+	var id int64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id FROM ecom_product_equipment_compatibility
+		WHERE product_id = ? AND equipment_fitment_id = ? AND deleted_at IS NOT NULL
+		LIMIT 1
+	`, input.ProductID, input.EquipmentFitmentID).Scan(&id)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error looking up deleted product equipment compatibility: %w", err)
+	}
+
+	if _, err := r.db.ExecContext(ctx,
+		"UPDATE ecom_product_equipment_compatibility SET deleted_at = NULL, updated_by = ?, updated_at = NOW() WHERE id = ?",
+		input.CreatedBy, id,
+	); err != nil {
+		return nil, fmt.Errorf("error restoring product equipment compatibility: %w", err)
 	}
 
 	return r.FindByID(ctx, id)
