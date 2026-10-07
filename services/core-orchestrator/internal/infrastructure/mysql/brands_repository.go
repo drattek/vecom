@@ -19,6 +19,24 @@ type BrandDTO struct {
 	CreatedAt time.Time  `json:"createdAt"`
 	UpdatedAt time.Time  `json:"updatedAt"`
 	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	// ProductCount / VehicleFitmentCount sólo se llenan en FindPaginated (listado
+	// de Settings → Marcas); en el resto de lecturas quedan en 0.
+	ProductCount        int64 `json:"productCount"`
+	VehicleFitmentCount int64 `json:"vehicleFitmentCount"`
+}
+
+// BrandUsage cuenta los registros vivos que referencian una marca; se usa para
+// bloquear su baja mientras alguien la use.
+type BrandUsage struct {
+	Products          int64
+	VehicleFitments   int64
+	EquipmentFitments int64
+	PartNumbers       int64
+	PricingFormulas   int64
+}
+
+func (u BrandUsage) Total() int64 {
+	return u.Products + u.VehicleFitments + u.EquipmentFitments + u.PartNumbers + u.PricingFormulas
 }
 
 type PaginatedBrands struct {
@@ -54,10 +72,12 @@ func (r *BrandsRepository) FindPaginated(ctx context.Context, offset, pageSize i
 	}
 
 	query := `
-		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
-		FROM ecom_brands
-		WHERE deleted_at IS NULL
-		ORDER BY id ASC
+		SELECT b.id, b.name, b.created_by, b.updated_by, b.created_at, b.updated_at, b.deleted_at,
+			(SELECT COUNT(*) FROM ecom_products p WHERE p.brand_id = b.id AND p.deleted_at IS NULL),
+			(SELECT COUNT(*) FROM ecom_vehicle_fitments vf WHERE vf.brand_id = b.id AND vf.deleted_at IS NULL)
+		FROM ecom_brands b
+		WHERE b.deleted_at IS NULL
+		ORDER BY b.name ASC, b.id ASC
 		LIMIT ? OFFSET ?
 	`
 
@@ -69,9 +89,20 @@ func (r *BrandsRepository) FindPaginated(ctx context.Context, offset, pageSize i
 
 	brands := make([]BrandDTO, 0)
 	for rows.Next() {
-		brand, scanErr := scanBrand(rows)
+		var brand BrandDTO
+		scanErr := rows.Scan(
+			&brand.ID,
+			&brand.Name,
+			&brand.CreatedBy,
+			&brand.UpdatedBy,
+			&brand.CreatedAt,
+			&brand.UpdatedAt,
+			&brand.DeletedAt,
+			&brand.ProductCount,
+			&brand.VehicleFitmentCount,
+		)
 		if scanErr != nil {
-			return nil, scanErr
+			return nil, fmt.Errorf("error scanning brand: %w", scanErr)
 		}
 		brands = append(brands, brand)
 	}
@@ -148,6 +179,40 @@ func (r *BrandsRepository) FindByName(ctx context.Context, name string) (*BrandD
 	return scanBrandRow(row)
 }
 
+// FindByNameExcluding busca una marca viva con ese nombre (sin distinguir
+// mayúsculas) distinta de excludeID; ErrBrandNotFound si no hay ninguna.
+func (r *BrandsRepository) FindByNameExcluding(ctx context.Context, name string, excludeID int64) (*BrandDTO, error) {
+	query := `
+		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
+		FROM ecom_brands
+		WHERE LOWER(name) = LOWER(?) AND id <> ? AND deleted_at IS NULL
+		LIMIT 1
+	`
+
+	row := r.db.QueryRowContext(ctx, query, name, excludeID)
+	return scanBrandRow(row)
+}
+
+// CountUsage cuenta los registros vivos que usan la marca.
+func (r *BrandsRepository) CountUsage(ctx context.Context, id int64) (BrandUsage, error) {
+	var usage BrandUsage
+	query := `
+		SELECT
+			(SELECT COUNT(*) FROM ecom_products WHERE brand_id = ? AND deleted_at IS NULL),
+			(SELECT COUNT(*) FROM ecom_vehicle_fitments WHERE brand_id = ? AND deleted_at IS NULL),
+			(SELECT COUNT(*) FROM ecom_equipment_fitment WHERE brand_id = ? AND deleted_at IS NULL),
+			(SELECT COUNT(*) FROM ecom_product_part_numbers WHERE brand_id = ? AND deleted_at IS NULL),
+			(SELECT COUNT(*) FROM ecom_pricing_formulas WHERE brand_id = ? AND deleted_at IS NULL)
+	`
+	err := r.db.QueryRowContext(ctx, query, id, id, id, id, id).Scan(
+		&usage.Products, &usage.VehicleFitments, &usage.EquipmentFitments, &usage.PartNumbers, &usage.PricingFormulas,
+	)
+	if err != nil {
+		return BrandUsage{}, fmt.Errorf("error counting brand usage: %w", err)
+	}
+	return usage, nil
+}
+
 func (r *BrandsRepository) Create(ctx context.Context, input CreateBrandInput) (*BrandDTO, error) {
 	query := `
 		INSERT INTO ecom_brands (name, created_by, created_at, updated_at)
@@ -213,23 +278,6 @@ func (r *BrandsRepository) SoftDelete(ctx context.Context, id int64) error {
 	}
 
 	return nil
-}
-
-func scanBrand(rows *sql.Rows) (BrandDTO, error) {
-	var brand BrandDTO
-	err := rows.Scan(
-		&brand.ID,
-		&brand.Name,
-		&brand.CreatedBy,
-		&brand.UpdatedBy,
-		&brand.CreatedAt,
-		&brand.UpdatedAt,
-		&brand.DeletedAt,
-	)
-	if err != nil {
-		return BrandDTO{}, fmt.Errorf("error scanning brand: %w", err)
-	}
-	return brand, nil
 }
 
 func scanBrandRow(row *sql.Row) (*BrandDTO, error) {

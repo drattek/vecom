@@ -3,8 +3,10 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 
@@ -108,6 +110,10 @@ func (h *BrandHandler) CreateBrand(w http.ResponseWriter, r *http.Request) {
 
 	brand, err := h.service.CreateBrand(r.Context(), input)
 	if err != nil {
+		if errors.Is(err, brandsApp.ErrBrandNameTaken) {
+			writeJSONError(w, http.StatusConflict, "ya existe una marca con ese nombre")
+			return
+		}
 		if errors.Is(err, brandsApp.ErrInvalidBrandPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
 			return
@@ -147,6 +153,10 @@ func (h *BrandHandler) UpdateBrand(w http.ResponseWriter, r *http.Request) {
 
 	brand, err := h.service.UpdateBrand(r.Context(), id, input)
 	if err != nil {
+		if errors.Is(err, brandsApp.ErrBrandNameTaken) {
+			writeJSONError(w, http.StatusConflict, "ya existe una marca con ese nombre")
+			return
+		}
 		if errors.Is(err, brandsApp.ErrInvalidBrandPayload) {
 			writeJSONError(w, http.StatusBadRequest, "name is required")
 			return
@@ -214,6 +224,11 @@ func (h *BrandHandler) DeleteBrand(w http.ResponseWriter, r *http.Request) {
 
 	err = h.service.DeleteBrand(r.Context(), id)
 	if err != nil {
+		var inUse *brandsApp.BrandInUseError
+		if errors.As(err, &inUse) {
+			writeJSONError(w, http.StatusConflict, brandInUseMessage(inUse.Usage))
+			return
+		}
 		if errors.Is(err, mysqlInfra.ErrBrandNotFound) {
 			writeJSONError(w, http.StatusNotFound, "brand not found")
 			return
@@ -228,4 +243,21 @@ func (h *BrandHandler) DeleteBrand(w http.ResponseWriter, r *http.Request) {
 func parseBrandID(r *http.Request) (int64, error) {
 	idStr := chi.URLParam(r, "id")
 	return strconv.ParseInt(idStr, 10, 64)
+}
+
+// brandInUseMessage arma el mensaje 409 de baja de marca con el detalle de qué
+// la está usando.
+func brandInUseMessage(u mysqlInfra.BrandUsage) string {
+	parts := make([]string, 0, 5)
+	add := func(n int64, label string) {
+		if n > 0 {
+			parts = append(parts, fmt.Sprintf("%d %s", n, label))
+		}
+	}
+	add(u.Products, "producto(s)")
+	add(u.VehicleFitments, "vehículo(s)")
+	add(u.EquipmentFitments, "maquinaria(s)")
+	add(u.PartNumbers, "número(s) de parte")
+	add(u.PricingFormulas, "fórmula(s) de precio")
+	return "La marca está en uso por " + strings.Join(parts, ", ") + "; reasígnalos antes de eliminarla."
 }

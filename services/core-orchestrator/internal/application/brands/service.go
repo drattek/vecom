@@ -11,6 +11,20 @@ import (
 
 var ErrInvalidBrandPayload = errors.New("invalid brand payload")
 
+// ErrBrandNameTaken: ya existe otra marca viva con ese nombre (sin distinguir
+// mayúsculas).
+var ErrBrandNameTaken = errors.New("brand name already exists")
+
+// BrandInUseError se devuelve al eliminar una marca que aún tienen en uso
+// productos, fitments, números de parte o fórmulas de precio.
+type BrandInUseError struct {
+	Usage mysqlInfra.BrandUsage
+}
+
+func (e *BrandInUseError) Error() string {
+	return "brand is in use"
+}
+
 type BrandService struct {
 	db                *sql.DB
 	repository        *mysqlInfra.BrandsRepository
@@ -55,11 +69,18 @@ func (s *BrandService) GetBrandByID(ctx context.Context, id int64) (*mysqlInfra.
 
 // CreateBrand es una sola sentencia (INSERT + read-back), no necesita transacción.
 func (s *BrandService) CreateBrand(ctx context.Context, input mysqlInfra.CreateBrandInput) (*mysqlInfra.BrandDTO, error) {
+	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" {
 		return nil, ErrInvalidBrandPayload
 	}
 	if input.CreatedBy <= 0 {
 		return nil, ErrInvalidBrandPayload
+	}
+
+	if _, err := s.repository.FindByName(ctx, input.Name); err == nil {
+		return nil, ErrBrandNameTaken
+	} else if !errors.Is(err, mysqlInfra.ErrBrandNotFound) {
+		return nil, err
 	}
 
 	return s.repository.Create(ctx, input)
@@ -69,11 +90,18 @@ func (s *BrandService) UpdateBrand(ctx context.Context, id int64, input mysqlInf
 	if id <= 0 {
 		return nil, ErrInvalidBrandPayload
 	}
+	input.Name = strings.TrimSpace(input.Name)
 	if input.Name == "" {
 		return nil, ErrInvalidBrandPayload
 	}
 	if input.UpdatedBy <= 0 {
 		return nil, ErrInvalidBrandPayload
+	}
+
+	if _, err := s.repository.FindByNameExcluding(ctx, input.Name, id); err == nil {
+		return nil, ErrBrandNameTaken
+	} else if !errors.Is(err, mysqlInfra.ErrBrandNotFound) {
+		return nil, err
 	}
 
 	return s.repository.Update(ctx, id, input)
@@ -82,6 +110,17 @@ func (s *BrandService) UpdateBrand(ctx context.Context, id int64, input mysqlInf
 func (s *BrandService) DeleteBrand(ctx context.Context, id int64) error {
 	if id <= 0 {
 		return ErrInvalidBrandPayload
+	}
+
+	if _, err := s.repository.FindByID(ctx, id); err != nil {
+		return err
+	}
+	usage, err := s.repository.CountUsage(ctx, id)
+	if err != nil {
+		return err
+	}
+	if usage.Total() > 0 {
+		return &BrandInUseError{Usage: usage}
 	}
 	return s.repository.SoftDelete(ctx, id)
 }
