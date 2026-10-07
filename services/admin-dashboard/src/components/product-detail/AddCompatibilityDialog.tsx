@@ -33,6 +33,7 @@ import { cn } from "@/lib/utils"
 import axios from "axios"
 import { SearchIcon } from "lucide-react"
 import { useState } from "react"
+import { ZodError } from "zod"
 
 const SEARCH_PAGE_SIZE = 8
 
@@ -149,12 +150,31 @@ function SegmentButton({
     )
 }
 
-/** Mensaje legible para un fallo al vincular; el 409 es "ya estaba vinculada". */
+/**
+ * Mensaje legible para un fallo al agregar. El 409 es "ya estaba vinculada";
+ * sin respuesta del servidor (timeout, red) o con una respuesta que no cumple el
+ * schema se dice explícitamente, en vez de un genérico que oculta la causa.
+ */
 function linkErrorMessage(error: unknown): string {
-    if (axios.isAxiosError(error) && error.response?.status === 409) {
-        return "Este producto ya tiene esa compatibilidad."
+    if (axios.isAxiosError(error)) {
+        if (error.response?.status === 409) {
+            return "Este producto ya tiene esa compatibilidad."
+        }
+        if (!error.response) {
+            return error.code === "ECONNABORTED"
+                ? "El servidor tardó demasiado en responder. Revisa si la compatibilidad quedó agregada e inténtalo de nuevo."
+                : "No hubo respuesta del servidor. Revisa tu conexión e inténtalo de nuevo."
+        }
+        return getServerErrorMessage(
+            error,
+            `No se pudo agregar la compatibilidad (error ${error.response.status}).`,
+        )
     }
-    return getServerErrorMessage(error, "No se pudo agregar la compatibilidad.")
+    if (error instanceof ZodError) {
+        return "El servidor respondió con un formato inesperado; la compatibilidad pudo haberse creado. Recarga la sección."
+    }
+    console.error("Error al agregar la compatibilidad", error)
+    return error instanceof Error ? `No se pudo agregar la compatibilidad: ${error.message}` : "No se pudo agregar la compatibilidad."
 }
 
 function ModeSwitch({ mode, onChange, disabled }: { mode: Mode; onChange: (mode: Mode) => void; disabled: boolean }) {
