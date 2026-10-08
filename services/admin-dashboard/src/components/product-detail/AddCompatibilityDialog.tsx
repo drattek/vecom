@@ -36,6 +36,7 @@ import { useState } from "react"
 import { ZodError } from "zod"
 
 const SEARCH_PAGE_SIZE = 8
+const MAX_EQUIPMENT_SELECTION = 10
 
 type Kind = "vehicle" | "equipment"
 type Mode = "search" | "create"
@@ -218,7 +219,7 @@ function ResultList<T extends { id: number; productCount: number }>({
     items,
     isLoading,
     isError,
-    selectedId,
+    selectedIds,
     linkedIds,
     hasQuery,
     onSelect,
@@ -229,7 +230,7 @@ function ResultList<T extends { id: number; productCount: number }>({
     items: T[]
     isLoading: boolean
     isError: boolean
-    selectedId: number | null
+    selectedIds: number[]
     linkedIds: number[]
     hasQuery: boolean
     onSelect: (item: T) => void
@@ -259,7 +260,7 @@ function ResultList<T extends { id: number; productCount: number }>({
     return (
         <ul className="max-h-60 divide-y divide-border overflow-y-auto rounded-md border border-border">
             {items.map((item) => {
-                const selected = item.id === selectedId
+                const selected = selectedIds.includes(item.id)
                 return (
                     <li key={item.id}>
                         <button
@@ -378,7 +379,7 @@ function VehiclePanel({
                             items={search.data?.fitments ?? []}
                             isLoading={search.isLoading}
                             isError={search.isError}
-                            selectedId={selected?.id ?? null}
+                            selectedIds={selected ? [selected.id] : []}
                             linkedIds={linkedIds}
                             hasQuery={debouncedQuery.trim() !== ""}
                             onSelect={setSelected}
@@ -449,6 +450,51 @@ function QualifierInput({
     )
 }
 
+function SelectionSummary({
+    selected,
+    max,
+    disabled,
+    onRemove,
+    onClear,
+}: {
+    selected: EquipmentFitment[]
+    max: number
+    disabled: boolean
+    onRemove: (id: number) => void
+    onClear: () => void
+}) {
+    if (selected.length === 0) {
+        return <p className="text-xs text-muted-foreground">Puedes seleccionar hasta {max} maquinarias a la vez.</p>
+    }
+    return (
+        <div className="flex flex-col gap-1.5">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+                <span>
+                    {selected.length} de {max} seleccionadas
+                </span>
+                <Button type="button" variant="ghost" size="sm" onClick={onClear} disabled={disabled}>
+                    Quitar todas
+                </Button>
+            </div>
+            <ul className="flex flex-wrap gap-1.5">
+                {selected.map((item) => (
+                    <li key={item.id}>
+                        <button
+                            type="button"
+                            disabled={disabled}
+                            onClick={() => onRemove(item.id)}
+                            aria-label={`Quitar ${item.brandName} ${formatEquipmentModel(item.model, item.serie)}`}
+                            className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs hover:bg-muted/60 disabled:opacity-50"
+                        >
+                            {item.brandName} · {formatEquipmentModel(item.model, item.serie)} ×
+                        </button>
+                    </li>
+                ))}
+            </ul>
+        </div>
+    )
+}
+
 function EquipmentPanel({
     productId,
     linkedIds,
@@ -462,7 +508,7 @@ function EquipmentPanel({
 }) {
     const [mode, setMode] = useState<Mode>("search")
     const [query, setQuery] = useState("")
-    const [selected, setSelected] = useState<EquipmentFitment | null>(null)
+    const [selected, setSelected] = useState<EquipmentFitment[]>([])
     const [draft, setDraft] = useState(() => emptyEquipmentDraft())
     const [error, setError] = useState<string | null>(null)
 
@@ -474,39 +520,71 @@ function EquipmentPanel({
     const findOrCreate = useFindOrCreateEquipmentFitment()
     const link = useLinkEquipmentCompatibility(productId)
     const isPending = findOrCreate.isPending || link.isPending
-    const canSubmit = mode === "create" || selected !== null
+    const canSubmit = mode === "create" || selected.length > 0
+
+    function toggle(item: EquipmentFitment) {
+        setError(null)
+        if (selected.some((current) => current.id === item.id)) {
+            setSelected(selected.filter((current) => current.id !== item.id))
+            return
+        }
+        if (selected.length >= MAX_EQUIPMENT_SELECTION) {
+            setError(`Puedes seleccionar hasta ${MAX_EQUIPMENT_SELECTION} maquinarias a la vez.`)
+            return
+        }
+        setSelected([...selected, item])
+    }
 
     async function submit() {
         setError(null)
 
-        let fitmentId: number
-        let message = "Compatibilidad agregada."
-
-        try {
-            if (mode === "search") {
-                if (!selected) {
-                    setError("Elige una maquinaria de la lista.")
-                    return
-                }
-                fitmentId = selected.id
-            } else {
+        if (mode === "create") {
+            try {
                 const result = validateEquipmentDraft(draft)
                 if (!result.ok) {
                     setError(result.message)
                     return
                 }
                 const resolved = await findOrCreate.mutateAsync(result.payload)
-                fitmentId = resolved.fitment.id
-                message = resolved.created
-                    ? "Se creó la maquinaria y se agregó la compatibilidad."
-                    : "Ya existía esa maquinaria: se usó la existente y se agregó la compatibilidad."
+                await link.mutateAsync(resolved.fitment.id)
+                onDone(
+                    resolved.created
+                        ? "Se creó la maquinaria y se agregó la compatibilidad."
+                        : "Ya existía esa maquinaria: se usó la existente y se agregó la compatibilidad.",
+                )
+            } catch (submitError) {
+                setError(linkErrorMessage(submitError))
             }
-
-            await link.mutateAsync(fitmentId)
-            onDone(message)
-        } catch (submitError) {
-            setError(linkErrorMessage(submitError))
+            return
         }
+
+        // Secuencial: cada alta puede traer cientos de compatibilidades, y si una
+        // falla quedan seleccionadas solo las pendientes.
+        let added = 0
+        let alreadyLinked = 0
+        const pending = [...selected]
+        for (const item of selected) {
+            try {
+                await link.mutateAsync(item.id)
+                added++
+            } catch (submitError) {
+                if (axios.isAxiosError(submitError) && submitError.response?.status === 409) {
+                    alreadyLinked++
+                } else {
+                    setSelected(pending)
+                    const done = added > 0 ? `Se agregaron ${added}. ` : ""
+                    setError(`${done}Falló "${item.brandName} · ${item.equipmentTypeName}": ${linkErrorMessage(submitError)}`)
+                    return
+                }
+            }
+            pending.shift()
+        }
+
+        const parts = [`${added} ${added === 1 ? "compatibilidad agregada" : "compatibilidades agregadas"}`]
+        if (alreadyLinked > 0) {
+            parts.push(`${alreadyLinked} ya ${alreadyLinked === 1 ? "estaba vinculada" : "estaban vinculadas"}`)
+        }
+        onDone(`${parts.join("; ")}.`)
     }
 
     return (
@@ -521,13 +599,20 @@ function EquipmentPanel({
                             items={search.data?.fitments ?? []}
                             isLoading={search.isLoading}
                             isError={search.isError}
-                            selectedId={selected?.id ?? null}
+                            selectedIds={selected.map((item) => item.id)}
                             linkedIds={linkedIds}
                             hasQuery={debouncedQuery.trim() !== ""}
-                            onSelect={setSelected}
+                            onSelect={toggle}
                             onCreate={() => setMode("create")}
                             renderPrimary={(item) => `${item.brandName} · ${item.equipmentTypeName}`}
                             renderSecondary={(item) => formatEquipmentModel(item.model, item.serie)}
+                        />
+                        <SelectionSummary
+                            selected={selected}
+                            max={MAX_EQUIPMENT_SELECTION}
+                            disabled={isPending}
+                            onRemove={(id) => setSelected(selected.filter((item) => item.id !== id))}
+                            onClear={() => setSelected([])}
                         />
                         {search.data && search.data.total > SEARCH_PAGE_SIZE ? (
                             <p className="text-xs text-muted-foreground">
@@ -546,7 +631,11 @@ function EquipmentPanel({
                     Cancelar
                 </Button>
                 <Button size="sm" onClick={submit} disabled={isPending || !canSubmit}>
-                    {isPending ? "Agregando…" : "Agregar compatibilidad"}
+                    {isPending
+                        ? "Agregando…"
+                        : mode === "search" && selected.length > 1
+                          ? `Agregar ${selected.length} compatibilidades`
+                          : "Agregar compatibilidad"}
                 </Button>
             </DialogFooter>
         </>
