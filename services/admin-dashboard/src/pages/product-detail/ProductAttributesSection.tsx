@@ -252,19 +252,6 @@ function AttributesChecklistCard({
                         <p className="text-sm text-muted-foreground">Todos los atributos requeridos están completos.</p>
                     )}
 
-                    {checklist.data.items.length === 0 ? (
-                        <SectionState
-                            state="empty"
-                            message={
-                                checklist.data.attributeScope === "product"
-                                    ? "Este producto todavía no tiene atributos. Agregá el primero abajo."
-                                    : "El canal no define atributos personalizados aplicables a este producto."
-                            }
-                        />
-                    ) : (
-                        <AttributeChecklistTable productId={productId} items={checklist.data.items} />
-                    )}
-
                     {checklist.data.attributeScope === "product" && connectionId != null && general.data?.sku ? (
                         <AddCustomAttributeForm
                             productId={productId}
@@ -272,6 +259,19 @@ function AttributesChecklistCard({
                             connectionId={connectionId}
                         />
                     ) : null}
+
+                    {checklist.data.items.length === 0 ? (
+                        <SectionState
+                            state="empty"
+                            message={
+                                checklist.data.attributeScope === "product"
+                                    ? "Este producto todavía no tiene atributos. Agregá el primero arriba."
+                                    : "El canal no define atributos personalizados aplicables a este producto."
+                            }
+                        />
+                    ) : (
+                        <AttributeChecklistTable productId={productId} items={checklist.data.items} />
+                    )}
 
                     {otherAssigned.length > 0 ? (
                         <div className="flex flex-col gap-2">
@@ -478,6 +478,12 @@ function AddCustomAttributeForm({
                 type={dataType === "number" ? "number" : dataType === "date" ? "date" : "text"}
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter" && canSubmit) {
+                        event.preventDefault()
+                        submit()
+                    }
+                }}
                 disabled={mutation.isPending}
                 aria-label="Valor"
                 placeholder="Valor"
