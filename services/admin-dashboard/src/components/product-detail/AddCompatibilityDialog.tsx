@@ -209,6 +209,7 @@ function SearchBox({
                 placeholder={placeholder}
                 aria-label={placeholder}
                 className="pl-8"
+                autoComplete="off"
                 autoFocus
             />
         </div>
