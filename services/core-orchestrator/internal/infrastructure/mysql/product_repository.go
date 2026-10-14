@@ -441,11 +441,17 @@ type ZeroStockEligibleProduct struct {
 // for the dashboard's "probar con N artículos" button); limit <= 0 means
 // no cap.
 func (r *ProductRepository) FindZeroStockEligibleForConnection(ctx context.Context, connectionID int64, limit int) ([]ZeroStockEligibleProduct, error) {
+	// ecom_products.status is nullable and currently stays NULL for every row
+	// in this deployment (nothing populates the enum today) — treat NULL the
+	// same way the dashboard product list already does: as "live" — so a
+	// backlog of SKUs isn't permanently invisible to this flow. The only
+	// values we filter out are the explicit terminal ones ('discontinued',
+	// 'hidden'), matching the enum's own semantics.
 	query := `
 		SELECT p.id, p.sku, p.name
 		FROM ecom_products p
 		WHERE p.deleted_at IS NULL
-		  AND p.status = 'active'
+		  AND (p.status IS NULL OR p.status = 'active')
 		  AND p.is_sellable = 1
 		  AND p.category_id IS NOT NULL
 		  AND p.brand_id IS NOT NULL
