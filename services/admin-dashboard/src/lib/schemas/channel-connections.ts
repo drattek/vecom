@@ -13,6 +13,13 @@ export const channelConnectionSchema = z.object({
   environment: z.string(),
   currencyId: z.number(),
   allowsMultipleListings: z.boolean(),
+  // Si está en true, los productos con foto + precio + datos completos y
+  // stock = 0 se publican/mantienen como suspendidos en este canal
+  // (status "paused" en MercadoLibre, sale_ok=false en Odoo) en vez de
+  // esperar a tener existencias. Cuando el stock regresa se reactivan
+  // automáticamente — pero solo si el middleware fue quien los pausó
+  // (paused_reason='zero_stock' en ecom_channel_product_map).
+  syncZeroStockAsPaused: z.boolean().default(false),
   createdBy: z.number(),
   updatedBy: z.number().nullish(),
   createdAt: z.string(),

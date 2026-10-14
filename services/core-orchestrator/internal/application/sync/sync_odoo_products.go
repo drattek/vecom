@@ -58,6 +58,12 @@ const (
 	odooDefaultVolume = 1.0
 	odooSyncCurrency  = "MXN" // marketplace channels always receive prices in MXN
 	odooSyncedStatus  = "synced"
+	// odooPausedStatus is ecom_channel_product_map.status for an Odoo listing
+	// whose product.template is visible on the storefront but has sale_ok=false
+	// — our local equivalent of MercadoLibre's "paused". Mirrors the enum
+	// values foldMercadoLibreStatus relies on; see
+	// pausedReasonZeroStock for the paused_reason that gets stamped alongside.
+	odooPausedStatus = "paused"
 
 	// odooCM3PerM3 converts ecom_product_dimensions.volume — always stored in
 	// cm³, since length/width/height are always uploaded in cm — into Odoo's
@@ -88,6 +94,7 @@ type OdooProductSyncService struct {
 	currenciesRepository         *mysqlInfra.CurrenciesRepository
 	categoriesRepository         *mysqlInfra.CategoriesRepository
 	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository
+	channelConnectionRepository  *mysqlInfra.ChannelConnectionRepository
 	channelProductMapRepository  *mysqlInfra.ChannelProductMapRepository
 	// categorySelectionRepository resolves the per-connection category the
 	// user picked in the "Sincronización" tab before this product had any
@@ -136,6 +143,7 @@ func NewOdooProductSyncService(
 	currenciesRepository *mysqlInfra.CurrenciesRepository,
 	categoriesRepository *mysqlInfra.CategoriesRepository,
 	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository,
+	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository,
 	channelProductMapRepository *mysqlInfra.ChannelProductMapRepository,
 	categorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository,
 	channelRepository *mysqlInfra.ChannelRepository,
@@ -160,6 +168,7 @@ func NewOdooProductSyncService(
 		currenciesRepository:          currenciesRepository,
 		categoriesRepository:          categoriesRepository,
 		channelCategoryMapRepository:  channelCategoryMapRepository,
+		channelConnectionRepository:   channelConnectionRepository,
 		channelProductMapRepository:   channelProductMapRepository,
 		categorySelectionRepository:   categorySelectionRepository,
 		channelRepository:             channelRepository,
@@ -260,6 +269,17 @@ func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfr
 		return false, nil
 	}
 
+	// Paused listings on the Odoo side mirror the MercadoLibre rule: the only
+	// paused state the refresher is allowed to touch is one it wrote itself
+	// (paused_reason='zero_stock') — any other paused row (admin override,
+	// unknown reason) is left completely alone, including its sale_ok. A
+	// listing paused for zero stock is handled further below after qty is
+	// computed, so a stock recovery can reactivate it.
+	isZeroStockPaused := listing.Status == odooPausedStatus && derefString(listing.PausedReason) == pausedReasonZeroStock
+	if listing.Status == odooPausedStatus && !isZeroStockPaused {
+		return false, nil
+	}
+
 	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
 	if err != nil {
 		return false, fmt.Errorf("error loading %s currency: %w", odooSyncCurrency, err)
@@ -311,7 +331,24 @@ func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfr
 		qtyAvailable += float64(stock.AvailableQty)
 	}
 
-	if err := s.updatePriceAndStock(ctx, productsHandler, credentials, connectionID, listing, listPrice, qtyAvailable); err != nil {
+	// If we paused this listing ourselves (zero_stock) and stock still hasn't
+	// come back, there's nothing to send to Odoo — bail out without an API
+	// call, same as the MercadoLibre refresh does.
+	if isZeroStockPaused && qtyAvailable <= 0 {
+		return false, nil
+	}
+
+	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
+	if err != nil {
+		return false, fmt.Errorf("error loading connection %d: %w", connectionID, err)
+	}
+	shouldPause, err := s.odooShouldPauseForZeroStock(ctx, connection, product.ID, qtyAvailable)
+	if err != nil {
+		return false, err
+	}
+	saleOK, nextMapStatus, nextPausedReason := resolveOdooZeroStockTransition(listing, shouldPause, qtyAvailable)
+
+	if err := s.updatePriceAndStock(ctx, productsHandler, credentials, connectionID, listing, listPrice, qtyAvailable, saleOK, nextMapStatus, nextPausedReason); err != nil {
 		return false, err
 	}
 
@@ -330,6 +367,12 @@ func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfr
 func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error) {
 	externalIDStr := derefString(listing.ExternalID)
 	if externalIDStr == "" {
+		return false, nil
+	}
+
+	// Same paused-row protection as Refresh.
+	isZeroStockPaused := listing.Status == odooPausedStatus && derefString(listing.PausedReason) == pausedReasonZeroStock
+	if listing.Status == odooPausedStatus && !isZeroStockPaused {
 		return false, nil
 	}
 
@@ -384,6 +427,38 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 		qtyAvailable += float64(stock.AvailableQty)
 	}
 
+	// Same zero-stock short-circuit + decision as Refresh. update() below
+	// doesn't know about this toggle yet, so we route pure stock-state
+	// transitions through updatePriceAndStock (same as Refresh) and let
+	// update() handle the full-field push separately — update() still
+	// re-writes the map row with status=synced at the end, but by then
+	// updatePriceAndStock has already set the authoritative Odoo sale_ok
+	// state and seeded any paused_reason=zero_stock we want to persist. On a
+	// stock recovery, update()'s final map-row rewrite correctly settles on
+	// status=synced; on a brand-new pause, we skip update() entirely so the
+	// title/weight/category refresh doesn't erase the sale_ok=false we just
+	// pushed. The caller (channel_listings.ResyncListings) still sees
+	// (true, nil) and counts the row as resynced in either case.
+	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
+	if err != nil {
+		return false, fmt.Errorf("error loading connection %d: %w", connectionID, err)
+	}
+	shouldPause, err := s.odooShouldPauseForZeroStock(ctx, connection, product.ID, qtyAvailable)
+	if err != nil {
+		return false, err
+	}
+
+	if shouldPause || isZeroStockPaused {
+		saleOK, nextMapStatus, nextPausedReason := resolveOdooZeroStockTransition(listing, shouldPause, qtyAvailable)
+		if isZeroStockPaused && qtyAvailable <= 0 {
+			return false, nil
+		}
+		if err := s.updatePriceAndStock(ctx, productsHandler, credentials, connectionID, listing, listPrice, qtyAvailable, saleOK, nextMapStatus, nextPausedReason); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+
 	title := resolveOdooRefreshTitle(listing, product)
 
 	if err := s.update(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, fitmentsHandler, credentials, connectionID, product, listing, title, listPrice, qtyAvailable); err != nil {
@@ -407,6 +482,8 @@ func (s *OdooProductSyncService) updatePriceAndStock(
 	connectionID int64,
 	existingMap *mysqlInfra.ChannelProductMapDTO,
 	listPrice, qtyAvailable float64,
+	saleOK *bool,
+	nextMapStatus, nextPausedReason string,
 ) error {
 	productID := existingMap.ProductID
 	externalIDStr := derefString(existingMap.ExternalID)
@@ -422,6 +499,7 @@ func (s *OdooProductSyncService) updatePriceAndStock(
 		Vals: odooInfra.UpdateProductPriceStockVals{
 			QtyAvailable: qtyAvailable,
 			ListPrice:    listPrice,
+			SaleOK:       saleOK,
 		},
 	}); err != nil {
 		return fmt.Errorf("error updating odoo product %d (local product %d): %w", externalID, productID, err)
@@ -434,13 +512,67 @@ func (s *OdooProductSyncService) updatePriceAndStock(
 		ListingTitle:       derefString(existingMap.ListingTitle),
 		ExternalID:         externalIDStr,
 		ExternalCategoryID: derefString(existingMap.ExternalCategoryID),
-		Status:             odooSyncedStatus,
+		Status:             nextMapStatus,
+		PausedReason:       nextPausedReason,
 		ActorID:            systemOdooSyncActorID,
 	}); err != nil {
 		return fmt.Errorf("error recording channel product map for product %d: %w", productID, err)
 	}
 
 	return nil
+}
+
+// odooShouldPauseForZeroStock mirrors sync_mercadolibre_products.go's
+// shouldPauseForZeroStock on the Odoo side: the connection must opt in, qty
+// must be 0, and the product must have a cover image (ecom_product_images
+// is_first = 1). The Odoo equivalent of a paused listing is a product.template
+// kept visible on the storefront but marked sale_ok=false — Refresh/Resync
+// flip that bit when this returns true.
+func (s *OdooProductSyncService) odooShouldPauseForZeroStock(ctx context.Context, conn *mysqlInfra.ChannelConnectionDTO, productID int64, qtyAvailable float64) (bool, error) {
+	if conn == nil || !conn.SyncZeroStockAsPaused || qtyAvailable > 0 {
+		return false, nil
+	}
+	images, err := s.productImagesRepository.FindAllByProductID(ctx, productID)
+	if err != nil {
+		return false, fmt.Errorf("error loading images for product %d: %w", productID, err)
+	}
+	for _, img := range images {
+		if img.IsFirst {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+// resolveOdooZeroStockTransition turns the current map row + the connection's
+// toggle + the newly computed qty into the three values updatePriceAndStock
+// (and the create path in Publish) need: the sale_ok override to send to
+// Odoo (nil = leave the field alone), and the (status, paused_reason) pair
+// to persist on ecom_channel_product_map. The four cases it handles:
+//
+//   - shouldPause && status != paused → pause (sale_ok=false; paused/zero_stock)
+//   - status == paused with reason zero_stock && qty > 0 → reactivate (sale_ok=true; synced/"")
+//   - status == paused with reason zero_stock && qty == 0 → keep paused, no change (nil; paused/zero_stock)
+//   - every other case → no sale_ok change; status becomes synced
+//
+// A paused listing whose paused_reason is anything other than zero_stock
+// (user, nil) is left completely alone, same as the MercadoLibre side —
+// the caller is expected to detect that and skip updatePriceAndStock
+// altogether. This function assumes it was called.
+func resolveOdooZeroStockTransition(existingMap *mysqlInfra.ChannelProductMapDTO, shouldPause bool, qtyAvailable float64) (saleOK *bool, nextStatus, nextReason string) {
+	isZeroStockPaused := existingMap.Status == odooPausedStatus && derefString(existingMap.PausedReason) == pausedReasonZeroStock
+	trueVal, falseVal := true, false
+
+	switch {
+	case shouldPause && !isZeroStockPaused:
+		return &falseVal, odooPausedStatus, pausedReasonZeroStock
+	case isZeroStockPaused && qtyAvailable > 0:
+		return &trueVal, odooSyncedStatus, ""
+	case isZeroStockPaused && qtyAvailable <= 0:
+		return nil, odooPausedStatus, pausedReasonZeroStock
+	default:
+		return nil, odooSyncedStatus, ""
+	}
 }
 
 // update refreshes an already-synced product's stock, price, name (always
@@ -724,11 +856,32 @@ func (s *OdooProductSyncService) create(
 		descriptionEcommerce = *product.Description
 	}
 
+	// Seed sale_ok / status based on the sync_zero_stock_as_paused flow. A
+	// brand-new product.template with 0 stock, when the connection opted in,
+	// is born published but not buyable (sale_ok=false) and recorded locally
+	// as paused/zero_stock so Refresh will reactivate it the moment stock
+	// comes back. "connection" is loaded here (not received as a parameter)
+	// so Publish's signature stays shared with every other channel. coverImage
+	// above already enforced the "has cover image" gate the toggle requires.
+	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
+	if err != nil {
+		return "", missingRequired, missingOptional, fmt.Errorf("error loading connection %d: %w", connectionID, err)
+	}
+	shouldPause := connection != nil && connection.SyncZeroStockAsPaused && qtyAvailable <= 0
+	initialSaleOK := true
+	initialMapStatus := odooSyncedStatus
+	initialPausedReason := ""
+	if shouldPause {
+		initialSaleOK = false
+		initialMapStatus = odooPausedStatus
+		initialPausedReason = pausedReasonZeroStock
+	}
+
 	vals := odooInfra.CreateProductVals{
 		Name:                 title,
 		Type:                 odooProductType,
 		ListPrice:            listPrice,
-		SaleOK:               true,
+		SaleOK:               initialSaleOK,
 		IsPublished:          true,
 		PurchaseOK:           true,
 		Image1920:            coverImageBase64,
@@ -756,7 +909,8 @@ func (s *OdooProductSyncService) create(
 		VehicleFitmentID: vehicleFitmentID,
 		ListingTitle:     title,
 		ExternalID:       externalIDStr,
-		Status:           odooSyncedStatus,
+		Status:           initialMapStatus,
+		PausedReason:     initialPausedReason,
 		ActorID:          systemOdooSyncActorID,
 	}); err != nil {
 		return "", missingRequired, missingOptional, fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)

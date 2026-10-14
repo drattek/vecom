@@ -30,12 +30,20 @@ type ChannelConnectionDTO struct {
 	// than one external listing per (product, connection) — e.g. MercadoLibre
 	// connections that publish one listing per vehicle compatibility. Single-
 	// listing connections (Odoo, most MercadoLibre connections) keep this false.
-	AllowsMultipleListings bool       `json:"allowsMultipleListings"`
-	CreatedBy              int64      `json:"createdBy"`
-	UpdatedBy              *int64     `json:"updatedBy,omitempty"`
-	CreatedAt              time.Time  `json:"createdAt"`
-	UpdatedAt              time.Time  `json:"updatedAt"`
-	DeletedAt              *time.Time `json:"deletedAt,omitempty"`
+	AllowsMultipleListings bool `json:"allowsMultipleListings"`
+	// SyncZeroStockAsPaused tells Create/Refresh to treat a product with 0
+	// available quantity as "paused/suspended" on this connection instead of
+	// shipping qty=0 and leaving the listing buyable. On MercadoLibre the
+	// listing is created/updated with status=paused; on Odoo the template is
+	// set to sale_ok=false (visible but not buyable). The map row records
+	// paused_reason='zero_stock', which is what later lets a stock recovery
+	// reactivate the listing — paused_reason='user' (admin-paused) never does.
+	SyncZeroStockAsPaused bool       `json:"syncZeroStockAsPaused"`
+	CreatedBy             int64      `json:"createdBy"`
+	UpdatedBy             *int64     `json:"updatedBy,omitempty"`
+	CreatedAt             time.Time  `json:"createdAt"`
+	UpdatedAt             time.Time  `json:"updatedAt"`
+	DeletedAt             *time.Time `json:"deletedAt,omitempty"`
 }
 
 type PaginatedChannelConnections struct {
@@ -52,6 +60,7 @@ type CreateChannelConnectionInput struct {
 	Environment            string
 	CurrencyID             int64
 	AllowsMultipleListings bool
+	SyncZeroStockAsPaused  bool
 	CreatedBy              int64
 }
 
@@ -62,6 +71,7 @@ type UpdateChannelConnectionInput struct {
 	Environment            string
 	CurrencyID             int64
 	AllowsMultipleListings bool
+	SyncZeroStockAsPaused  bool
 	UpdatedBy              int64
 }
 
@@ -82,7 +92,7 @@ func (r *ChannelConnectionRepository) FindPaginated(ctx context.Context, offset,
 
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
-		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
+		       cc.allows_multiple_listings, cc.sync_zero_stock_as_paused, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
 		       ch.name, ch.code
 		FROM ecom_channel_connections cc
 		LEFT JOIN ecom_channels ch ON ch.id = cc.channel_id
@@ -127,7 +137,7 @@ func (r *ChannelConnectionRepository) FindPaginated(ctx context.Context, offset,
 func (r *ChannelConnectionRepository) FindActiveByChannelCode(ctx context.Context, channelCode string) ([]ChannelConnectionDTO, error) {
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
-		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
+		       cc.allows_multiple_listings, cc.sync_zero_stock_as_paused, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
 		       ch.name, ch.code
 		FROM ecom_channel_connections cc
 		JOIN ecom_channels ch ON ch.id = cc.channel_id
@@ -165,7 +175,7 @@ func (r *ChannelConnectionRepository) FindActiveByChannelCode(ctx context.Contex
 func (r *ChannelConnectionRepository) FindAllActive(ctx context.Context) ([]ChannelConnectionDTO, error) {
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
-		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
+		       cc.allows_multiple_listings, cc.sync_zero_stock_as_paused, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
 		       ch.name, ch.code
 		FROM ecom_channel_connections cc
 		JOIN ecom_channels ch ON ch.id = cc.channel_id
@@ -198,7 +208,7 @@ func (r *ChannelConnectionRepository) FindAllActive(ctx context.Context) ([]Chan
 func (r *ChannelConnectionRepository) FindByID(ctx context.Context, id int64) (*ChannelConnectionDTO, error) {
 	query := `
 		SELECT cc.id, cc.channel_id, cc.name, cc.status, cc.environment, cc.currency_id,
-		       cc.allows_multiple_listings, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
+		       cc.allows_multiple_listings, cc.sync_zero_stock_as_paused, cc.created_by, cc.updated_by, cc.created_at, cc.updated_at, cc.deleted_at,
 		       ch.name, ch.code
 		FROM ecom_channel_connections cc
 		LEFT JOIN ecom_channels ch ON ch.id = cc.channel_id
@@ -220,8 +230,8 @@ func (r *ChannelConnectionRepository) FindByID(ctx context.Context, id int64) (*
 
 func (r *ChannelConnectionRepository) Create(ctx context.Context, input CreateChannelConnectionInput) (*ChannelConnectionDTO, error) {
 	query := `
-		INSERT INTO ecom_channel_connections (channel_id, name, status, environment, currency_id, allows_multiple_listings, created_by, updated_by)
-		VALUES (?, ?, ?, ?, ?, ?, ?, NULL)
+		INSERT INTO ecom_channel_connections (channel_id, name, status, environment, currency_id, allows_multiple_listings, sync_zero_stock_as_paused, created_by, updated_by)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)
 	`
 
 	result, err := r.db.ExecContext(ctx,
@@ -232,6 +242,7 @@ func (r *ChannelConnectionRepository) Create(ctx context.Context, input CreateCh
 		input.Environment,
 		input.CurrencyID,
 		input.AllowsMultipleListings,
+		input.SyncZeroStockAsPaused,
 		input.CreatedBy,
 	)
 	if err != nil {
@@ -252,7 +263,7 @@ func (r *ChannelConnectionRepository) Create(ctx context.Context, input CreateCh
 func (r *ChannelConnectionRepository) Update(ctx context.Context, id int64, input UpdateChannelConnectionInput) (*ChannelConnectionDTO, error) {
 	query := `
 		UPDATE ecom_channel_connections
-		SET channel_id = ?, name = ?, status = ?, environment = ?, currency_id = ?, allows_multiple_listings = ?, updated_by = ?
+		SET channel_id = ?, name = ?, status = ?, environment = ?, currency_id = ?, allows_multiple_listings = ?, sync_zero_stock_as_paused = ?, updated_by = ?
 		WHERE id = ? AND deleted_at IS NULL
 	`
 
@@ -264,6 +275,7 @@ func (r *ChannelConnectionRepository) Update(ctx context.Context, id int64, inpu
 		input.Environment,
 		input.CurrencyID,
 		input.AllowsMultipleListings,
+		input.SyncZeroStockAsPaused,
 		input.UpdatedBy,
 		id,
 	)
@@ -325,6 +337,7 @@ func scanChannelConnection(scanner interface{ Scan(dest ...any) error }) (Channe
 		&channelConnection.Environment,
 		&channelConnection.CurrencyID,
 		&channelConnection.AllowsMultipleListings,
+		&channelConnection.SyncZeroStockAsPaused,
 		&channelConnection.CreatedBy,
 		&updatedBy,
 		&channelConnection.CreatedAt,

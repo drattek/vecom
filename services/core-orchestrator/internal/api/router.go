@@ -479,6 +479,7 @@ func NewRouter(
 		// allows it — independent from the MercadoLibre upload/update-price-stock
 		// endpoints)
 		protected.Post("/api/channel-listings/publish", channelListingsHandler.CreateListings)
+		protected.Post("/api/channel-listings/publish-zero-stock-eligibles", channelListingsHandler.PublishZeroStockEligibles)
 		protected.Post("/api/channel-listings/refresh", channelListingsHandler.RefreshListings)
 		protected.Post("/api/channel-listings/resync", channelListingsHandler.ResyncListings)
 

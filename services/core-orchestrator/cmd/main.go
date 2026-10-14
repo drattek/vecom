@@ -363,6 +363,7 @@ func main() {
 		mysqlRepos.CurrenciesRepository,
 		mysqlRepos.CategoriesRepository,
 		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelProductMapRepository,
 		mysqlRepos.ChannelProductCategorySelectionRepository,
 		mysqlRepos.ChannelRepository,

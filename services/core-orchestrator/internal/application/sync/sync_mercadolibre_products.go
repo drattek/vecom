@@ -70,6 +70,14 @@ var (
 	errMissingRequiredMercadoLibreAttributes = errors.New("product is missing MercadoLibre-required attribute values")
 )
 
+// pausedReasonZeroStock is the ecom_channel_product_map.paused_reason value
+// the refresher/upload paths stamp when they put a listing in 'paused' on
+// their own because the connection has sync_zero_stock_as_paused=1 and qty
+// is 0. It is also the only reason that lets a later refresh reactivate the
+// listing automatically once qty > 0 — a listing paused for any other
+// reason (user, nil) is never reactivated by this service.
+const pausedReasonZeroStock = "zero_stock"
+
 // UploadItemInput is one {sku, name, vehicleFitmentId} entry from the
 // request: which local product to pull price/stock/images/brand from, the
 // listing name to use instead of ecom_products.name, and — on connections
@@ -398,7 +406,17 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 	if externalID == "" {
 		return false, nil
 	}
-	if listing.Status == mercadoLibreMapStatusPaused || listing.Status == mercadoLibreMapStatusClosed {
+	if listing.Status == mercadoLibreMapStatusClosed {
+		return false, nil
+	}
+	// A paused listing is left alone except for one case: this service put it
+	// in paused itself (paused_reason='zero_stock') on a prior refresh because
+	// qty hit 0 and the connection had sync_zero_stock_as_paused on. If stock
+	// came back, we reactivate it here. Any other paused listing (user-paused,
+	// unknown reason) is treated like today and skipped — the sync must not
+	// override a human decision.
+	isZeroStockPaused := listing.Status == mercadoLibreMapStatusPaused && derefString(listing.PausedReason) == pausedReasonZeroStock
+	if listing.Status == mercadoLibreMapStatusPaused && !isZeroStockPaused {
 		return false, nil
 	}
 	isUnderReview := listing.Status == mercadoLibreMapStatusUnderReview
@@ -439,6 +457,26 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 	qtyAvailable := 0
 	for _, stock := range stocks {
 		qtyAvailable += stock.AvailableQty
+	}
+
+	// Short-circuit when the listing is already paused by our own zero-stock
+	// gate and stock is still at 0: there is nothing to send to MercadoLibre
+	// (price-only drift on a paused listing isn't worth a PUT), so we just
+	// leave the listing as it is. A price change on a different product would
+	// still have cleared priceOrStockChangedSince above, which is why this
+	// has to be re-checked here after qtyAvailable is computed.
+	if isZeroStockPaused && qtyAvailable <= 0 {
+		return false, nil
+	}
+
+	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
+	if err != nil {
+		return false, fmt.Errorf("error loading connection %d: %w", connectionID, err)
+	}
+
+	shouldPause, err := s.shouldPauseForZeroStock(ctx, connection, product.ID, qtyAvailable)
+	if err != nil {
+		return false, err
 	}
 
 	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
@@ -498,6 +536,35 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 		return false, fmt.Errorf("error updating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
 	}
 
+	// Status transition: either we're about to pause an active listing because
+	// stock dropped to 0 (and the connection opted into that), or we're
+	// reactivating a listing we paused ourselves on a prior refresh now that
+	// stock came back. Every other case keeps the status it already has.
+	nextMapStatus := mercadoLibreMapStatusSynced
+	nextPausedReason := ""
+	switch {
+	case shouldPause && !isZeroStockPaused:
+		if err := s.itemsHandler.UpdateItemStatus(ctx, mercadoLibreInfra.UpdateItemStatusRequest{
+			AccessToken: accessToken,
+			ExternalID:  externalID,
+			Status:      mercadoLibreStatusPaused,
+		}); err != nil {
+			return false, fmt.Errorf("error pausing mercadolibre item %s for product %d: %w", externalID, product.ID, err)
+		}
+		nextMapStatus = mercadoLibreMapStatusPaused
+		nextPausedReason = pausedReasonZeroStock
+		log.Printf("mercadolibre: listing %s paused (zero_stock) for product %d", externalID, product.ID)
+	case isZeroStockPaused && qtyAvailable > 0:
+		if err := s.itemsHandler.UpdateItemStatus(ctx, mercadoLibreInfra.UpdateItemStatusRequest{
+			AccessToken: accessToken,
+			ExternalID:  externalID,
+			Status:      "active",
+		}); err != nil {
+			return false, fmt.Errorf("error reactivating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
+		}
+		log.Printf("mercadolibre: listing %s reactivated (stock back) for product %d", externalID, product.ID)
+	}
+
 	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 		ProductID:          product.ID,
 		ConnectionID:       connectionID,
@@ -505,7 +572,8 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 		ListingTitle:       derefString(listing.ListingTitle),
 		ExternalID:         externalID,
 		ExternalCategoryID: externalCategoryID,
-		Status:             mercadoLibreMapStatusSynced,
+		Status:             nextMapStatus,
+		PausedReason:       nextPausedReason,
 		ActorID:            systemMercadoLibreSyncActorID,
 	}); err != nil {
 		return false, fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)
@@ -531,7 +599,16 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 	if externalID == "" {
 		return false, nil
 	}
-	if listing.Status == mercadoLibreMapStatusPaused || listing.Status == mercadoLibreMapStatusClosed {
+	if listing.Status == mercadoLibreMapStatusClosed {
+		return false, nil
+	}
+	// Resync treats paused the same way Refresh does: left alone unless we
+	// paused it ourselves because of zero stock (see Refresh's doc comment on
+	// isZeroStockPaused). Pictures/attributes are deliberately resent as part
+	// of the usual Resync flow, since reactivating a listing is a good moment
+	// to also refresh them in case anything changed while it was paused.
+	isZeroStockPaused := listing.Status == mercadoLibreMapStatusPaused && derefString(listing.PausedReason) == pausedReasonZeroStock
+	if listing.Status == mercadoLibreMapStatusPaused && !isZeroStockPaused {
 		return false, nil
 	}
 	isUnderReview := listing.Status == mercadoLibreMapStatusUnderReview
@@ -563,6 +640,22 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 	qtyAvailable := 0
 	for _, stock := range stocks {
 		qtyAvailable += stock.AvailableQty
+	}
+
+	// Same short-circuit as Refresh: nothing to send if we're the ones who
+	// paused this (zero_stock) and stock is still at 0.
+	if isZeroStockPaused && qtyAvailable <= 0 {
+		return false, nil
+	}
+
+	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
+	if err != nil {
+		return false, fmt.Errorf("error loading connection %d: %w", connectionID, err)
+	}
+
+	shouldPause, err := s.shouldPauseForZeroStock(ctx, connection, product.ID, qtyAvailable)
+	if err != nil {
+		return false, err
 	}
 
 	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
@@ -629,6 +722,35 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 		}
 	}
 
+	// Same status-transition dance as Refresh: pause if the connection asked
+	// us to and stock just dropped to 0, or reactivate if we had paused it
+	// ourselves and stock came back. Pictures/attributes have already been
+	// resent above regardless.
+	nextMapStatus := mercadoLibreMapStatusSynced
+	nextPausedReason := ""
+	switch {
+	case shouldPause && !isZeroStockPaused:
+		if err := s.itemsHandler.UpdateItemStatus(ctx, mercadoLibreInfra.UpdateItemStatusRequest{
+			AccessToken: accessToken,
+			ExternalID:  externalID,
+			Status:      mercadoLibreStatusPaused,
+		}); err != nil {
+			return false, fmt.Errorf("error pausing mercadolibre item %s for product %d: %w", externalID, product.ID, err)
+		}
+		nextMapStatus = mercadoLibreMapStatusPaused
+		nextPausedReason = pausedReasonZeroStock
+		log.Printf("mercadolibre: resync — listing %s paused (zero_stock) for product %d", externalID, product.ID)
+	case isZeroStockPaused && qtyAvailable > 0:
+		if err := s.itemsHandler.UpdateItemStatus(ctx, mercadoLibreInfra.UpdateItemStatusRequest{
+			AccessToken: accessToken,
+			ExternalID:  externalID,
+			Status:      "active",
+		}); err != nil {
+			return false, fmt.Errorf("error reactivating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
+		}
+		log.Printf("mercadolibre: resync — listing %s reactivated (stock back) for product %d", externalID, product.ID)
+	}
+
 	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 		ProductID:          product.ID,
 		ConnectionID:       connectionID,
@@ -636,13 +758,51 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 		ListingTitle:       derefString(listing.ListingTitle),
 		ExternalID:         externalID,
 		ExternalCategoryID: externalCategoryID,
-		Status:             mercadoLibreMapStatusSynced,
+		Status:             nextMapStatus,
+		PausedReason:       nextPausedReason,
 		ActorID:            systemMercadoLibreSyncActorID,
 	}); err != nil {
 		return false, fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)
 	}
 
 	return true, nil
+}
+
+// shouldPauseForZeroStock answers the one question Refresh/Resync/Upload each
+// ask before deciding whether a listing is eligible for the sync_zero_stock_
+// as_paused flow: the connection must opt in, the product must have 0 total
+// available quantity, and (because a paused listing still carries a cover
+// image to the shopper) it must have an image flagged is_first. Returning
+// false means "treat it as regular stock=qty on an active listing"; true
+// means "publish or keep this listing paused with reason=zero_stock". It
+// deliberately doesn't check price: a product without a price never reaches
+// these paths, since the resolvers already fail earlier.
+func (s *MercadoLibreProductSyncService) shouldPauseForZeroStock(ctx context.Context, conn *mysqlInfra.ChannelConnectionDTO, productID int64, qtyAvailable int) (bool, error) {
+	if conn == nil || !conn.SyncZeroStockAsPaused || qtyAvailable > 0 {
+		return false, nil
+	}
+	hasCover, err := s.productHasCoverImage(ctx, productID)
+	if err != nil {
+		return false, err
+	}
+	return hasCover, nil
+}
+
+// productHasCoverImage reports whether product has at least one non-deleted
+// image flagged is_first — the gate for the sync_zero_stock_as_paused flow,
+// since publishing a listing with no cover picture would just make the
+// paused item look broken to shoppers.
+func (s *MercadoLibreProductSyncService) productHasCoverImage(ctx context.Context, productID int64) (bool, error) {
+	images, err := s.productImagesRepository.FindAllByProductID(ctx, productID)
+	if err != nil {
+		return false, fmt.Errorf("error loading images for product %d: %w", productID, err)
+	}
+	for _, img := range images {
+		if img.IsFirst {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 // hasExistingFitmentListing reports whether existing already contains a row
@@ -1127,6 +1287,31 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 			fmt.Errorf("%w for category %s: %s", errMissingRequiredMercadoLibreAttributes, externalCategoryID, strings.Join(missingRequiredAttributes, ", "))
 	}
 
+	// Decide the publishing status up front: when the connection has
+	// sync_zero_stock_as_paused on and this product has 0 qty + a cover
+	// image, the listing is born paused (status "paused" on MercadoLibre;
+	// paused_reason "zero_stock" on the local map so a later Refresh knows
+	// it's eligible for automatic reactivation when stock comes back).
+	// resolvePriceStockAndToken already enforced price > 0, and createNewItem
+	// already enforced images + brand + category + required attributes above,
+	// so by the time we're here the only variable left is qty.
+	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
+	if err != nil {
+		return "", nil, nil, fmt.Errorf("error loading connection %d: %w", connectionID, err)
+	}
+	shouldPause, err := s.shouldPauseForZeroStock(ctx, connection, product.ID, qtyAvailable)
+	if err != nil {
+		return "", nil, nil, err
+	}
+	initialStatus := ""
+	initialMapStatus := mercadoLibreMapStatusSynced
+	initialPausedReason := ""
+	if shouldPause {
+		initialStatus = mercadoLibreStatusPaused
+		initialMapStatus = mercadoLibreMapStatusPaused
+		initialPausedReason = pausedReasonZeroStock
+	}
+
 	vals := mercadoLibreInfra.CreateItemVals{
 		Price:             finalPrice,
 		AvailableQuantity: qtyAvailable,
@@ -1136,12 +1321,13 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		ListingTypeID:     mercadoLibreItemListingTypeID,
 		CategoryID:        externalCategoryID,
 		OfficialStoreID:   officialStoreID,
+		Status:            initialStatus,
 		FamilyName:        strings.TrimSpace(withNissanOriginalSuffix(product.BrandID, listingName) + " " + brand.Name),
 		Pictures:          pictures,
 		Attributes:        attributes,
 	}
 
-	log.Printf("mercadolibre upload: product %d — calling POST /items", product.ID)
+	log.Printf("mercadolibre upload: product %d — calling POST /items (initial status=%q)", product.ID, initialStatus)
 	created, err := s.itemsHandler.CreateItem(ctx, mercadoLibreInfra.CreateItemRequest{
 		AccessToken: accessToken,
 		Vals:        vals,
@@ -1162,7 +1348,8 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		ListingTitle:       listingName,
 		ExternalID:         created.ID,
 		ExternalCategoryID: created.CategoryID,
-		Status:             mercadoLibreMapStatusSynced,
+		Status:             initialMapStatus,
+		PausedReason:       initialPausedReason,
 		ActorID:            systemMercadoLibreSyncActorID,
 	}); err != nil {
 		return "", nil, nil, fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)
@@ -1656,7 +1843,13 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatus(ctx cont
 			continue
 		}
 
-		if err := s.channelProductMapRepository.UpdateStatus(ctx, item.listing.ID, mappedStatus); err != nil {
+		// This path reflects MercadoLibre's own status back into the map (a
+		// poll of the external listing), so a transition INTO 'paused' here
+		// means someone paused it from MercadoLibre's side, not our
+		// zero-stock gate — tag the reason 'user' so later syncs don't
+		// reactivate it automatically. For every other status UpdateStatus
+		// stores NULL regardless of what we pass.
+		if err := s.channelProductMapRepository.UpdateStatus(ctx, item.listing.ID, mappedStatus, "user"); err != nil {
 			result.Error = fmt.Sprintf("error saving status: %v", err)
 			results = append(results, result)
 			continue

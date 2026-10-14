@@ -231,7 +231,12 @@ func (h *MercadoLibreMigrateSyncItemMeliHandler) Run(w http.ResponseWriter, r *h
 		if existing != nil && existingExternalID == externalID {
 			// Same listing already mapped: only the status is refreshed,
 			// external_id/title/category are left exactly as they are.
-			if err := h.channelProductMapRepo.UpdateStatus(r.Context(), existing.ID, foldedStatus); err != nil {
+			// This is the import-only migration path: whatever paused state the
+			// row carried before this run is a historical artifact, not a
+			// decision this service made — tag any 'paused' back as 'user' so
+			// a later refresh never auto-reactivates a listing a human
+			// deliberately paused on MercadoLibre's side.
+			if err := h.channelProductMapRepo.UpdateStatus(r.Context(), existing.ID, foldedStatus, "user"); err != nil {
 				errorsOut = append(errorsOut, migrateSyncItemMeliErrorEntry{SKU: sku, ExternalID: externalID, Error: fmt.Sprintf("error updating channel product map status: %v", err)})
 				continue
 			}

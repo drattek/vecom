@@ -68,6 +68,51 @@ func (h *ChannelListingsHandler) CreateListings(w http.ResponseWriter, r *http.R
 	json.NewEncoder(w).Encode(result)
 }
 
+type publishZeroStockChannelListingsRequest struct {
+	ConnectionID    int64  `json:"connectionId"`
+	OfficialStoreID *int64 `json:"officialStoreId"`
+}
+
+// PublishZeroStockEligibles accepts a connectionId and publishes every
+// active product on that connection that has a cover image, a price, a
+// brand, a category and zero on-hand stock but no listing yet — the batch
+// behind the "Publicar elegibles sin stock ahora" button. Delegates to
+// channel_listings.PublishZeroStockEligibles, which internally calls
+// CreateListings. Returns the same shape (list of per-SKU outcomes),
+// including an empty list when nothing was eligible.
+func (h *ChannelListingsHandler) PublishZeroStockEligibles(w http.ResponseWriter, r *http.Request) {
+	var req publishZeroStockChannelListingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.service.PublishZeroStockEligibles(r.Context(), channelListingsApp.PublishZeroStockEligiblesInput{
+		ConnectionID:    req.ConnectionID,
+		OfficialStoreID: req.OfficialStoreID,
+	})
+	if err != nil {
+		if errors.Is(err, channelListingsApp.ErrEmptyChannelListingsInput) {
+			writeJSONError(w, http.StatusBadRequest, "connectionId is required")
+			return
+		}
+		if errors.Is(err, channelListingsApp.ErrInvalidChannelConnection) {
+			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
+			return
+		}
+		if errors.Is(err, channelListingsApp.ErrNoPublisherForChannel) {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(result)
+}
+
 type refreshChannelListingsRequest struct {
 	ConnectionID int64 `json:"connectionId"`
 }
