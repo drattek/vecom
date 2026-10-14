@@ -411,7 +411,9 @@ func (s *Service) PublishQueuedProduct(ctx context.Context, productID, connectio
 	if err != nil {
 		return nil, fmt.Errorf("error checking product stock: %w", err)
 	}
-	if availableStock <= 0 {
+	// Mirrors processChainMember's exception: a connection that asked for
+	// zero-stock listings to be published paused is allowed through here too.
+	if availableStock <= 0 && !connection.SyncZeroStockAsPaused {
 		return nil, fmt.Errorf("%w: %s", ErrChannelListingsNotReady, reasonNoStock)
 	}
 
@@ -776,7 +778,12 @@ func (s *Service) processChainMember(ctx context.Context, publisher Publisher, c
 		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, msg)
 		return []ListingOutcome{{SKU: member.SKU, Error: msg}}
 	}
-	if availableStock <= 0 {
+	// A 0-stock product is normally skipped at publish time: there's nothing
+	// a shopper could buy. The exception is a connection that opted into
+	// sync_zero_stock_as_paused — those listings are published paused on
+	// purpose and will reactivate themselves on Refresh when stock comes
+	// back (see sync_mercadolibre_products.go / sync_odoo_products.go).
+	if availableStock <= 0 && !connection.SyncZeroStockAsPaused {
 		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, reasonNoStock)
 		return []ListingOutcome{{SKU: member.SKU, Error: reasonNoStock}}
 	}
