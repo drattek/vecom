@@ -30,10 +30,17 @@ type ChannelProductMapDTO struct {
 	// created under (e.g. MercadoLibre's category_id) — kept here so it can be
 	// diffed against ecom_channel_category_map without re-fetching the
 	// listing from the marketplace.
-	ExternalCategoryID *string    `json:"externalCategoryId,omitempty"`
-	Status             string     `json:"status"`
-	LastSyncedAt       *time.Time `json:"lastSyncedAt,omitempty"`
-	LastError          *string    `json:"lastError,omitempty"`
+	ExternalCategoryID *string `json:"externalCategoryId,omitempty"`
+	Status             string  `json:"status"`
+	// PausedReason records why a 'paused' row is paused: 'user' means an admin
+	// paused it from the dashboard (and later syncs must NOT reactivate it on
+	// their own); 'zero_stock' means the refresher paused it automatically
+	// because the connection has sync_zero_stock_as_paused and qty hit 0 (and
+	// it SHOULD be reactivated when stock comes back). NULL whenever Status
+	// isn't 'paused'.
+	PausedReason *string    `json:"pausedReason,omitempty"`
+	LastSyncedAt *time.Time `json:"lastSyncedAt,omitempty"`
+	LastError    *string    `json:"lastError,omitempty"`
 	CreatedBy          int64      `json:"createdBy"`
 	UpdatedBy          *int64     `json:"updatedBy,omitempty"`
 	CreatedAt          time.Time  `json:"createdAt"`
@@ -59,7 +66,12 @@ type UpsertChannelProductMapInput struct {
 	// on calls — like a price/stock refresh — that don't resolve a category.
 	ExternalCategoryID string
 	Status             string
-	ActorID            int64
+	// PausedReason is optional. Pass "zero_stock" (or "user") when Status is
+	// "paused"; leave empty for every other status — the Upsert writes NULL
+	// whenever Status isn't "paused" so a reactivation path doesn't leave a
+	// stale reason behind.
+	PausedReason string
+	ActorID      int64
 }
 
 type ChannelProductMapRepository struct {
@@ -71,7 +83,7 @@ func NewChannelProductMapRepository(db Querier) *ChannelProductMapRepository {
 }
 
 const channelProductMapColumns = `
-	id, listing_title, product_id, connection_id, vehicle_fitment_id, is_enabled, external_id, external_category_id, status,
+	id, listing_title, product_id, connection_id, vehicle_fitment_id, is_enabled, external_id, external_category_id, status, paused_reason,
 	last_synced_at, last_error, created_by, updated_by, created_at, updated_at, deleted_at
 `
 
@@ -314,11 +326,13 @@ func (r *ChannelProductMapRepository) Upsert(ctx context.Context, input UpsertCh
 		return nil, fmt.Errorf("error loading channel product map: %w", err)
 	}
 
+	pausedReason := pausedReasonForStatus(input.Status, input.PausedReason)
+
 	if existing == nil {
 		query := `
 			INSERT INTO ecom_channel_product_map
-				(product_id, connection_id, vehicle_fitment_id, listing_title, external_id, external_category_id, status, last_synced_at, created_by)
-			VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+				(product_id, connection_id, vehicle_fitment_id, listing_title, external_id, external_category_id, status, paused_reason, last_synced_at, created_by)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
 		`
 
 		result, err := r.db.ExecContext(ctx,
@@ -330,6 +344,7 @@ func (r *ChannelProductMapRepository) Upsert(ctx context.Context, input UpsertCh
 			input.ExternalID,
 			nullableString(input.ExternalCategoryID),
 			input.Status,
+			pausedReason,
 			input.ActorID,
 		)
 		if err != nil {
@@ -346,23 +361,43 @@ func (r *ChannelProductMapRepository) Upsert(ctx context.Context, input UpsertCh
 
 	query := `
 		UPDATE ecom_channel_product_map
-		SET listing_title = ?, external_id = ?, external_category_id = ?, status = ?, last_synced_at = NOW(), last_error = NULL, updated_by = ?
+		SET listing_title = ?, external_id = ?, external_category_id = ?, status = ?, paused_reason = ?, last_synced_at = NOW(), last_error = NULL, updated_by = ?
 		WHERE id = ?
 	`
 
-	if _, err := r.db.ExecContext(ctx, query, nullableString(input.ListingTitle), input.ExternalID, nullableString(input.ExternalCategoryID), input.Status, input.ActorID, existing.ID); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, nullableString(input.ListingTitle), input.ExternalID, nullableString(input.ExternalCategoryID), input.Status, pausedReason, input.ActorID, existing.ID); err != nil {
 		return nil, fmt.Errorf("error updating channel product map: %w", err)
 	}
 
 	return r.findByID(ctx, existing.ID)
 }
 
+// pausedReasonForStatus coerces the (status, pausedReason) pair the caller
+// supplied into the single value we persist, so a reason only ever lives on a
+// row whose status is actually "paused" and a reactivation always clears it.
+// Called from Upsert and SetPausedReason — SetStatus clears it on its own.
+func pausedReasonForStatus(status, pausedReason string) any {
+	if status != "paused" {
+		return nil
+	}
+	switch pausedReason {
+	case "user", "zero_stock":
+		return pausedReason
+	default:
+		return nil
+	}
+}
+
 // UpdateStatus persists a refreshed status for an already-known row (e.g.
 // after polling the marketplace) without touching its title or external id.
-func (r *ChannelProductMapRepository) UpdateStatus(ctx context.Context, id int64, status string) error {
-	query := `UPDATE ecom_channel_product_map SET status = ?, last_synced_at = NOW() WHERE id = ?`
+// Only passes a non-nil paused_reason when the new status is 'paused' AND
+// pausedReason is one of ('user','zero_stock'); every other combination
+// resets the column to NULL so a reactivation never leaves the stale reason
+// of a previous pause lying around.
+func (r *ChannelProductMapRepository) UpdateStatus(ctx context.Context, id int64, status, pausedReason string) error {
+	query := `UPDATE ecom_channel_product_map SET status = ?, paused_reason = ?, last_synced_at = NOW() WHERE id = ?`
 
-	if _, err := r.db.ExecContext(ctx, query, status, id); err != nil {
+	if _, err := r.db.ExecContext(ctx, query, status, pausedReasonForStatus(status, pausedReason), id); err != nil {
 		return fmt.Errorf("error updating channel product map status: %w", err)
 	}
 
@@ -411,6 +446,7 @@ func scanChannelProductMap(scanner interface{ Scan(dest ...any) error }) (Channe
 	var vehicleFitmentID sql.NullInt64
 	var externalID sql.NullString
 	var externalCategoryID sql.NullString
+	var pausedReason sql.NullString
 	var lastSyncedAt sql.NullTime
 	var lastError sql.NullString
 	var updatedBy sql.NullInt64
@@ -426,6 +462,7 @@ func scanChannelProductMap(scanner interface{ Scan(dest ...any) error }) (Channe
 		&externalID,
 		&externalCategoryID,
 		&m.Status,
+		&pausedReason,
 		&lastSyncedAt,
 		&lastError,
 		&m.CreatedBy,
@@ -449,6 +486,9 @@ func scanChannelProductMap(scanner interface{ Scan(dest ...any) error }) (Channe
 	}
 	if externalCategoryID.Valid {
 		m.ExternalCategoryID = &externalCategoryID.String
+	}
+	if pausedReason.Valid {
+		m.PausedReason = &pausedReason.String
 	}
 	if lastSyncedAt.Valid {
 		m.LastSyncedAt = &lastSyncedAt.Time

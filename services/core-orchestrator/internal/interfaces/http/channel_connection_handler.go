@@ -22,6 +22,7 @@ type upsertChannelConnectionRequest struct {
 	Environment            string `json:"environment"`
 	CurrencyID             int64  `json:"currencyId"`
 	AllowsMultipleListings bool   `json:"allowsMultipleListings"`
+	SyncZeroStockAsPaused  bool   `json:"syncZeroStockAsPaused"`
 }
 
 func NewChannelConnectionHandler(service *channelConnectionsApp.ChannelConnectionService) *ChannelConnectionHandler {
@@ -211,5 +212,6 @@ func decodeChannelConnectionRequest(r *http.Request) (channelConnectionsApp.Upse
 		Environment:            body.Environment,
 		CurrencyID:             body.CurrencyID,
 		AllowsMultipleListings: body.AllowsMultipleListings,
+		SyncZeroStockAsPaused:  body.SyncZeroStockAsPaused,
 	}, nil
 }

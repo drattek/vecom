@@ -55,10 +55,16 @@ type CreateItemVals struct {
 	// must reach MercadoLibre as an explicit "official_store_id": null
 	// rather than being left out of the payload entirely, since the two are
 	// not guaranteed to behave the same way on MercadoLibre's side.
-	OfficialStoreID *int64          `json:"official_store_id"`
-	FamilyName      string          `json:"family_name"`
-	Pictures        []ItemPicture   `json:"pictures"`
-	Attributes      []ItemAttribute `json:"attributes"`
+	OfficialStoreID *int64 `json:"official_store_id"`
+	// Status seeds the listing's initial state. Omitted (empty) is the usual
+	// case and MercadoLibre defaults it to "active"; set to "paused" when the
+	// caller wants the listing to come up suspended out of the gate (e.g.
+	// publishing a product that has pictures + full data but zero stock, see
+	// the sync_zero_stock_as_paused flag on ecom_channel_connections).
+	Status     string          `json:"status,omitempty"`
+	FamilyName string          `json:"family_name"`
+	Pictures   []ItemPicture   `json:"pictures"`
+	Attributes []ItemAttribute `json:"attributes"`
 }
 
 type CreateItemRequest struct {

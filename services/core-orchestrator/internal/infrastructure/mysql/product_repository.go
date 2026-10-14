@@ -425,6 +425,80 @@ func (r *ProductRepository) FindReadyForListingPage(ctx context.Context, afterID
 	return ready, nil
 }
 
+// ZeroStockEligibleProduct is the subset of ecom_products the "publicar
+// elegibles sin stock" button needs: just the id + sku + name, enough for
+// channel_listings.CreateListings to resolve the batch.
+type ZeroStockEligibleProduct struct {
+	ID   int64
+	SKU  string
+	Name string
+}
+
+// FindZeroStockEligibleForConnection lists active products that have
+// everything the sync_zero_stock_as_paused flow needs — a cover image, a
+// price (any price list), a brand, a category — but no listing yet on
+// connectionID and no stock on hand. A positive limit caps the result (used
+// for the dashboard's "probar con N artículos" button); limit <= 0 means
+// no cap.
+func (r *ProductRepository) FindZeroStockEligibleForConnection(ctx context.Context, connectionID int64, limit int) ([]ZeroStockEligibleProduct, error) {
+	query := `
+		SELECT p.id, p.sku, p.name
+		FROM ecom_products p
+		WHERE p.deleted_at IS NULL
+		  AND p.status = 'active'
+		  AND p.is_sellable = 1
+		  AND p.category_id IS NOT NULL
+		  AND p.brand_id IS NOT NULL
+		  AND EXISTS (
+		        SELECT 1 FROM ecom_product_images pi
+		        WHERE pi.product_id = p.id AND pi.is_first = 1 AND pi.deleted_at IS NULL
+		      )
+		  AND EXISTS (
+		        SELECT 1 FROM ecom_product_prices pp
+		        WHERE pp.product_id = p.id
+		      )
+		  AND COALESCE((
+		        SELECT SUM(ps.available_qty) FROM ecom_product_stock ps
+		        WHERE ps.product_id = p.id
+		      ), 0) <= 0
+		  AND NOT EXISTS (
+		        SELECT 1 FROM ecom_channel_product_map cpm
+		        WHERE cpm.product_id = p.id
+		          AND cpm.connection_id = ?
+		          AND cpm.deleted_at IS NULL
+		      )
+		ORDER BY p.id ASC
+	`
+	args := []any{connectionID}
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("error querying zero-stock-eligible products for connection %d: %w", connectionID, err)
+	}
+	defer rows.Close()
+
+	out := make([]ZeroStockEligibleProduct, 0)
+	for rows.Next() {
+		var p ZeroStockEligibleProduct
+		var sku sql.NullString
+		var name sql.NullString
+		if err := rows.Scan(&p.ID, &sku, &name); err != nil {
+			return nil, fmt.Errorf("error scanning zero-stock-eligible product: %w", err)
+		}
+		p.SKU = sku.String
+		p.Name = name.String
+		out = append(out, p)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating zero-stock-eligible products: %w", err)
+	}
+	return out, nil
+}
+
 func (r *ProductRepository) Create(ctx context.Context, input CreateProductInput) (*ProductDTO, error) {
 	query := `
 		INSERT INTO ecom_products (

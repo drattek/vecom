@@ -237,12 +237,17 @@ func (h *ProductsHandler) UpdateProduct(ctx context.Context, req UpdateProductRe
 }
 
 // UpdateProductPriceStockVals is the payload for a price/stock-only refresh
-// (see UpdateProductPriceStock) — deliberately just these two fields, unlike
-// UpdateProductVals, so a routine refresh never touches name/weight/volume/
-// category already curated in Odoo.
+// (see UpdateProductPriceStock) — plus a narrow opt-in sale_ok flip for the
+// sync_zero_stock_as_paused flow: a routine refresh still leaves sale_ok
+// alone (SaleOK nil → omitempty drops the field), the Odoo connection with
+// the zero-stock-as-paused toggle passes false when qty=0 (visible but not
+// buyable) and true when stock comes back. Deliberately NO
+// name/weight/volume/category here — those stay with OdooProductSyncService
+// .update's full flow.
 type UpdateProductPriceStockVals struct {
 	QtyAvailable float64 `json:"qty_available"`
 	ListPrice    float64 `json:"list_price"`
+	SaleOK       *bool   `json:"sale_ok,omitempty"`
 }
 
 type UpdateProductPriceStockRequest struct {

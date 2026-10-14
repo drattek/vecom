@@ -253,6 +253,66 @@ func (s *Service) RegisterFullRefresher(channelCode string, fullRefresher FullRe
 	s.fullRefreshers[normalizeChannelCode(channelCode)] = fullRefresher
 }
 
+// PublishZeroStockEligiblesInput is the body for the "publicar elegibles sin
+// stock" button: only connectionId is required — the service queries
+// ecom_products itself for every active product with a cover image, a
+// price, a brand, a category, and zero on-hand stock that hasn't been listed
+// yet on that connection, and feeds them into CreateListings. The actual
+// pause/sale_ok=false stamping happens inside each channel's own sync
+// service (sync_zero_stock_as_paused on the connection must be true for the
+// stamping to kick in; the button itself doesn't check the flag, so an
+// admin can still use it to force-publish eligible SKUs on a connection
+// that chose not to auto-stamp pause them).
+type PublishZeroStockEligiblesInput struct {
+	ConnectionID int64
+	// OfficialStoreID flows through to Publish exactly like CreateListings'
+	// own OfficialStoreID.
+	OfficialStoreID *int64
+	// Limit caps how many eligible SKUs are picked up on this call. 0
+	// (default) processes every eligible SKU; a positive value (e.g. 10 from
+	// the dashboard's "probar con 10 artículos" button) short-cuts a dry
+	// run before committing to the full backlog.
+	Limit int
+}
+
+// PublishZeroStockEligibles resolves the connection's channel, looks up every
+// SKU that qualifies (see ProductRepository.FindZeroStockEligibleForConnection),
+// and delegates to CreateListings. The response mirrors CreateListings' own —
+// one ListingOutcome per SKU — so the admin dashboard can show the exact
+// counts and per-SKU errors. An empty eligible list is reported with
+// ErrEmptyChannelListingsInput, so the UI can tell "no eligibles" from a
+// bad connection id.
+func (s *Service) PublishZeroStockEligibles(ctx context.Context, input PublishZeroStockEligiblesInput) (*CreateListingsResult, error) {
+	if input.ConnectionID <= 0 {
+		return nil, ErrEmptyChannelListingsInput
+	}
+
+	eligibles, err := s.productRepository.FindZeroStockEligibleForConnection(ctx, input.ConnectionID, input.Limit)
+	if err != nil {
+		return nil, fmt.Errorf("error loading zero-stock-eligible products for connection %d: %w", input.ConnectionID, err)
+	}
+	if len(eligibles) == 0 {
+		return &CreateListingsResult{Results: []ListingOutcome{}}, nil
+	}
+
+	skus := make([]string, 0, len(eligibles))
+	for _, p := range eligibles {
+		if p.SKU == "" {
+			continue
+		}
+		skus = append(skus, p.SKU)
+	}
+	if len(skus) == 0 {
+		return &CreateListingsResult{Results: []ListingOutcome{}}, nil
+	}
+
+	return s.CreateListings(ctx, CreateListingsInput{
+		ConnectionID:    input.ConnectionID,
+		SKUs:            skus,
+		OfficialStoreID: input.OfficialStoreID,
+	})
+}
+
 // CreateListings cleans input.SKUs (trims/strips whitespace, drops
 // duplicates and blanks), resolves input.ConnectionID's channel, and creates
 // one new listing per SKU — or, on a connection with

@@ -25,6 +25,7 @@ type UpsertChannelConnectionInput struct {
 	Environment            string
 	CurrencyID             int64
 	AllowsMultipleListings bool
+	SyncZeroStockAsPaused  bool
 }
 
 func NewChannelConnectionService(db *sql.DB, repository *mysqlInfra.ChannelConnectionRepository) *ChannelConnectionService {
@@ -76,6 +77,7 @@ func (s *ChannelConnectionService) CreateChannelConnection(ctx context.Context, 
 		Environment:            normalized.Environment,
 		CurrencyID:             normalized.CurrencyID,
 		AllowsMultipleListings: normalized.AllowsMultipleListings,
+		SyncZeroStockAsPaused:  normalized.SyncZeroStockAsPaused,
 		CreatedBy:              actorID,
 	})
 	if err != nil {
@@ -105,6 +107,7 @@ func (s *ChannelConnectionService) UpdateChannelConnection(ctx context.Context, 
 		Environment:            normalized.Environment,
 		CurrencyID:             normalized.CurrencyID,
 		AllowsMultipleListings: normalized.AllowsMultipleListings,
+		SyncZeroStockAsPaused:  normalized.SyncZeroStockAsPaused,
 		UpdatedBy:              actorID,
 	})
 	if err != nil {
