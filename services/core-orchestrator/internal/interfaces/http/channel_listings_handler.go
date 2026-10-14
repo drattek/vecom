@@ -71,6 +71,7 @@ func (h *ChannelListingsHandler) CreateListings(w http.ResponseWriter, r *http.R
 type publishZeroStockChannelListingsRequest struct {
 	ConnectionID    int64  `json:"connectionId"`
 	OfficialStoreID *int64 `json:"officialStoreId"`
+	Limit           int    `json:"limit"`
 }
 
 // PublishZeroStockEligibles accepts a connectionId and publishes every
@@ -90,6 +91,7 @@ func (h *ChannelListingsHandler) PublishZeroStockEligibles(w http.ResponseWriter
 	result, err := h.service.PublishZeroStockEligibles(r.Context(), channelListingsApp.PublishZeroStockEligiblesInput{
 		ConnectionID:    req.ConnectionID,
 		OfficialStoreID: req.OfficialStoreID,
+		Limit:           req.Limit,
 	})
 	if err != nil {
 		if errors.Is(err, channelListingsApp.ErrEmptyChannelListingsInput) {

@@ -437,10 +437,10 @@ type ZeroStockEligibleProduct struct {
 // FindZeroStockEligibleForConnection lists active products that have
 // everything the sync_zero_stock_as_paused flow needs — a cover image, a
 // price (any price list), a brand, a category — but no listing yet on
-// connectionID and no stock on hand. It never caps the result: the dashboard
-// confirms the count with the user before enqueuing the batch, so returning
-// 10 or 10,000 is up to the caller.
-func (r *ProductRepository) FindZeroStockEligibleForConnection(ctx context.Context, connectionID int64) ([]ZeroStockEligibleProduct, error) {
+// connectionID and no stock on hand. A positive limit caps the result (used
+// for the dashboard's "probar con N artículos" button); limit <= 0 means
+// no cap.
+func (r *ProductRepository) FindZeroStockEligibleForConnection(ctx context.Context, connectionID int64, limit int) ([]ZeroStockEligibleProduct, error) {
 	query := `
 		SELECT p.id, p.sku, p.name
 		FROM ecom_products p
@@ -469,8 +469,13 @@ func (r *ProductRepository) FindZeroStockEligibleForConnection(ctx context.Conte
 		      )
 		ORDER BY p.id ASC
 	`
+	args := []any{connectionID}
+	if limit > 0 {
+		query += " LIMIT ?"
+		args = append(args, limit)
+	}
 
-	rows, err := r.db.QueryContext(ctx, query, connectionID)
+	rows, err := r.db.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("error querying zero-stock-eligible products for connection %d: %w", connectionID, err)
 	}

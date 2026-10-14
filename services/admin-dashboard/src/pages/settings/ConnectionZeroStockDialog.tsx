@@ -76,10 +76,11 @@ export function ConnectionZeroStockDialog({ connection, open, onOpenChange }: Co
     })
 
     const publishEligibles = useMutation({
-        mutationFn: async () => {
+        mutationFn: async (limit: number) => {
             if (!connection) throw new Error("no connection")
             const response = await apiClient.post("/api/channel-listings/publish-zero-stock-eligibles", {
                 connectionId: connection.id,
+                limit,
             })
             return publishZeroStockResponseSchema.parse(response.data)
         },
@@ -150,14 +151,27 @@ export function ConnectionZeroStockDialog({ connection, open, onOpenChange }: Co
                         tomas en el toggle de arriba).
                     </p>
 
-                    <Button
-                        className="mt-3"
-                        variant="outline"
-                        disabled={publishEligibles.isPending}
-                        onClick={() => publishEligibles.mutate()}
-                    >
-                        {publishEligibles.isPending ? "Publicando..." : "Publicar elegibles"}
-                    </Button>
+                    <div className="mt-3 flex flex-wrap gap-2">
+                        <Button
+                            variant="outline"
+                            disabled={publishEligibles.isPending}
+                            onClick={() => publishEligibles.mutate(10)}
+                            title="Procesa a lo más 10 SKUs — ideal para una prueba rápida antes de correr todo el backlog."
+                        >
+                            {publishEligibles.isPending ? "Publicando..." : "Probar con 10"}
+                        </Button>
+                        <Button
+                            variant="default"
+                            disabled={publishEligibles.isPending}
+                            onClick={() => {
+                                if (confirm("Se publicarán todos los elegibles sin stock. ¿Continuar?")) {
+                                    publishEligibles.mutate(0)
+                                }
+                            }}
+                        >
+                            {publishEligibles.isPending ? "Publicando..." : "Publicar todos"}
+                        </Button>
+                    </div>
 
                     {publishResult ? (
                         <div className="mt-3 text-xs">

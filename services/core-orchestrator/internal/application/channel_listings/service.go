@@ -268,6 +268,11 @@ type PublishZeroStockEligiblesInput struct {
 	// OfficialStoreID flows through to Publish exactly like CreateListings'
 	// own OfficialStoreID.
 	OfficialStoreID *int64
+	// Limit caps how many eligible SKUs are picked up on this call. 0
+	// (default) processes every eligible SKU; a positive value (e.g. 10 from
+	// the dashboard's "probar con 10 artículos" button) short-cuts a dry
+	// run before committing to the full backlog.
+	Limit int
 }
 
 // PublishZeroStockEligibles resolves the connection's channel, looks up every
@@ -282,7 +287,7 @@ func (s *Service) PublishZeroStockEligibles(ctx context.Context, input PublishZe
 		return nil, ErrEmptyChannelListingsInput
 	}
 
-	eligibles, err := s.productRepository.FindZeroStockEligibleForConnection(ctx, input.ConnectionID)
+	eligibles, err := s.productRepository.FindZeroStockEligibleForConnection(ctx, input.ConnectionID, input.Limit)
 	if err != nil {
 		return nil, fmt.Errorf("error loading zero-stock-eligible products for connection %d: %w", input.ConnectionID, err)
 	}
