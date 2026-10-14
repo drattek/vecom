@@ -41,11 +41,11 @@ type ChannelProductMapDTO struct {
 	PausedReason *string    `json:"pausedReason,omitempty"`
 	LastSyncedAt *time.Time `json:"lastSyncedAt,omitempty"`
 	LastError    *string    `json:"lastError,omitempty"`
-	CreatedBy          int64      `json:"createdBy"`
-	UpdatedBy          *int64     `json:"updatedBy,omitempty"`
-	CreatedAt          time.Time  `json:"createdAt"`
-	UpdatedAt          time.Time  `json:"updatedAt"`
-	DeletedAt          *time.Time `json:"deletedAt,omitempty"`
+	CreatedBy    int64      `json:"createdBy"`
+	UpdatedBy    *int64     `json:"updatedBy,omitempty"`
+	CreatedAt    time.Time  `json:"createdAt"`
+	UpdatedAt    time.Time  `json:"updatedAt"`
+	DeletedAt    *time.Time `json:"deletedAt,omitempty"`
 }
 
 // UpsertChannelProductMapInput records (or refreshes) the external id a
@@ -401,6 +401,15 @@ func (r *ChannelProductMapRepository) UpdateStatus(ctx context.Context, id int64
 		return fmt.Errorf("error updating channel product map status: %w", err)
 	}
 
+	return nil
+}
+
+// SetLastError stamps the most recent refresh/resync failure on a row
+// without touching its status. Upsert clears it on the next success.
+func (r *ChannelProductMapRepository) SetLastError(ctx context.Context, id int64, message string) error {
+	if _, err := r.db.ExecContext(ctx, `UPDATE ecom_channel_product_map SET last_error = ? WHERE id = ?`, nullableString(message), id); err != nil {
+		return fmt.Errorf("error setting channel product map last_error: %w", err)
+	}
 	return nil
 }
 

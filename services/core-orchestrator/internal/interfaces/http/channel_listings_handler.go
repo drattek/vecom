@@ -3,9 +3,13 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"log"
 	"net/http"
+	"strconv"
+	"strings"
 
 	channelListingsApp "core-orchestrator/internal/application/channel_listings"
+	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
 
 type ChannelListingsHandler struct {
@@ -197,4 +201,69 @@ func (h *ChannelListingsHandler) ResyncListings(w http.ResponseWriter, r *http.R
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	json.NewEncoder(w).Encode(result)
+}
+
+// ListListings backs the "Publicaciones" screen: every listing on a channel
+// (live map rows + products whose last publish attempt failed), with a
+// human-facing state and per-state counts.
+// Query: channelCode (required), connectionId, state, withError, search,
+// offset, pageSize.
+func (h *ChannelListingsHandler) ListListings(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	channelCode := strings.TrimSpace(q.Get("channelCode"))
+	if channelCode == "" {
+		writeJSONError(w, http.StatusBadRequest, "channelCode is required")
+		return
+	}
+	connectionID, _ := strconv.ParseInt(q.Get("connectionId"), 10, 64)
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	pageSize, _ := strconv.Atoi(q.Get("pageSize"))
+	withError := q.Get("withError") == "true" || q.Get("withError") == "1"
+
+	result, err := h.service.ListListingsView(r.Context(), mysqlInfra.ListingViewFilter{
+		ChannelCode:  channelCode,
+		ConnectionID: connectionID,
+		State:        strings.TrimSpace(q.Get("state")),
+		WithError:    withError,
+		Search:       q.Get("search"),
+		Offset:       offset,
+		PageSize:     pageSize,
+	})
+	if err != nil {
+		log.Printf("channel listings view: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
+// ListingHistory returns every recorded event (publish attempts, refreshes,
+// pauses, reactivations, marketplace status changes) for one
+// (productId, connectionId, vehicleFitmentId) listing, newest first.
+func (h *ChannelListingsHandler) ListingHistory(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	productID, _ := strconv.ParseInt(q.Get("productId"), 10, 64)
+	connectionID, _ := strconv.ParseInt(q.Get("connectionId"), 10, 64)
+	var fitmentID *int64
+	if raw := strings.TrimSpace(q.Get("vehicleFitmentId")); raw != "" {
+		if v, err := strconv.ParseInt(raw, 10, 64); err == nil && v > 0 {
+			fitmentID = &v
+		}
+	}
+
+	events, err := h.service.ListingHistory(r.Context(), productID, connectionID, fitmentID)
+	if err != nil {
+		if errors.Is(err, channelListingsApp.ErrInvalidProductID) || errors.Is(err, channelListingsApp.ErrInvalidChannelConnection) {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		log.Printf("channel listings history: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"events": events})
 }

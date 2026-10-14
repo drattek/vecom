@@ -7,6 +7,7 @@ import {
   LayoutDashboardIcon,
   LogOutIcon,
   Settings,
+  ShoppingBagIcon,
   UserRoundIcon,
   UsersIcon,
 } from 'lucide-react'
@@ -73,6 +74,11 @@ const sidebarItems: SidebarItem[] = [
     title: 'Productos',
     path: '/products',
     icon: BoxIcon,
+  },
+  {
+    title: 'MercadoLibre',
+    path: '/meli',
+    icon: ShoppingBagIcon,
   },
   {
     title: 'Configuración',
@@ -159,6 +165,39 @@ export function AppSidebar() {
                 const isActive =
                   location.pathname === item.path ||
                   location.pathname.startsWith(`${item.path}/`)
+
+                if (item.path === '/meli') {
+                  return (
+                    <Collapsible
+                      key={item.path}
+                      defaultOpen={isActive}
+                      className="group/collapsible"
+                      render={<SidebarMenuItem />}
+                    >
+                      <CollapsibleTrigger
+                        render={
+                          <SidebarMenuButton isActive={isActive} tooltip={item.title}>
+                            <Icon />
+                            <span>{item.title}</span>
+                            <ChevronRightIcon className="ml-auto transition-transform data-panel-open:rotate-90" />
+                          </SidebarMenuButton>
+                        }
+                      />
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              render={<Link to="/meli/listings" />}
+                              isActive={location.pathname === '/meli/listings'}
+                            >
+                              <span>Publicaciones</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )
+                }
 
                 if (item.path === '/products') {
                   return (

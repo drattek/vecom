@@ -482,6 +482,8 @@ func NewRouter(
 		// a batch of skus, one per vehicle compatibility when the connection
 		// allows it — independent from the MercadoLibre upload/update-price-stock
 		// endpoints)
+		protected.Get("/api/channel-listings", channelListingsHandler.ListListings)
+		protected.Get("/api/channel-listings/history", channelListingsHandler.ListingHistory)
 		protected.Post("/api/channel-listings/publish", channelListingsHandler.CreateListings)
 		protected.Post("/api/channel-listings/publish-zero-stock-eligibles", channelListingsHandler.PublishZeroStockEligibles)
 		protected.Post("/api/channel-listings/refresh", channelListingsHandler.RefreshListings)

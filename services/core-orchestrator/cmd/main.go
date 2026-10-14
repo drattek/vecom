@@ -398,6 +398,7 @@ func main() {
 		mysqlRepos.ProductVehicleCompatibilityRepository,
 		mysqlRepos.VehicleFitmentsRepository,
 		mysqlRepos.PartNumberSupersessionsRepository,
+		mysqlRepos.ChannelListingEventsRepository,
 	)
 	channelListingsService.Register("MERCADOLIBRE", mercadoLibreProductSyncService)
 	channelListingsService.Register("ODOO", odooProductSyncService)

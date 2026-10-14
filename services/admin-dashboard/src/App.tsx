@@ -23,6 +23,7 @@ import { ProductCompatibilitiesSection } from './pages/product-detail/ProductCom
 import { ProductSyncSection } from './pages/product-detail/ProductSyncSection.tsx'
 import { ProfilePage } from './pages/ProfilePage.tsx'
 import { UsersPage } from './pages/UsersPage.tsx'
+import { MeliListingsPage } from './pages/meli/MeliListingsPage.tsx'
 import { ProtectedLayout } from './layouts/ProtectedLayout.tsx'
 import { TooltipProvider } from './components/ui/tooltip.tsx'
 import { ChannelsPage } from './pages/settings/ChannelsPage.tsx'
@@ -56,6 +57,8 @@ function AppRoutes() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/users" element={<UsersPage />} />
+        <Route path="/meli" element={<Navigate to="/meli/listings" replace />} />
+        <Route path="/meli/listings" element={<MeliListingsPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/products/pending" element={<ProductsPendingPage />} />
         <Route path="/products/channels/:channelId" element={<ProductsChannelPage />}>

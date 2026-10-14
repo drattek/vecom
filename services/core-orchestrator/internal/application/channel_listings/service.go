@@ -193,6 +193,7 @@ type Service struct {
 	productVehicleCompatibilityRepository *mysqlInfra.ProductVehicleCompatibilityRepository
 	vehicleFitmentsRepository             *mysqlInfra.VehicleFitmentsRepository
 	partNumberSupersessionsRepository     *mysqlInfra.PartNumberSupersessionsRepository
+	listingEventsRepository               *mysqlInfra.ChannelListingEventsRepository
 	publishers                            map[string]Publisher
 	refreshers                            map[string]Refresher
 	fullRefreshers                        map[string]FullRefresher
@@ -210,6 +211,7 @@ func NewService(
 	productVehicleCompatibilityRepository *mysqlInfra.ProductVehicleCompatibilityRepository,
 	vehicleFitmentsRepository *mysqlInfra.VehicleFitmentsRepository,
 	partNumberSupersessionsRepository *mysqlInfra.PartNumberSupersessionsRepository,
+	listingEventsRepository *mysqlInfra.ChannelListingEventsRepository,
 ) *Service {
 	return &Service{
 		db:                                    db,
@@ -223,6 +225,7 @@ func NewService(
 		productVehicleCompatibilityRepository: productVehicleCompatibilityRepository,
 		vehicleFitmentsRepository:             vehicleFitmentsRepository,
 		partNumberSupersessionsRepository:     partNumberSupersessionsRepository,
+		listingEventsRepository:               listingEventsRepository,
 		publishers:                            make(map[string]Publisher),
 		refreshers:                            make(map[string]Refresher),
 		fullRefreshers:                        make(map[string]FullRefresher),
@@ -525,9 +528,11 @@ func (s *Service) RefreshListings(ctx context.Context, input RefreshListingsInpu
 	}
 
 	if syncer, ok := refresher.(StatusSyncer); ok {
+		before, _ := s.channelProductMapRepository.FindAllByConnectionID(ctx, input.ConnectionID)
 		if err := syncer.SyncListingStatus(ctx, input.ConnectionID); err != nil {
 			return nil, fmt.Errorf("error syncing listing status for connection %d: %w", input.ConnectionID, err)
 		}
+		s.recordStatusSyncChanges(ctx, input.ConnectionID, before)
 	}
 
 	listings, err := s.channelProductMapRepository.FindAllByConnectionID(ctx, input.ConnectionID)
@@ -569,7 +574,11 @@ func (s *Service) refreshOne(ctx context.Context, refresher Refresher, listing *
 	updated, err := refresher.Refresh(ctx, product, listing.ConnectionID, listing)
 	if err != nil {
 		outcome.Error = err.Error()
+		s.recordListingFailure(ctx, listing, mysqlInfra.ListingEventRefresh, err)
 		return outcome
+	}
+	if updated {
+		s.recordListingChange(ctx, listing, mysqlInfra.ListingEventRefresh, "precio/stock actualizado")
 	}
 
 	outcome.Updated = updated
@@ -662,7 +671,11 @@ func (s *Service) resyncOne(ctx context.Context, fullRefresher FullRefresher, li
 	updated, err := fullRefresher.Resync(ctx, product, listing.ConnectionID, listing)
 	if err != nil {
 		outcome.Error = err.Error()
+		s.recordListingFailure(ctx, listing, mysqlInfra.ListingEventResync, err)
 		return outcome
+	}
+	if updated {
+		s.recordListingChange(ctx, listing, mysqlInfra.ListingEventResync, "resincronización completa")
 	}
 
 	outcome.Updated = updated
@@ -785,6 +798,7 @@ func (s *Service) processChainMember(ctx context.Context, publisher Publisher, c
 	// back (see sync_mercadolibre_products.go / sync_odoo_products.go).
 	if availableStock <= 0 && !connection.SyncZeroStockAsPaused {
 		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, reasonNoStock)
+		s.recordPublishError(ctx, member.ID, connection.ID, nil, reasonNoStock)
 		return []ListingOutcome{{SKU: member.SKU, Error: reasonNoStock}}
 	}
 
@@ -792,10 +806,12 @@ func (s *Service) processChainMember(ctx context.Context, publisher Publisher, c
 	if err != nil {
 		msg := fmt.Sprintf("error checking product images: %v", err)
 		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, msg)
+		s.recordPublishError(ctx, member.ID, connection.ID, nil, msg)
 		return []ListingOutcome{{SKU: member.SKU, Error: msg}}
 	}
 	if !hasImage {
 		log.Printf("channel_listings: publish sku=%s connection=%d skipped: %s", member.SKU, connection.ID, reasonNoImage)
+		s.recordPublishError(ctx, member.ID, connection.ID, nil, reasonNoImage)
 		return []ListingOutcome{{SKU: member.SKU, Error: reasonNoImage}}
 	}
 
@@ -910,13 +926,41 @@ func (s *Service) publishOne(ctx context.Context, publisher Publisher, product *
 		return outcome
 	}
 
+	statusBefore := ""
+	if existing != nil {
+		statusBefore = existing.Status
+	}
+
 	externalID, missingRequiredAttributes, missingOptionalAttributes, err := publisher.Publish(ctx, product, connectionID, title, vehicleFitmentID, imageSourceProductID, officialStoreID)
 	if err != nil {
 		outcome.Error = err.Error()
 		log.Printf("channel_listings: publish sku=%s connection=%d %s failed: %v", product.SKU, connectionID, fitmentLabel, err)
+		s.recordEvent(ctx, mysqlInfra.RecordListingEventInput{
+			ProductID: product.ID, ConnectionID: connectionID, VehicleFitmentID: vehicleFitmentID,
+			Action: mysqlInfra.ListingEventPublish, Outcome: mysqlInfra.ListingEventError,
+			StatusBefore: statusBefore, Message: err.Error(),
+		})
 		return outcome
 	}
 	log.Printf("channel_listings: publish sku=%s connection=%d %s ok, externalId=%s", product.SKU, connectionID, fitmentLabel, externalID)
+
+	created, _ := s.channelProductMapRepository.FindByProductConnectionAndFitment(ctx, product.ID, connectionID, vehicleFitmentID)
+	successEvent := mysqlInfra.RecordListingEventInput{
+		ProductID: product.ID, ConnectionID: connectionID, VehicleFitmentID: vehicleFitmentID,
+		ExternalID: externalID, Action: mysqlInfra.ListingEventPublish, Outcome: mysqlInfra.ListingEventSuccess,
+		StatusBefore: statusBefore, Message: "publicado: " + title,
+	}
+	if created != nil {
+		successEvent.ChannelProductMapID = &created.ID
+		successEvent.StatusAfter = created.Status
+		if created.Status == "paused" && derefStr(created.PausedReason) == "zero_stock" {
+			successEvent.Message = "publicado pausado (sin stock): " + title
+		}
+	}
+	if len(missingOptionalAttributes) > 0 {
+		successEvent.Message += " · atributos opcionales faltantes: " + strings.Join(missingOptionalAttributes, ", ")
+	}
+	s.recordEvent(ctx, successEvent)
 
 	outcome.Success = true
 	outcome.ExternalID = externalID
@@ -997,4 +1041,122 @@ func fitmentListingTitle(productName, vehicleBrandName string, fitment *mysqlInf
 
 func normalizeChannelCode(code string) string {
 	return strings.ToUpper(strings.TrimSpace(code))
+}
+
+// --- Bitácora de eventos (ecom_channel_listing_events) ---------------------
+//
+// Ningún fallo al escribir la bitácora interrumpe el flujo de publicación:
+// se loguea y se sigue. La bitácora es append-only (ver la migración
+// 2026-10-14_channel_listing_events.sql).
+
+func (s *Service) recordEvent(ctx context.Context, in mysqlInfra.RecordListingEventInput) {
+	if s.listingEventsRepository == nil {
+		return
+	}
+	if err := s.listingEventsRepository.Record(ctx, in); err != nil {
+		log.Printf("channel_listings: no se pudo registrar evento %s/%s product=%d connection=%d: %v", in.Action, in.Outcome, in.ProductID, in.ConnectionID, err)
+	}
+}
+
+func (s *Service) recordPublishError(ctx context.Context, productID, connectionID int64, vehicleFitmentID *int64, message string) {
+	s.recordEvent(ctx, mysqlInfra.RecordListingEventInput{
+		ProductID: productID, ConnectionID: connectionID, VehicleFitmentID: vehicleFitmentID,
+		Action: mysqlInfra.ListingEventPublish, Outcome: mysqlInfra.ListingEventError, Message: message,
+	})
+}
+
+// recordListingFailure logs a refresh/resync error and stamps it as the
+// row's last_error (status untouched).
+func (s *Service) recordListingFailure(ctx context.Context, listing *mysqlInfra.ChannelProductMapDTO, action string, err error) {
+	if setErr := s.channelProductMapRepository.SetLastError(ctx, listing.ID, err.Error()); setErr != nil {
+		log.Printf("channel_listings: no se pudo guardar last_error en map %d: %v", listing.ID, setErr)
+	}
+	s.recordEvent(ctx, mysqlInfra.RecordListingEventInput{
+		ProductID: listing.ProductID, ConnectionID: listing.ConnectionID, VehicleFitmentID: listing.VehicleFitmentID,
+		ChannelProductMapID: &listing.ID, ExternalID: derefStr(listing.ExternalID),
+		Action: action, Outcome: mysqlInfra.ListingEventError, StatusBefore: listing.Status, StatusAfter: listing.Status,
+		Message: err.Error(),
+	})
+}
+
+// recordListingChange logs a successful refresh/resync. When the row's
+// status changed in the process (zero-stock pause / reactivation) it is
+// logged as pause/reactivate instead, so the history reads naturally.
+func (s *Service) recordListingChange(ctx context.Context, listing *mysqlInfra.ChannelProductMapDTO, action, message string) {
+	after, err := s.channelProductMapRepository.FindByProductConnectionAndFitment(ctx, listing.ProductID, listing.ConnectionID, listing.VehicleFitmentID)
+	statusAfter := listing.Status
+	if err == nil && after != nil {
+		statusAfter = after.Status
+	}
+	switch {
+	case statusAfter == "paused" && listing.Status != "paused":
+		action = mysqlInfra.ListingEventPause
+		message = "pausado: sin stock disponible"
+	case listing.Status == "paused" && statusAfter != "paused":
+		action = mysqlInfra.ListingEventReactivate
+		message = "reactivado: regresó el stock"
+	}
+	s.recordEvent(ctx, mysqlInfra.RecordListingEventInput{
+		ProductID: listing.ProductID, ConnectionID: listing.ConnectionID, VehicleFitmentID: listing.VehicleFitmentID,
+		ChannelProductMapID: &listing.ID, ExternalID: derefStr(listing.ExternalID),
+		Action: action, Outcome: mysqlInfra.ListingEventSuccess, StatusBefore: listing.Status, StatusAfter: statusAfter,
+		Message: message,
+	})
+}
+
+// recordStatusSyncChanges diffs every row's status before/after the
+// marketplace status pull and logs each change (e.g. MercadoLibre moved a
+// listing to under_review, or someone paused it from MercadoLibre).
+func (s *Service) recordStatusSyncChanges(ctx context.Context, connectionID int64, before []mysqlInfra.ChannelProductMapDTO) {
+	if len(before) == 0 {
+		return
+	}
+	after, err := s.channelProductMapRepository.FindAllByConnectionID(ctx, connectionID)
+	if err != nil {
+		return
+	}
+	prev := make(map[int64]string, len(before))
+	for _, l := range before {
+		prev[l.ID] = l.Status
+	}
+	for i := range after {
+		l := &after[i]
+		old, ok := prev[l.ID]
+		if !ok || old == l.Status {
+			continue
+		}
+		s.recordEvent(ctx, mysqlInfra.RecordListingEventInput{
+			ProductID: l.ProductID, ConnectionID: l.ConnectionID, VehicleFitmentID: l.VehicleFitmentID,
+			ChannelProductMapID: &l.ID, ExternalID: derefStr(l.ExternalID),
+			Action: mysqlInfra.ListingEventStatusSync, Outcome: mysqlInfra.ListingEventSuccess,
+			StatusBefore: old, StatusAfter: l.Status,
+			Message: fmt.Sprintf("el marketplace cambió el estado: %s → %s", old, l.Status),
+		})
+	}
+}
+
+// ListListingsView backs GET /api/channel-listings.
+func (s *Service) ListListingsView(ctx context.Context, filter mysqlInfra.ListingViewFilter) (*mysqlInfra.PaginatedListingView, error) {
+	if strings.TrimSpace(filter.ChannelCode) == "" {
+		return nil, ErrNoPublisherForChannel
+	}
+	return s.listingEventsRepository.FindListingsView(ctx, filter)
+}
+
+// ListingHistory backs GET /api/channel-listings/history.
+func (s *Service) ListingHistory(ctx context.Context, productID, connectionID int64, vehicleFitmentID *int64) ([]mysqlInfra.ListingEventDTO, error) {
+	if productID <= 0 {
+		return nil, ErrInvalidProductID
+	}
+	if connectionID <= 0 {
+		return nil, ErrInvalidChannelConnection
+	}
+	return s.listingEventsRepository.FindByListing(ctx, productID, connectionID, vehicleFitmentID, 500)
+}
+
+func derefStr(s *string) string {
+	if s == nil {
+		return ""
+	}
+	return *s
 }
