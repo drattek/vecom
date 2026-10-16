@@ -36,6 +36,8 @@ import { useState } from "react"
 import { ZodError } from "zod"
 
 const SEARCH_PAGE_SIZE = 8
+// Cuántos resultados más se piden cada vez que se pulsa "Mostrar más".
+const SEARCH_PAGE_STEP = 20
 const MAX_EQUIPMENT_SELECTION = 10
 
 type Kind = "vehicle" | "equipment"
@@ -289,6 +291,33 @@ function ResultList<T extends { id: number; productCount: number }>({
     )
 }
 
+/**
+ * Cantidad de resultados a pedir: crece de a SEARCH_PAGE_STEP con "Mostrar más"
+ * y vuelve a SEARCH_PAGE_SIZE cuando cambia la búsqueda (se guarda junto con el
+ * texto al que pertenece, sin efectos).
+ */
+function useGrowingPageSize(query: string) {
+    const [grown, setGrown] = useState({ query, size: SEARCH_PAGE_SIZE })
+    const size = grown.query === query ? grown.size : SEARCH_PAGE_SIZE
+    return { size, showMore: () => setGrown({ query, size: size + SEARCH_PAGE_STEP }) }
+}
+
+function ShowMore({ shown, total, onMore, noun }: { shown: number; total: number; onMore: () => void; noun: string }) {
+    if (total <= shown) {
+        return null
+    }
+    return (
+        <div className="flex items-center justify-between gap-2">
+            <p className="text-xs text-muted-foreground">
+                Mostrando {shown} de {total} {noun}. Afina la búsqueda o muestra más.
+            </p>
+            <Button type="button" variant="outline" size="sm" onClick={onMore}>
+                Mostrar más
+            </Button>
+        </div>
+    )
+}
+
 function ErrorLine({ message }: { message: string | null }) {
     if (!message) {
         return null
@@ -321,8 +350,9 @@ function VehiclePanel({
     const [error, setError] = useState<string | null>(null)
 
     const debouncedQuery = useDebouncedValue(query)
+    const pageSize = useGrowingPageSize(debouncedQuery)
     const search = useVehicleFitments(
-        { q: debouncedQuery, brandId: null, offset: 0, pageSize: SEARCH_PAGE_SIZE },
+        { q: debouncedQuery, brandId: null, offset: 0, pageSize: pageSize.size },
         mode === "search",
     )
     const findOrCreate = useFindOrCreateVehicleFitment()
@@ -388,11 +418,12 @@ function VehiclePanel({
                             renderPrimary={(item) => `${item.brandName} ${item.model}`}
                             renderSecondary={(item) => formatYearRange(item.yearStart, item.yearEnd)}
                         />
-                        {search.data && search.data.total > SEARCH_PAGE_SIZE ? (
-                            <p className="text-xs text-muted-foreground">
-                                Mostrando {SEARCH_PAGE_SIZE} de {search.data.total}. Afina la búsqueda para ver otros.
-                            </p>
-                        ) : null}
+                        <ShowMore
+                            shown={search.data?.fitments.length ?? 0}
+                            total={search.data?.total ?? 0}
+                            onMore={pageSize.showMore}
+                            noun="vehículos"
+                        />
                     </>
                 ) : (
                     <VehicleFitmentFields draft={draft} onChange={setDraft} disabled={isPending} />
@@ -514,8 +545,9 @@ function EquipmentPanel({
     const [error, setError] = useState<string | null>(null)
 
     const debouncedQuery = useDebouncedValue(query)
+    const pageSize = useGrowingPageSize(debouncedQuery)
     const search = useEquipmentFitments(
-        { q: debouncedQuery, brandId: null, equipmentTypeId: null, offset: 0, pageSize: SEARCH_PAGE_SIZE },
+        { q: debouncedQuery, brandId: null, equipmentTypeId: null, offset: 0, pageSize: pageSize.size },
         mode === "search",
     )
     const findOrCreate = useFindOrCreateEquipmentFitment()
@@ -615,11 +647,12 @@ function EquipmentPanel({
                             onRemove={(id) => setSelected(selected.filter((item) => item.id !== id))}
                             onClear={() => setSelected([])}
                         />
-                        {search.data && search.data.total > SEARCH_PAGE_SIZE ? (
-                            <p className="text-xs text-muted-foreground">
-                                Mostrando {SEARCH_PAGE_SIZE} de {search.data.total}. Afina la búsqueda para ver otras.
-                            </p>
-                        ) : null}
+                        <ShowMore
+                            shown={search.data?.fitments.length ?? 0}
+                            total={search.data?.total ?? 0}
+                            onMore={pageSize.showMore}
+                            noun="maquinarias"
+                        />
                     </>
                 ) : (
                     <EquipmentFitmentFields draft={draft} onChange={setDraft} disabled={isPending} />
