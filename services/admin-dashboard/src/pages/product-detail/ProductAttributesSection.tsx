@@ -153,6 +153,9 @@ function AttributesChecklistCard({
     const connections = useChannelConnections()
     const general = useProductSection(productId, "general", productGeneralSchema)
     const [pickedConnectionId, setPickedConnectionId] = useState<number | null>(readStoredConnectionId)
+    // Permite reabrir el selector aunque la conexión ya tenga categoría (p. ej.
+    // para republicar bajo otra). Se cierra al guardar o al cambiar de conexión.
+    const [changingCategory, setChangingCategory] = useState(false)
 
     // Si el usuario no eligió nada, usar la primera conexión disponible.
     const connectionId = pickedConnectionId ?? connections.data?.[0]?.id ?? null
@@ -165,6 +168,7 @@ function AttributesChecklistCard({
             return
         }
         setPickedConnectionId(id)
+        setChangingCategory(false)
         try {
             localStorage.setItem(STORAGE_KEY, String(id))
         } catch {
@@ -224,7 +228,7 @@ function AttributesChecklistCard({
                 <SectionState state="loading" />
             ) : checklist.isError || !checklist.data ? (
                 <SectionState state="error" message="No se pudo cargar el checklist de atributos." />
-            ) : checklist.data.state === "needs_selection" && connectionId != null ? (
+            ) : (checklist.data.state === "needs_selection" || changingCategory) && connectionId != null ? (
                 <div className="flex flex-col gap-3">
                     <p className="text-sm text-muted-foreground">
                         Elegí la categoría de {checklist.data.channelName} para esta conexión — es lo que habilita
@@ -235,10 +239,27 @@ function AttributesChecklistCard({
                         connectionId={connectionId}
                         channelCode={selectedConnection?.channelCode ?? ""}
                         productName={general.data?.name}
+                        onSaved={() => setChangingCategory(false)}
                     />
+                    {changingCategory ? (
+                        <Button size="sm" variant="outline" className="self-start" onClick={() => setChangingCategory(false)}>
+                            Cancelar
+                        </Button>
+                    ) : null}
                 </div>
             ) : (
                 <div className="flex flex-col gap-4">
+                    {checklist.data.externalCategoryId != null ? (
+                        <div className="flex flex-wrap items-center gap-2 text-sm">
+                            <span className="text-muted-foreground">Categoría:</span>
+                            <span className="font-medium">
+                                {checklist.data.externalCategoryName ?? checklist.data.externalCategoryId}
+                            </span>
+                            <Button size="sm" variant="outline" onClick={() => setChangingCategory(true)}>
+                                Cambiar categoría
+                            </Button>
+                        </div>
+                    ) : null}
                     {checklist.data.attributeScope === "product" ? (
                         <p className="text-sm text-muted-foreground">
                             Atributos de este producto para {checklist.data.channelName}. Agregá los que necesites — cada
@@ -301,11 +322,13 @@ function CategorySelector({
     connectionId,
     channelCode,
     productName,
+    onSaved,
 }: {
     productId?: string
     connectionId: number
     channelCode: string
     productName?: string
+    onSaved?: () => void
 }) {
     const isMercadoLibre = channelCode === MERCADOLIBRE_CHANNEL_CODE
     const [showTree, setShowTree] = useState(!isMercadoLibre)
@@ -320,6 +343,10 @@ function CategorySelector({
         mutation.mutate(
             { connectionId, externalCategoryId },
             {
+                onSuccess: () => {
+                    setPickingExternalId(null)
+                    onSaved?.()
+                },
                 onError: (error) => {
                     setErrorMessage(getServerErrorMessage(error, "No se pudo guardar la categoría."))
                     setPickingExternalId(null)
