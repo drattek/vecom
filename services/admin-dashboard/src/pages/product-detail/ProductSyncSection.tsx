@@ -2,7 +2,15 @@ import { Badge, Field, FieldError, SectionCard, SectionState } from "@/component
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { getServerErrorMessage } from "@/lib/api"
-import { formatDate, useAttributeChecklist, useProductSection, usePublishChannelListing, useResyncChannelListing } from "@/lib/product-detail"
+import {
+    formatDate,
+    useAttributeChecklist,
+    useChannelConnections,
+    useCloseChannelListings,
+    useProductSection,
+    usePublishChannelListing,
+    useResyncChannelListing,
+} from "@/lib/product-detail"
 import {
     productGeneralSchema,
     productSyncSectionSchema,
@@ -44,6 +52,14 @@ const statusTones: Record<string, "neutral" | "success" | "warning" | "muted"> =
 // publishOne en channel_listings/service.go) —, así que no debe ocultar el
 // botón "Publicar".
 const CLOSED_STATUS = "closed"
+
+// ecom_channels.code de MercadoLibre — único canal con cierre de publicaciones
+// (POST /api/channel-listings/close) para republicar tras un cambio de categoría.
+const MERCADOLIBRE_CHANNEL_CODE = "MERCADOLIBRE"
+
+// Estados de una publicación que "Resincronizar" puede dar de baja y reemplazar
+// cuando cambió la categoría. Las activas (synced) y en cola nunca.
+const REPLACEABLE_STATUSES = new Set(["paused", "under_review", "closed"])
 
 function isClosedListing(listing: SyncListing): boolean {
     return listing.status === CLOSED_STATUS
@@ -159,7 +175,12 @@ function ConnectionCard({
                     {/* Resincronizar solo actualiza publicaciones existentes: sin
                         ninguna no hace nada. */}
                     {activeListings.length > 0 ? (
-                        <ResyncButton productId={productId} connectionId={connection.connectionId} />
+                        <ResyncButton
+                            productId={productId}
+                            sku={sku}
+                            connectionId={connection.connectionId}
+                            listings={activeListings}
+                        />
                     ) : null}
                     {closedListings.length > 0 ? (
                         <ClosedListingsNotice
@@ -366,15 +387,57 @@ function PublishButton({
  * título/categoría en Odoo), no solo precio/stock como el worker
  * automático.
  */
-function ResyncButton({ productId, connectionId }: { productId?: string; connectionId: number }) {
-    const mutation = useResyncChannelListing(productId)
+function ResyncButton({
+    productId,
+    sku,
+    connectionId,
+    listings,
+}: {
+    productId?: string
+    sku?: string
+    connectionId: number
+    listings: SyncListing[]
+}) {
+    const resyncMutation = useResyncChannelListing(productId)
+    const closeMutation = useCloseChannelListings(productId)
+    const publishMutation = usePublishChannelListing(productId)
+    const connections = useChannelConnections()
+    const checklist = useAttributeChecklist(productId, connectionId)
     const [outcomes, setOutcomes] = useState<RefreshOutcome[] | null>(null)
+    const [notes, setNotes] = useState<string[]>([])
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
+    const [isReplacing, setIsReplacing] = useState(false)
+
+    const isMercadoLibre =
+        connections.data?.find((connection) => connection.id === connectionId)?.channelCode === MERCADOLIBRE_CHANNEL_CODE
+    const selectedCategoryId = checklist.data?.externalCategoryId ?? null
+
+    // Publicaciones de MercadoLibre que están pausadas / en revisión / cerradas
+    // bajo una categoría distinta a la elegida ahora: no se pueden corregir
+    // (ML no deja cambiar la categoría de un ítem), así que se dan de baja y se
+    // crean nuevas. Las activas (synced) nunca se tocan desde acá.
+    const staleListings =
+        isMercadoLibre && selectedCategoryId
+            ? listings.filter(
+                  (listing) =>
+                      REPLACEABLE_STATUSES.has(listing.status) &&
+                      listing.externalCategoryId != null &&
+                      listing.externalCategoryId !== selectedCategoryId,
+              )
+            : []
+    const replacesListings = staleListings.length > 0 && Boolean(sku)
+
+    const isPending = resyncMutation.isPending || isReplacing
 
     function resync() {
         setOutcomes(null)
+        setNotes([])
         setErrorMessage(null)
-        mutation.mutate(
+        if (replacesListings) {
+            void replaceStaleListings()
+            return
+        }
+        resyncMutation.mutate(
             { connectionId },
             {
                 onSuccess: (result) => setOutcomes(result.results),
@@ -383,11 +446,71 @@ function ResyncButton({ productId, connectionId }: { productId?: string; connect
         )
     }
 
+    // Cierra las publicaciones desfasadas y publica de nuevo con la categoría
+    // elegida; si quedan otras publicaciones vivas, las resincroniza al final.
+    async function replaceStaleListings() {
+        if (!sku) {
+            return
+        }
+        setIsReplacing(true)
+        const lines: string[] = []
+        try {
+            const closed = await closeMutation.mutateAsync({
+                connectionId,
+                listingIds: staleListings.map((listing) => listing.id),
+            })
+            for (const result of closed.results) {
+                lines.push(
+                    result.error
+                        ? `Error al cerrar${result.externalId ? ` ${result.externalId}` : ""}: ${result.error}`
+                        : `Publicación${result.externalId ? ` ${result.externalId}` : ""} cerrada.`,
+                )
+            }
+
+            const published = await publishMutation.mutateAsync({ connectionId, sku })
+            for (const result of published.results) {
+                lines.push(
+                    result.error
+                        ? `Error al publicar: ${result.error}`
+                        : result.skipped
+                          ? "Ya existía una publicación vigente (no se creó una nueva)."
+                          : `Publicado${result.title ? ` como «${result.title}»` : ""}${result.externalId ? ` (${result.externalId})` : ""}.`,
+                )
+            }
+
+            const staleIds = new Set(staleListings.map((listing) => listing.id))
+            if (listings.some((listing) => !staleIds.has(listing.id))) {
+                const resynced = await resyncMutation.mutateAsync({ connectionId })
+                setOutcomes(resynced.results)
+            }
+        } catch (error) {
+            setErrorMessage(getServerErrorMessage(error, "No se pudo reemplazar las publicaciones."))
+        } finally {
+            setNotes(lines)
+            setIsReplacing(false)
+        }
+    }
+
     return (
         <div className="flex flex-col items-start gap-2">
-            <Button size="sm" variant="outline" onClick={resync} disabled={mutation.isPending || !productId}>
-                {mutation.isPending ? "Resincronizando…" : "Resincronizar"}
+            {replacesListings ? (
+                <p className="text-xs text-muted-foreground">
+                    La categoría cambió: al resincronizar se darán de baja {staleListings.length} publicación(es) (
+                    pausadas, en revisión o cerradas) y se crearán nuevas con la categoría elegida.
+                </p>
+            ) : null}
+            <Button size="sm" variant="outline" onClick={resync} disabled={isPending || !productId}>
+                {isPending ? "Resincronizando…" : replacesListings ? "Resincronizar y republicar" : "Resincronizar"}
             </Button>
+            {notes.length > 0 ? (
+                <ul className="flex w-full max-w-md flex-col gap-1 text-left text-xs text-muted-foreground">
+                    {notes.map((note, index) => (
+                        <li key={index} className={note.startsWith("Error") ? "text-destructive" : undefined}>
+                            {note}
+                        </li>
+                    ))}
+                </ul>
+            ) : null}
             {outcomes ? <ResyncOutcomes outcomes={outcomes} /> : null}
             <FieldError message={errorMessage} />
         </div>

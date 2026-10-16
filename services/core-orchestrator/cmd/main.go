@@ -406,6 +406,7 @@ func main() {
 	channelListingsService.RegisterRefresher("MERCADOLIBRE", mercadoLibreProductSyncService)
 	channelListingsService.RegisterRefresher("ODOO", odooProductSyncService)
 	channelListingsService.RegisterFullRefresher("MERCADOLIBRE", mercadoLibreProductSyncService)
+	channelListingsService.RegisterCloser("MERCADOLIBRE", mercadoLibreProductSyncService)
 	channelListingsService.RegisterFullRefresher("ODOO", odooProductSyncService)
 
 	// Listing discovery: once a day scans every product that is ready to

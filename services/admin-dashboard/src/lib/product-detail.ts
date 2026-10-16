@@ -17,6 +17,7 @@ import {
     productImageImportResultSchema,
     productVideoImportResponseSchema,
     productVideoImportResultSchema,
+    closeListingsResultSchema,
     resyncListingsResultSchema,
     type BrandOption,
     type CategoryPrediction,
@@ -277,6 +278,29 @@ export function useResyncChannelListing(productId: string | undefined) {
                 { timeout: PUBLISH_LISTING_TIMEOUT_MS },
             )
             return resyncListingsResultSchema.parse(response.data)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId, "sync"] })
+        },
+    })
+}
+
+/**
+ * useCloseChannelListings cierra en el marketplace las publicaciones indicadas
+ * (solo paused/under_review; las closed no necesitan llamada). Es el primer
+ * paso de "Resincronizar" cuando cambió la categoría: una vez cerradas, el
+ * siguiente "publicar" crea publicaciones nuevas en vez de saltarlas.
+ */
+export function useCloseChannelListings(productId: string | undefined) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (input: { connectionId: number; listingIds: number[] }) => {
+            const response = await apiClient.post(
+                "/api/channel-listings/close",
+                { connectionId: input.connectionId, productId: Number(productId), listingIds: input.listingIds },
+                { timeout: PUBLISH_LISTING_TIMEOUT_MS },
+            )
+            return closeListingsResultSchema.parse(response.data)
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["product-details", productId, "sync"] })

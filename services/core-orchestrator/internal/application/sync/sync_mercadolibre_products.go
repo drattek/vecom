@@ -768,6 +768,36 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 	return true, nil
 }
 
+// CloseListing sets listing's item to "closed" on MercadoLibre and records the
+// row as closed locally, so the next publish creates a fresh listing for it
+// (channel_listings.publishOne ignores closed rows). The caller decides which
+// rows are eligible; only the marketplace call or the local write can fail.
+func (s *MercadoLibreProductSyncService) CloseListing(ctx context.Context, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) error {
+	externalID := strings.TrimSpace(derefString(listing.ExternalID))
+	if externalID == "" {
+		return fmt.Errorf("listing %d has no external id", listing.ID)
+	}
+
+	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
+	if err != nil {
+		return fmt.Errorf("error getting mercadolibre access token: %w", err)
+	}
+
+	if err := s.itemsHandler.UpdateItemStatus(ctx, mercadoLibreInfra.UpdateItemStatusRequest{
+		AccessToken: accessToken,
+		ExternalID:  externalID,
+		Status:      "closed",
+	}); err != nil {
+		return fmt.Errorf("error closing mercadolibre item %s: %w", externalID, err)
+	}
+
+	if err := s.channelProductMapRepository.UpdateStatus(ctx, listing.ID, mercadoLibreMapStatusClosed, ""); err != nil {
+		return fmt.Errorf("mercadolibre item %s closed but local status not saved: %w", externalID, err)
+	}
+
+	return nil
+}
+
 // shouldPauseForZeroStock answers the one question Refresh/Resync/Upload each
 // ask before deciding whether a listing is eligible for the sync_zero_stock_
 // as_paused flow: the connection must opt in, the product must have 0 total

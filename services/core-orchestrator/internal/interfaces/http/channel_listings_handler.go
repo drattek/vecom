@@ -203,6 +203,52 @@ func (h *ChannelListingsHandler) ResyncListings(w http.ResponseWriter, r *http.R
 	json.NewEncoder(w).Encode(result)
 }
 
+type closeChannelListingsRequest struct {
+	ProductID    int64   `json:"productId"`
+	ConnectionID int64   `json:"connectionId"`
+	ListingIDs   []int64 `json:"listingIds"`
+}
+
+// CloseListings closes on the marketplace the given listings (ids of
+// ecom_channel_product_map) of a (product, connection) pair — only paused,
+// under_review or closed ones — so a following publish creates new listings
+// (e.g. after the external category changed). Driven by the "Resincronizar"
+// button on the product's Sincronización view.
+func (h *ChannelListingsHandler) CloseListings(w http.ResponseWriter, r *http.Request) {
+	var req closeChannelListingsRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+	if len(req.ListingIDs) == 0 {
+		writeJSONError(w, http.StatusBadRequest, "listingIds is required")
+		return
+	}
+
+	result, err := h.service.CloseProductListings(r.Context(), channelListingsApp.CloseListingsInput{
+		ProductID:    req.ProductID,
+		ConnectionID: req.ConnectionID,
+		ListingIDs:   req.ListingIDs,
+	})
+	if err != nil {
+		switch {
+		case errors.Is(err, channelListingsApp.ErrInvalidProductID):
+			writeJSONError(w, http.StatusBadRequest, "invalid productId")
+		case errors.Is(err, channelListingsApp.ErrInvalidChannelConnection):
+			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
+		case errors.Is(err, channelListingsApp.ErrNoCloserForChannel):
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+		default:
+			writeJSONError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	json.NewEncoder(w).Encode(result)
+}
+
 // ListListings backs the "Publicaciones" screen: every listing on a channel
 // (live map rows + products whose last publish attempt failed), with a
 // human-facing state and per-state counts.

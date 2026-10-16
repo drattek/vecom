@@ -67,6 +67,7 @@ var (
 	ErrNoPublisherForChannel     = errors.New("no listing publisher registered for this connection's channel")
 	ErrNoRefresherForChannel     = errors.New("no listing refresher registered for this connection's channel")
 	ErrNoFullRefresherForChannel = errors.New("no full resync refresher registered for this connection's channel")
+	ErrNoCloserForChannel        = errors.New("no listing closer registered for this connection's channel")
 	ErrInvalidProductID          = errors.New("invalid productId")
 	// ErrChannelListingsNotReady is returned by PublishQueuedProduct, wrapped
 	// with reasonNoStock, when the product has lost its stock between being
@@ -139,6 +140,15 @@ type FullRefresher interface {
 	Resync(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error)
 }
 
+// Closer is implemented by marketplace sync services that can end a
+// published listing for good (MercadoLibre today, duck-typed like Publisher/
+// Refresher). CloseListing closes listing on the marketplace and leaves its
+// ecom_channel_product_map row at status 'closed', which publishOne treats as
+// "no listing" so the next publish creates a fresh one.
+type Closer interface {
+	CloseListing(ctx context.Context, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) error
+}
+
 // ListingOutcome reports what happened for one (sku, vehicleFitmentId)
 // combination. A batch never fails wholesale on one bad entry.
 type ListingOutcome struct {
@@ -197,6 +207,7 @@ type Service struct {
 	publishers                            map[string]Publisher
 	refreshers                            map[string]Refresher
 	fullRefreshers                        map[string]FullRefresher
+	closers                               map[string]Closer
 }
 
 func NewService(
@@ -229,6 +240,7 @@ func NewService(
 		publishers:                            make(map[string]Publisher),
 		refreshers:                            make(map[string]Refresher),
 		fullRefreshers:                        make(map[string]FullRefresher),
+		closers:                               make(map[string]Closer),
 	}
 }
 
@@ -254,6 +266,12 @@ func (s *Service) RegisterRefresher(channelCode string, refresher Refresher) {
 // services implement both today.
 func (s *Service) RegisterFullRefresher(channelCode string, fullRefresher FullRefresher) {
 	s.fullRefreshers[normalizeChannelCode(channelCode)] = fullRefresher
+}
+
+// RegisterCloser associates a Closer with a channel code
+// (ecom_channels.code, matched case-insensitively).
+func (s *Service) RegisterCloser(channelCode string, closer Closer) {
+	s.closers[normalizeChannelCode(channelCode)] = closer
 }
 
 // PublishZeroStockEligiblesInput is the body for the "publicar elegibles sin
@@ -681,6 +699,112 @@ func (s *Service) resyncOne(ctx context.Context, fullRefresher FullRefresher, li
 	outcome.Updated = updated
 	outcome.Skipped = !updated
 	return outcome
+}
+
+// CloseListingsInput names the rows (ids of ecom_channel_product_map) of
+// (ProductID, ConnectionID) to close — used by the product's Sincronización
+// view when the external category was changed and the old listings must be
+// replaced by new ones.
+type CloseListingsInput struct {
+	ProductID    int64
+	ConnectionID int64
+	ListingIDs   []int64
+}
+
+// CloseOutcome reports what happened for one requested listing. Closed is
+// true when the row ended up 'closed' (including one that already was);
+// Error carries the failure otherwise and leaves the row as it was.
+type CloseOutcome struct {
+	ListingID  int64  `json:"listingId"`
+	ExternalID string `json:"externalId,omitempty"`
+	Closed     bool   `json:"closed"`
+	Error      string `json:"error,omitempty"`
+}
+
+type CloseListingsResult struct {
+	Results []CloseOutcome `json:"results"`
+}
+
+// CloseProductListings closes, on the marketplace, the requested listings of
+// (product, connection) — but only those in status paused, under_review or
+// closed (an active/synced listing is never closed from here; it is reported
+// as an error). A row already closed needs no marketplace call. One failure
+// doesn't stop the rest.
+func (s *Service) CloseProductListings(ctx context.Context, input CloseListingsInput) (*CloseListingsResult, error) {
+	if input.ProductID <= 0 {
+		return nil, ErrInvalidProductID
+	}
+	if input.ConnectionID <= 0 {
+		return nil, ErrInvalidChannelConnection
+	}
+
+	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
+			return nil, ErrInvalidChannelConnection
+		}
+		return nil, fmt.Errorf("error loading connection %d: %w", input.ConnectionID, err)
+	}
+
+	channel, err := s.channelRepository.FindByID(ctx, connection.ChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
+	}
+
+	closer, ok := s.closers[normalizeChannelCode(channel.Code)]
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrNoCloserForChannel, channel.Code)
+	}
+
+	listings, err := s.channelProductMapRepository.FindAllByProductAndConnection(ctx, input.ProductID, input.ConnectionID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading channel product map for product %d, connection %d: %w", input.ProductID, input.ConnectionID, err)
+	}
+
+	byID := make(map[int64]*mysqlInfra.ChannelProductMapDTO, len(listings))
+	for i := range listings {
+		byID[listings[i].ID] = &listings[i]
+	}
+
+	results := make([]CloseOutcome, 0, len(input.ListingIDs))
+	for _, id := range input.ListingIDs {
+		outcome := CloseOutcome{ListingID: id}
+		listing, found := byID[id]
+		if !found {
+			outcome.Error = "listing not found for this product and connection"
+			results = append(results, outcome)
+			continue
+		}
+		outcome.ExternalID = derefStr(listing.ExternalID)
+
+		switch listing.Status {
+		case channelProductMapStatusClosed:
+			outcome.Closed = true
+		case "paused", "under_review":
+			if outcome.ExternalID == "" {
+				outcome.Error = "listing has no external id"
+				break
+			}
+			if err := closer.CloseListing(ctx, input.ConnectionID, listing); err != nil {
+				outcome.Error = err.Error()
+				s.recordListingFailure(ctx, listing, mysqlInfra.ListingEventStatusSync, err)
+				break
+			}
+			outcome.Closed = true
+			s.recordEvent(ctx, mysqlInfra.RecordListingEventInput{
+				ProductID: listing.ProductID, ConnectionID: listing.ConnectionID, VehicleFitmentID: listing.VehicleFitmentID,
+				ChannelProductMapID: &listing.ID, ExternalID: outcome.ExternalID,
+				Action: mysqlInfra.ListingEventStatusSync, Outcome: mysqlInfra.ListingEventSuccess,
+				StatusBefore: listing.Status, StatusAfter: channelProductMapStatusClosed,
+				Message: "cerrado para republicar con otra categoría",
+			})
+		default:
+			outcome.Error = fmt.Sprintf("only paused, under_review or closed listings can be closed (status is %q)", listing.Status)
+		}
+		results = append(results, outcome)
+	}
+
+	return &CloseListingsResult{Results: results}, nil
 }
 
 // resolveSuccessionChain returns product and every other product connected

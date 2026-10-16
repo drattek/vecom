@@ -517,6 +517,23 @@ export const resyncListingsResultSchema = z.object({
   results: z.array(refreshOutcomeSchema),
 })
 
+// Cerrar publicaciones en el marketplace (paso previo de "Resincronizar" cuando
+// cambió la categoría) — POST /api/channel-listings/close con
+// { connectionId, productId, listingIds }. Solo cierra paused/under_review;
+// una fila ya closed cuenta como cerrada sin llamar al marketplace.
+export const closeOutcomeSchema = z.object({
+  listingId: z.number(),
+  externalId: z.string().optional().default(''),
+  closed: z.boolean().optional().default(false),
+  error: z.string().optional().default(''),
+})
+
+export const closeListingsResultSchema = z.object({
+  results: z.array(closeOutcomeSchema),
+})
+
+export type CloseOutcome = z.infer<typeof closeOutcomeSchema>
+
 export type RefreshOutcome = z.infer<typeof refreshOutcomeSchema>
 export type ResyncListingsResult = z.infer<typeof resyncListingsResultSchema>
 
