@@ -1,5 +1,6 @@
 import { useState, type ComponentType } from 'react'
 import {
+  BarChart3Icon,
   BoxIcon,
   ChevronRightIcon,
   ChevronsUpDownIcon,
@@ -79,6 +80,11 @@ const sidebarItems: SidebarItem[] = [
     title: 'MercadoLibre',
     path: '/meli',
     icon: ShoppingBagIcon,
+  },
+  {
+    title: 'Reportes',
+    path: '/reports',
+    icon: BarChart3Icon,
   },
   {
     title: 'Configuración',
@@ -189,6 +195,39 @@ export function AppSidebar() {
                             <SidebarMenuSubButton
                               render={<Link to="/meli/listings" />}
                               isActive={location.pathname === '/meli/listings'}
+                            >
+                              <span>Publicaciones</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
+                        </SidebarMenuSub>
+                      </CollapsibleContent>
+                    </Collapsible>
+                  )
+                }
+
+                if (item.path === '/reports') {
+                  return (
+                    <Collapsible
+                      key={item.path}
+                      defaultOpen={isActive}
+                      className="group/collapsible"
+                      render={<SidebarMenuItem />}
+                    >
+                      <CollapsibleTrigger
+                        render={
+                          <SidebarMenuButton isActive={isActive} tooltip={item.title}>
+                            <Icon />
+                            <span>{item.title}</span>
+                            <ChevronRightIcon className="ml-auto transition-transform data-panel-open:rotate-90" />
+                          </SidebarMenuButton>
+                        }
+                      />
+                      <CollapsibleContent>
+                        <SidebarMenuSub>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              render={<Link to="/reports/publications" />}
+                              isActive={location.pathname === '/reports/publications'}
                             >
                               <span>Publicaciones</span>
                             </SidebarMenuSubButton>

@@ -23,6 +23,7 @@ import (
 	channelConfigApp "core-orchestrator/internal/application/channel_config"
 	channelConnectionsService "core-orchestrator/internal/application/channel_connections"
 	channelListingsApp "core-orchestrator/internal/application/channel_listings"
+	reportsApp "core-orchestrator/internal/application/reports"
 	channelsService "core-orchestrator/internal/application/channels"
 	compatibilityApp "core-orchestrator/internal/application/compatibility"
 	credService "core-orchestrator/internal/application/credentials"
@@ -481,6 +482,7 @@ func main() {
 	productVehicleCompatibilityHandler := httpHandler.NewProductVehicleCompatibilityHandler(productVehicleCompatibilityService)
 	productEquipmentCompatibilityHandler := httpHandler.NewProductEquipmentCompatibilityHandler(productEquipmentCompatibilityService)
 	channelListingsHandler := httpHandler.NewChannelListingsHandler(channelListingsService)
+	reportsHandler := httpHandler.NewReportsHandler(reportsApp.NewService(mysqlRepos.PublicationsReportRepository))
 	// TEMPORARY debug handler — see MercadoLibreItemLookupHandler. Remove
 	// once no longer needed.
 	mercadoLibreItemLookupHandler := httpHandler.NewMercadoLibreItemLookupHandler(mercadoLibreTokenService)
@@ -616,6 +618,7 @@ func main() {
 		productCategorySelectionHandler,
 		userHandler,
 		mercadoLibreImageDownloadHandler,
+		reportsHandler,
 	)
 
 	server := &http.Server{

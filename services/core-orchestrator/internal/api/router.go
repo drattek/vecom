@@ -72,6 +72,7 @@ func NewRouter(
 	productCategorySelectionHandler *httpHandler.ProductCategorySelectionHandler,
 	userHandler *httpHandler.UserHandler,
 	mercadoLibreImageDownloadHandler *httpHandler.MercadoLibreImageDownloadHandler,
+	reportsHandler *httpHandler.ReportsHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -484,6 +485,7 @@ func NewRouter(
 		// endpoints)
 		protected.Get("/api/channel-listings", channelListingsHandler.ListListings)
 		protected.Get("/api/channel-listings/history", channelListingsHandler.ListingHistory)
+		protected.Get("/api/reports/publications", reportsHandler.PublicationsReport)
 		protected.Post("/api/channel-listings/publish", channelListingsHandler.CreateListings)
 		protected.Post("/api/channel-listings/publish-zero-stock-eligibles", channelListingsHandler.PublishZeroStockEligibles)
 		protected.Post("/api/channel-listings/refresh", channelListingsHandler.RefreshListings)
