@@ -39,6 +39,7 @@ const SEARCH_PAGE_SIZE = 8
 // Cuántos resultados más se piden cada vez que se pulsa "Mostrar más".
 const SEARCH_PAGE_STEP = 20
 const MAX_EQUIPMENT_SELECTION = 10
+const MAX_VEHICLE_SELECTION = 10
 
 type Kind = "vehicle" | "equipment"
 type Mode = "search" | "create"
@@ -342,7 +343,7 @@ function VehiclePanel({
 }) {
     const [mode, setMode] = useState<Mode>("search")
     const [query, setQuery] = useState("")
-    const [selected, setSelected] = useState<VehicleFitment | null>(null)
+    const [selected, setSelected] = useState<VehicleFitment[]>([])
     const [draft, setDraft] = useState(() => emptyVehicleDraft())
     const [motor, setMotor] = useState("")
     const [position, setPosition] = useState("")
@@ -358,44 +359,75 @@ function VehiclePanel({
     const findOrCreate = useFindOrCreateVehicleFitment()
     const link = useLinkVehicleCompatibility(productId)
     const isPending = findOrCreate.isPending || link.isPending
-    const canSubmit = mode === "create" || selected !== null
+    const canSubmit = mode === "create" || selected.length > 0
+
+    function toggle(item: VehicleFitment) {
+        setError(null)
+        if (selected.some((current) => current.id === item.id)) {
+            setSelected(selected.filter((current) => current.id !== item.id))
+            return
+        }
+        if (selected.length >= MAX_VEHICLE_SELECTION) {
+            setError(`Puedes seleccionar hasta ${MAX_VEHICLE_SELECTION} vehículos a la vez.`)
+            return
+        }
+        setSelected([...selected, item])
+    }
+
+    function qualifiers() {
+        return { motor: motor.trim(), position: position.trim(), side: side.trim() }
+    }
 
     async function submit() {
         setError(null)
 
-        let fitmentId: number
-        let message = "Compatibilidad agregada."
-
-        try {
-            if (mode === "search") {
-                if (!selected) {
-                    setError("Elige un vehículo de la lista.")
-                    return
-                }
-                fitmentId = selected.id
-            } else {
+        if (mode === "create") {
+            try {
                 const result = validateVehicleDraft(draft)
                 if (!result.ok) {
                     setError(result.message)
                     return
                 }
                 const resolved = await findOrCreate.mutateAsync(result.payload)
-                fitmentId = resolved.fitment.id
-                message = resolved.created
-                    ? "Se creó el vehículo y se agregó la compatibilidad."
-                    : "Ya existía ese vehículo: se usó el existente y se agregó la compatibilidad."
+                await link.mutateAsync({ vehicleFitmentId: resolved.fitment.id, ...qualifiers() })
+                onDone(
+                    resolved.created
+                        ? "Se creó el vehículo y se agregó la compatibilidad."
+                        : "Ya existía ese vehículo: se usó el existente y se agregó la compatibilidad.",
+                )
+            } catch (submitError) {
+                setError(linkErrorMessage(submitError))
             }
-
-            await link.mutateAsync({
-                vehicleFitmentId: fitmentId,
-                motor: motor.trim(),
-                position: position.trim(),
-                side: side.trim(),
-            })
-            onDone(message)
-        } catch (submitError) {
-            setError(linkErrorMessage(submitError))
+            return
         }
+
+        // Secuencial: si una falla quedan seleccionadas solo las pendientes. Los
+        // calificadores (motor/posición/lado) se aplican a todas las elegidas.
+        let added = 0
+        let alreadyLinked = 0
+        const pending = [...selected]
+        for (const item of selected) {
+            try {
+                await link.mutateAsync({ vehicleFitmentId: item.id, ...qualifiers() })
+                added++
+            } catch (submitError) {
+                if (axios.isAxiosError(submitError) && submitError.response?.status === 409) {
+                    alreadyLinked++
+                } else {
+                    setSelected(pending)
+                    const done = added > 0 ? `Se agregaron ${added}. ` : ""
+                    setError(`${done}Falló "${item.brandName} ${item.model}": ${linkErrorMessage(submitError)}`)
+                    return
+                }
+            }
+            pending.shift()
+        }
+
+        const parts = [`${added} ${added === 1 ? "compatibilidad agregada" : "compatibilidades agregadas"}`]
+        if (alreadyLinked > 0) {
+            parts.push(`${alreadyLinked} ya ${alreadyLinked === 1 ? "estaba vinculada" : "estaban vinculadas"}`)
+        }
+        onDone(`${parts.join("; ")}.`)
     }
 
     return (
@@ -410,13 +442,24 @@ function VehiclePanel({
                             items={search.data?.fitments ?? []}
                             isLoading={search.isLoading}
                             isError={search.isError}
-                            selectedIds={selected ? [selected.id] : []}
+                            selectedIds={selected.map((item) => item.id)}
                             linkedIds={linkedIds}
                             hasQuery={debouncedQuery.trim() !== ""}
-                            onSelect={setSelected}
+                            onSelect={toggle}
                             onCreate={() => setMode("create")}
                             renderPrimary={(item) => `${item.brandName} ${item.model}`}
                             renderSecondary={(item) => formatYearRange(item.yearStart, item.yearEnd)}
+                        />
+                        <SelectionSummary
+                            selected={selected.map((item) => ({
+                                id: item.id,
+                                label: `${item.brandName} ${item.model} ${formatYearRange(item.yearStart, item.yearEnd)}`,
+                            }))}
+                            max={MAX_VEHICLE_SELECTION}
+                            noun="vehículos"
+                            disabled={isPending}
+                            onRemove={(id) => setSelected(selected.filter((item) => item.id !== id))}
+                            onClear={() => setSelected([])}
                         />
                         <ShowMore
                             shown={search.data?.fitments.length ?? 0}
@@ -450,7 +493,11 @@ function VehiclePanel({
                     Cancelar
                 </Button>
                 <Button size="sm" onClick={submit} disabled={isPending || !canSubmit}>
-                    {isPending ? "Agregando…" : "Agregar compatibilidad"}
+                    {isPending
+                        ? "Agregando…"
+                        : mode === "search" && selected.length > 1
+                          ? `Agregar ${selected.length} compatibilidades`
+                          : "Agregar compatibilidad"}
                 </Button>
             </DialogFooter>
         </>
@@ -485,27 +532,33 @@ function QualifierInput({
 function SelectionSummary({
     selected,
     max,
+    noun,
     disabled,
     onRemove,
     onClear,
 }: {
-    selected: EquipmentFitment[]
+    selected: { id: number; label: string }[]
     max: number
+    noun: string
     disabled: boolean
     onRemove: (id: number) => void
     onClear: () => void
 }) {
     if (selected.length === 0) {
-        return <p className="text-xs text-muted-foreground">Puedes seleccionar hasta {max} maquinarias a la vez.</p>
+        return (
+            <p className="text-xs text-muted-foreground">
+                Puedes seleccionar hasta {max} {noun} a la vez.
+            </p>
+        )
     }
     return (
         <div className="flex flex-col gap-1.5">
             <div className="flex items-center justify-between text-xs text-muted-foreground">
                 <span>
-                    {selected.length} de {max} seleccionadas
+                    {selected.length} de {max} seleccionados
                 </span>
                 <Button type="button" variant="ghost" size="sm" onClick={onClear} disabled={disabled}>
-                    Quitar todas
+                    Quitar todos
                 </Button>
             </div>
             <ul className="flex flex-wrap gap-1.5">
@@ -515,10 +568,10 @@ function SelectionSummary({
                             type="button"
                             disabled={disabled}
                             onClick={() => onRemove(item.id)}
-                            aria-label={`Quitar ${item.brandName} ${formatEquipmentModel(item.model, item.serie)}`}
+                            aria-label={`Quitar ${item.label}`}
                             className="rounded-md border border-border bg-muted px-2 py-0.5 text-xs hover:bg-muted/60 disabled:opacity-50"
                         >
-                            {item.brandName} · {formatEquipmentModel(item.model, item.serie)} ×
+                            {item.label} ×
                         </button>
                     </li>
                 ))}
@@ -641,8 +694,12 @@ function EquipmentPanel({
                             renderSecondary={(item) => formatEquipmentModel(item.model, item.serie)}
                         />
                         <SelectionSummary
-                            selected={selected}
+                            selected={selected.map((item) => ({
+                                id: item.id,
+                                label: `${item.brandName} · ${formatEquipmentModel(item.model, item.serie)}`,
+                            }))}
                             max={MAX_EQUIPMENT_SELECTION}
+                            noun="maquinarias"
                             disabled={isPending}
                             onRemove={(id) => setSelected(selected.filter((item) => item.id !== id))}
                             onClear={() => setSelected([])}
