@@ -165,8 +165,11 @@ func (r *PublicationsReportRepository) FindPublicationsReport(ctx context.Contex
 			   WHERE pi.product_id = p.id AND pi.deleted_at IS NULL) AS image_count,
 			EXISTS (SELECT 1 FROM ecom_product_images pi
 			   JOIN ecom_files f ON f.id = pi.file_id AND f.deleted_at IS NULL
+			   LEFT JOIN ecom_storage_disks sd ON sd.id = f.disk_id AND sd.deleted_at IS NULL
 			   WHERE pi.product_id = p.id AND pi.deleted_at IS NULL
-			     AND (INSTR(f.path, '_MKT_') > 0 OR INSTR(f.filename, '_MKT_') > 0)) AS has_mkt_images,
+			     AND INSTR(CASE WHEN f.path LIKE 'http://%' OR f.path LIKE 'https://%'
+			                    THEN f.path ELSE CONCAT(COALESCE(sd.base_url, ''), '/', f.path) END,
+			               '_MKT_') > 0) AS has_mkt_images,
 			CAST(COALESCE((SELECT SUM(ps.available_qty) FROM ecom_product_stock ps
 			   WHERE ps.product_id = p.id), 0) AS SIGNED) AS total_stock,
 			(SELECT pp.price ` + priceRow + `) AS price_amount,
