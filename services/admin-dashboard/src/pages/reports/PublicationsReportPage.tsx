@@ -27,6 +27,11 @@ const ALL = "all"
 const CHANNEL_ODOO = "ODOO"
 const CHANNEL_MELI = "MERCADOLIBRE"
 
+// Valores del selector "Falta en": "channel:ODOO" (cualquier conexión del
+// canal) o "connection:12" (una conexión en específico).
+const MISSING_CHANNEL = "channel:"
+const MISSING_CONNECTION = "connection:"
+
 const CHANNEL_ITEMS = [
     { value: ALL, label: "Todos los canales" },
     { value: CHANNEL_ODOO, label: "Odoo" },
@@ -36,8 +41,15 @@ const CHANNEL_ITEMS = [
 const STATE_LABEL: Partial<Record<ListingState, { label: string; tone: string }>> = {
     published: { label: "Publicada", tone: "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400" },
     paused_zero_stock: { label: "Pausada sin stock", tone: "bg-amber-500/10 text-amber-700 dark:text-amber-400" },
-    paused_manual: { label: "Pausada manual", tone: "bg-orange-500/10 text-orange-700 dark:text-orange-400" },
+    paused_manual: { label: "Pausada", tone: "bg-orange-500/10 text-orange-700 dark:text-orange-400" },
     under_review: { label: "En revisión", tone: "bg-sky-500/10 text-sky-700 dark:text-sky-400" },
+    closed: { label: "Cerrada", tone: "bg-muted text-muted-foreground" },
+}
+
+// Una publicación cerrada se muestra en la columna de estado, pero ya no
+// cuenta como "sincronizado" en el canal.
+function liveConnections(connections: PublicationReportConnection[]): PublicationReportConnection[] {
+    return connections.filter((c) => c.state !== "closed")
 }
 
 function YesNo({ value }: { value: boolean }) {
@@ -91,6 +103,7 @@ export function PublicationsReportPage() {
     const [channelCode, setChannelCode] = useState<string>(ALL)
     const [connectionId, setConnectionId] = useState<string>(ALL)
     const [search, setSearch] = useState("")
+    const [missingIn, setMissingIn] = useState<string>(ALL)
     const [offset, setOffset] = useState(0)
     const [pageSize, setPageSize] = useState(50)
 
@@ -113,7 +126,7 @@ export function PublicationsReportPage() {
     })
 
     const report = useQuery({
-        queryKey: ["publications-report", sourceId, channelCode, connectionId, search, offset, pageSize],
+        queryKey: ["publications-report", sourceId, channelCode, connectionId, missingIn, search, offset, pageSize],
         placeholderData: keepPreviousData,
         queryFn: async () => {
             const response = await apiClient.get("/api/reports/publications", {
@@ -121,6 +134,8 @@ export function PublicationsReportPage() {
                     sourceId: sourceId === ALL ? undefined : sourceId,
                     channelCode: channelCode === ALL ? undefined : channelCode,
                     connectionId: connectionId === ALL ? undefined : connectionId,
+                    missingChannelCode: missingIn.startsWith(MISSING_CHANNEL) ? missingIn.slice(MISSING_CHANNEL.length) : undefined,
+                    missingConnectionId: missingIn.startsWith(MISSING_CONNECTION) ? missingIn.slice(MISSING_CONNECTION.length) : undefined,
                     search: search.trim() || undefined,
                     offset,
                     pageSize,
@@ -146,6 +161,20 @@ export function PublicationsReportPage() {
                 return code === channelCode
             })
             .map((c) => ({ value: String(c.id), label: `${c.name} (${c.channelName ?? c.channelCode})` })),
+    ]
+
+    const reportConnections = (connections.data ?? []).filter((c) => {
+        const code = c.channelCode.toUpperCase()
+        return code === CHANNEL_ODOO || code === CHANNEL_MELI
+    })
+    const missingItems = [
+        { value: ALL, label: "Sin comparar" },
+        { value: `${MISSING_CHANNEL}${CHANNEL_ODOO}`, label: "Falta en: Odoo (cualquier conexión)" },
+        { value: `${MISSING_CHANNEL}${CHANNEL_MELI}`, label: "Falta en: MercadoLibre (cualquier conexión)" },
+        ...reportConnections.map((c) => ({
+            value: `${MISSING_CONNECTION}${c.id}`,
+            label: `Falta en: ${c.name} (${c.channelName ?? c.channelCode})`,
+        })),
     ]
 
     const rows = report.data?.rows ?? []
@@ -236,7 +265,31 @@ export function PublicationsReportPage() {
                         </SelectGroup>
                     </SelectContent>
                 </Select>
+                <Select
+                    value={missingIn}
+                    onValueChange={(value) => {
+                        setMissingIn(value ?? ALL)
+                        setOffset(0)
+                    }}
+                    items={missingItems}
+                >
+                    <SelectTrigger className="w-72" aria-label="Comparar faltantes">
+                        <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent align="start">
+                        <SelectGroup>
+                            {missingItems.map((m) => (
+                                <SelectItem key={m.value} value={m.value}>
+                                    {m.label}
+                                </SelectItem>
+                            ))}
+                        </SelectGroup>
+                    </SelectContent>
+                </Select>
             </div>
+            <p className="mt-1 text-xs text-muted-foreground">
+                Para comparar faltantes combina "canal / conexión" (dónde sí está publicado) con "Falta en" (dónde no).
+            </p>
 
             {report.isError ? (
                 <p className="mt-2 text-sm text-destructive">
@@ -291,12 +344,12 @@ export function PublicationsReportPage() {
                             <TableCell className="whitespace-nowrap">{row.brandName ?? "—"}</TableCell>
                             <TableCell className="whitespace-nowrap">{row.sourceName || "—"}</TableCell>
                             <TableCell className="align-top">
-                                <YesNo value={row.odoo.length > 0} />
-                                <ConnectionNames connections={row.odoo} />
+                                <YesNo value={liveConnections(row.odoo).length > 0} />
+                                <ConnectionNames connections={liveConnections(row.odoo)} />
                             </TableCell>
                             <TableCell className="align-top">
-                                <YesNo value={row.mercadoLibre.length > 0} />
-                                <ConnectionNames connections={row.mercadoLibre} />
+                                <YesNo value={liveConnections(row.mercadoLibre).length > 0} />
+                                <ConnectionNames connections={liveConnections(row.mercadoLibre)} />
                             </TableCell>
                             <TableCell className="align-top">
                                 <ConnectionStates connections={row.odoo} />

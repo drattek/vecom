@@ -28,6 +28,11 @@ type PublicationsReportFilter struct {
 	Search       string
 	Offset       int
 	PageSize     int
+	// MissingChannelCode / MissingConnectionID restringen a productos que NO
+	// están publicados en ese canal o conexión (comparación de faltantes).
+	// Combinados con ChannelCode/ConnectionID dan "publicado en A y falta en B".
+	MissingChannelCode  string
+	MissingConnectionID int64
 }
 
 // PublicationReportConnection es la publicación de un producto en una
@@ -83,6 +88,7 @@ const listingStateCase = `CASE
 	WHEN cpm.status = 'synced' THEN 'published'
 	WHEN cpm.status = 'paused' AND cpm.paused_reason = 'zero_stock' THEN 'paused_zero_stock'
 	WHEN cpm.status = 'paused' THEN 'paused_manual'
+	WHEN cpm.status = 'closed' THEN 'closed'
 	ELSE 'under_review'
 END`
 
@@ -93,6 +99,7 @@ var listingStateRank = map[string]int{
 	ListingStateUnderReview:     1,
 	ListingStatePausedManual:    2,
 	ListingStatePausedZeroStock: 3,
+	ListingStateClosed:          4,
 }
 
 // FindPublicationsReport devuelve una página de productos que están publicados
@@ -112,24 +119,30 @@ func (r *PublicationsReportRepository) FindPublicationsReport(ctx context.Contex
 
 	// Subconsulta de "publicado": se reutiliza para filtrar y, con otro
 	// alcance, para traer las conexiones de la página.
-	publishedExists := `EXISTS (
+	args := []any{}
+	publishedIn := func(code string, connectionID int64) string {
+		q := `EXISTS (
 		SELECT 1 FROM ecom_channel_product_map cpm
 		JOIN ecom_channel_connections cc ON cc.id = cpm.connection_id AND cc.deleted_at IS NULL
 		JOIN ecom_channels ch ON ch.id = cc.channel_id AND ch.deleted_at IS NULL
 		WHERE cpm.product_id = p.id AND cpm.deleted_at IS NULL
 		  AND cpm.status IN (` + publishedMapStatuses + `)`
-	args := []any{}
-	if code := strings.TrimSpace(f.ChannelCode); code != "" {
-		publishedExists += ` AND UPPER(TRIM(ch.code)) = UPPER(?)`
-		args = append(args, code)
+		if code != "" {
+			q += ` AND UPPER(TRIM(ch.code)) = UPPER(?)`
+			args = append(args, code)
+		}
+		if connectionID > 0 {
+			q += ` AND cc.id = ?`
+			args = append(args, connectionID)
+		}
+		return q + `)`
 	}
-	if f.ConnectionID > 0 {
-		publishedExists += ` AND cc.id = ?`
-		args = append(args, f.ConnectionID)
-	}
-	publishedExists += `)`
 
-	where := []string{"p.deleted_at IS NULL", publishedExists}
+	where := []string{"p.deleted_at IS NULL", publishedIn(strings.TrimSpace(f.ChannelCode), f.ConnectionID)}
+	missingCode := strings.TrimSpace(f.MissingChannelCode)
+	if missingCode != "" || f.MissingConnectionID > 0 {
+		where = append(where, "NOT "+publishedIn(missingCode, f.MissingConnectionID))
+	}
 	if f.SourceID > 0 {
 		where = append(where, "p.source_id = ?")
 		args = append(args, f.SourceID)
@@ -244,7 +257,7 @@ func (r *PublicationsReportRepository) attachConnections(ctx context.Context, ou
 		JOIN ecom_channel_connections cc ON cc.id = cpm.connection_id AND cc.deleted_at IS NULL
 		JOIN ecom_channels ch ON ch.id = cc.channel_id AND ch.deleted_at IS NULL
 		WHERE cpm.product_id IN (`+placeholders+`) AND cpm.deleted_at IS NULL
-		  AND cpm.status IN (`+publishedMapStatuses+`)
+		  AND cpm.status IN (`+publishedMapStatuses+`, 'closed')
 		  AND UPPER(TRIM(ch.code)) IN ('`+reportChannelOdoo+`', '`+reportChannelMercadoLibre+`')
 	`, ids...)
 	if err != nil {
@@ -266,9 +279,17 @@ func (r *PublicationsReportRepository) attachConnections(ctx context.Context, ou
 			return fmt.Errorf("error scanning publications report connection: %w", err)
 		}
 		if c, ok := agg[k]; ok {
-			c.Listings++
-			if listingStateRank[state] < listingStateRank[c.State] {
-				c.State = state
+			switch {
+			case c.State == ListingStateClosed && state != ListingStateClosed:
+				// Primera publicación viva: descarta el conteo de las cerradas.
+				c.State, c.Listings = state, 1
+			case state == ListingStateClosed && c.State != ListingStateClosed:
+				// Una cerrada junto a publicaciones vivas no cuenta.
+			default:
+				c.Listings++
+				if listingStateRank[state] < listingStateRank[c.State] {
+					c.State = state
+				}
 			}
 			continue
 		}

@@ -20,21 +20,25 @@ func NewReportsHandler(service *reportsApp.Service) *ReportsHandler {
 }
 
 // PublicationsReport backs Reportes → Publicaciones.
-// Query: sourceId, channelCode, connectionId, search, offset, pageSize.
+// Query: sourceId, channelCode, connectionId (publicado en), missingChannelCode,
+// missingConnectionId (no publicado en), search, offset, pageSize.
 func (h *ReportsHandler) PublicationsReport(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	sourceID, _ := strconv.ParseInt(q.Get("sourceId"), 10, 64)
 	connectionID, _ := strconv.ParseInt(q.Get("connectionId"), 10, 64)
 	offset, _ := strconv.Atoi(q.Get("offset"))
 	pageSize, _ := strconv.Atoi(q.Get("pageSize"))
+	missingConnectionID, _ := strconv.ParseInt(q.Get("missingConnectionId"), 10, 64)
 
 	result, err := h.service.PublicationsReport(r.Context(), mysqlInfra.PublicationsReportFilter{
-		SourceID:     sourceID,
-		ChannelCode:  strings.TrimSpace(q.Get("channelCode")),
-		ConnectionID: connectionID,
-		Search:       q.Get("search"),
-		Offset:       offset,
-		PageSize:     pageSize,
+		SourceID:            sourceID,
+		ChannelCode:         strings.TrimSpace(q.Get("channelCode")),
+		ConnectionID:        connectionID,
+		Search:              q.Get("search"),
+		MissingChannelCode:  strings.TrimSpace(q.Get("missingChannelCode")),
+		MissingConnectionID: missingConnectionID,
+		Offset:              offset,
+		PageSize:            pageSize,
 	})
 	if err != nil {
 		log.Printf("publications report: %v", err)
