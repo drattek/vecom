@@ -141,10 +141,26 @@ function ConnectionCard({
                 <div className="flex flex-col gap-4">
                     {connection.allowsMultipleListings ? (
                         <MultiListingTable listings={activeListings} pending={connection.pending} />
-                    ) : (
+                    ) : activeListings[0] ? (
                         <SingleListing listing={activeListings[0]} />
-                    )}
-                    <ResyncButton productId={productId} connectionId={connection.connectionId} />
+                    ) : null}
+                    {/* Compatibilidades sin publicar (conexión con múltiples
+                        publicaciones): el endpoint de publicar salta las que ya
+                        existen y crea solo las faltantes. */}
+                    {connection.pending.length > 0 ? (
+                        <PublishGate
+                            productId={productId}
+                            sku={sku}
+                            connectionId={connection.connectionId}
+                            buttonLabel="Publicar publicaciones nuevas"
+                            compact
+                        />
+                    ) : null}
+                    {/* Resincronizar solo actualiza publicaciones existentes: sin
+                        ninguna no hace nada. */}
+                    {activeListings.length > 0 ? (
+                        <ResyncButton productId={productId} connectionId={connection.connectionId} />
+                    ) : null}
                     {closedListings.length > 0 ? (
                         <ClosedListingsNotice
                             productId={productId}
