@@ -11,6 +11,14 @@ import {
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import {
+    Select,
+    SelectContent,
+    SelectGroup,
+    SelectItem,
+    SelectTrigger,
+    SelectValue,
+} from "@/components/ui/select"
 import { useDebouncedValue } from "@/hooks/use-debounced-value"
 import { getServerErrorMessage } from "@/lib/api"
 import {
@@ -480,8 +488,8 @@ function VehiclePanel({
                         </p>
                         <div className="grid grid-cols-3 gap-3">
                             <QualifierInput label="Motor" value={motor} onChange={setMotor} placeholder="2.0L" />
-                            <QualifierInput label="Posición" value={position} onChange={setPosition} placeholder="Delantero" />
-                            <QualifierInput label="Lado" value={side} onChange={setSide} placeholder="Izquierdo" />
+                            <QualifierSelect label="Posición" value={position} onChange={setPosition} options={POSITION_OPTIONS} />
+                            <QualifierSelect label="Lado" value={side} onChange={setSide} options={SIDE_OPTIONS} />
                         </div>
                     </fieldset>
                 ) : null}
@@ -501,6 +509,53 @@ function VehiclePanel({
                 </Button>
             </DialogFooter>
         </>
+    )
+}
+
+// Valores cerrados de la restricción POSITION de MercadoLibre (mismos nombres
+// que reconoce mlPositionValuesByToken en el core). Se guardan tal cual como
+// texto en posición/lado: el core los traduce a value_id al subir
+// compatibilidades. "Lado" son los de lateralidad (mlSideValueIDs).
+const POSITION_OPTIONS = ["Delantera", "Trasera", "Superior", "Inferior", "Interno", "Externo", "Intermedio", "Centro"]
+const SIDE_OPTIONS = ["Izquierda", "Derecha", "Conductor", "Acompañante"]
+
+// base-ui no maneja bien "" como valor de un Select: sentinel para "sin elegir".
+const QUALIFIER_NONE = "__none__"
+
+function QualifierSelect({
+    label,
+    value,
+    onChange,
+    options,
+}: {
+    label: string
+    value: string
+    onChange: (value: string) => void
+    options: string[]
+}) {
+    const items = [{ label: "Sin especificar", value: QUALIFIER_NONE }, ...options.map((option) => ({ label: option, value: option }))]
+    return (
+        <div className="flex flex-col gap-1.5">
+            <Label>{label}</Label>
+            <Select
+                value={value === "" ? QUALIFIER_NONE : value}
+                onValueChange={(next) => onChange(next === QUALIFIER_NONE ? "" : (next ?? ""))}
+                items={items}
+            >
+                <SelectTrigger className="w-full" aria-label={label}>
+                    <SelectValue />
+                </SelectTrigger>
+                <SelectContent align="start">
+                    <SelectGroup>
+                        {items.map((item) => (
+                            <SelectItem key={item.value} value={item.value}>
+                                {item.label}
+                            </SelectItem>
+                        ))}
+                    </SelectGroup>
+                </SelectContent>
+            </Select>
+        </div>
     )
 }
 
