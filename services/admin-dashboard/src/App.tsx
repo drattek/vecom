@@ -12,6 +12,7 @@ import { ProductsChannelPage } from './pages/ProductsChannelPage.tsx'
 import { ProductsChannelDashboard } from './pages/ProductsChannelDashboard.tsx'
 import { ProductsChannelConnectionPage } from './pages/ProductsChannelConnectionPage.tsx'
 import { ProductsPendingPage } from './pages/ProductsPendingPage.tsx'
+import { ProductsImagesPage } from './pages/ProductsImagesPage.tsx'
 import { ProductDetailPage } from './pages/ProductDetailPage.tsx'
 import { ProductGeneralSection } from './pages/product-detail/ProductGeneralSection.tsx'
 import { ProductMediaSection } from './pages/product-detail/ProductMediaSection.tsx'
@@ -64,6 +65,7 @@ function AppRoutes() {
         <Route path="/reports/publications" element={<PublicationsReportPage />} />
         <Route path="/products" element={<ProductsPage />} />
         <Route path="/products/pending" element={<ProductsPendingPage />} />
+        <Route path="/products/images" element={<ProductsImagesPage />} />
         <Route path="/products/channels/:channelId" element={<ProductsChannelPage />}>
           <Route index element={<ProductsChannelDashboard />} />
           <Route path="connections/:connectionId" element={<ProductsChannelConnectionPage />} />

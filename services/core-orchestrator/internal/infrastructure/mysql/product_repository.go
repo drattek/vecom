@@ -135,7 +135,7 @@ var productSortColumns = map[string]string{
 	"price":      "price_amount",
 }
 
-func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool) (*PaginatedProducts, error) {
+func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool, hasImageOnly bool) (*PaginatedProducts, error) {
 	// search matches sku, part_number or name (case-insensitive via the
 	// column collation). % and _ in the term are escaped so they're treated
 	// as literals, not wildcards.
@@ -156,6 +156,12 @@ func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize 
 			  AND cpm2.status <> 'closed'
 		)`
 		filterArgs = append(filterArgs, *connectionID)
+	}
+	if hasImageOnly {
+		filterClause += ` AND EXISTS (
+			SELECT 1 FROM ecom_product_images pi3
+			WHERE pi3.product_id = ecom_products.id AND pi3.deleted_at IS NULL
+		)`
 	}
 	if pendingOnly {
 		// Pending = ready to be prepared for a channel sync: has stock and at

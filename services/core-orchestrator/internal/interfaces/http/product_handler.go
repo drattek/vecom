@@ -77,8 +77,11 @@ func (h *ProductHandler) GetProducts(w http.ResponseWriter, r *http.Request) {
 	// yet — the ones ready to be prepared for a marketplace sync.
 	pendingOnly := r.URL.Query().Get("pending") == "true"
 
+	// hasImage restricts to products with at least one image (Productos → Imágenes).
+	hasImageOnly := r.URL.Query().Get("hasImage") == "true"
+
 	// Get products from service
-	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly)
+	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly, hasImageOnly)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
