@@ -33,6 +33,9 @@ type PublicationsReportFilter struct {
 	// Combinados con ChannelCode/ConnectionID dan "publicado en A y falta en B".
 	MissingChannelCode  string
 	MissingConnectionID int64
+	// WithStockAndPrice deja solo productos con stock total > 0 y un precio
+	// vigente > 0 (misma lista de precios que muestra la columna Precio).
+	WithStockAndPrice bool
 }
 
 // PublicationReportConnection es la publicación de un producto en una
@@ -145,6 +148,15 @@ func buildPublicationsWhere(f PublicationsReportFilter) (string, []any) {
 	missingCode := strings.TrimSpace(f.MissingChannelCode)
 	if missingCode != "" || f.MissingConnectionID > 0 {
 		where = append(where, "NOT "+publishedIn(missingCode, f.MissingConnectionID))
+	}
+	if f.WithStockAndPrice {
+		where = append(where, `COALESCE((SELECT SUM(ps.available_qty) FROM ecom_product_stock ps
+			WHERE ps.product_id = p.id), 0) > 0`,
+			`COALESCE((SELECT pp.price FROM ecom_product_prices pp
+			JOIN ecom_price_list pl ON pl.id = pp.price_list_id AND pl.deleted_at IS NULL
+			WHERE pp.product_id = p.id
+			  AND pl.status = 'active' AND CURDATE() BETWEEN pl.valid_from AND pl.valid_to
+			ORDER BY pl.priority DESC, pp.updated_at DESC LIMIT 1), 0) > 0`)
 	}
 	if f.SourceID > 0 {
 		where = append(where, "p.source_id = ?")

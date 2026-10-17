@@ -153,6 +153,7 @@ export function PublicationsReportPage() {
     const [connectionId, setConnectionId] = useState<string>(ALL)
     const [search, setSearch] = useState("")
     const [missingIn, setMissingIn] = useState<string>(ALL)
+    const [withStockAndPrice, setWithStockAndPrice] = useState(false)
     const [offset, setOffset] = useState(0)
     const [pageSize, setPageSize] = useState(50)
 
@@ -175,7 +176,7 @@ export function PublicationsReportPage() {
     })
 
     const report = useQuery({
-        queryKey: ["publications-report", sourceId, channelCode, connectionId, missingIn, search, offset, pageSize],
+        queryKey: ["publications-report", sourceId, channelCode, connectionId, missingIn, withStockAndPrice, search, offset, pageSize],
         placeholderData: keepPreviousData,
         queryFn: async () => {
             const response = await apiClient.get("/api/reports/publications", {
@@ -185,6 +186,7 @@ export function PublicationsReportPage() {
                     connectionId: connectionId === ALL ? undefined : connectionId,
                     missingChannelCode: missingIn.startsWith(MISSING_CHANNEL) ? missingIn.slice(MISSING_CHANNEL.length) : undefined,
                     missingConnectionId: missingIn.startsWith(MISSING_CONNECTION) ? missingIn.slice(MISSING_CONNECTION.length) : undefined,
+                    withStockAndPrice: withStockAndPrice || undefined,
                     search: search.trim() || undefined,
                     offset,
                     pageSize,
@@ -358,6 +360,18 @@ export function PublicationsReportPage() {
                         </SelectGroup>
                     </SelectContent>
                 </Select>
+                <label className="flex items-center gap-2 text-sm">
+                    <input
+                        type="checkbox"
+                        className="size-4"
+                        checked={withStockAndPrice}
+                        onChange={(e) => {
+                            setWithStockAndPrice(e.target.checked)
+                            setOffset(0)
+                        }}
+                    />
+                    Solo con stock y precio
+                </label>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">
                 Para comparar faltantes combina "canal / conexión" (dónde sí está publicado) con "Falta en" (dónde no).

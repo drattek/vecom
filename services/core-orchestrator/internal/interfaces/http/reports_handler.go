@@ -21,7 +21,7 @@ func NewReportsHandler(service *reportsApp.Service) *ReportsHandler {
 
 // PublicationsReport backs Reportes → Publicaciones.
 // Query: sourceId, channelCode, connectionId (publicado en), missingChannelCode,
-// missingConnectionId (no publicado en), search, offset, pageSize.
+// missingConnectionId (no publicado en), withStockAndPrice, search, offset, pageSize.
 func (h *ReportsHandler) PublicationsReport(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	sourceID, _ := strconv.ParseInt(q.Get("sourceId"), 10, 64)
@@ -37,6 +37,7 @@ func (h *ReportsHandler) PublicationsReport(w http.ResponseWriter, r *http.Reque
 		Search:              q.Get("search"),
 		MissingChannelCode:  strings.TrimSpace(q.Get("missingChannelCode")),
 		MissingConnectionID: missingConnectionID,
+		WithStockAndPrice:   q.Get("withStockAndPrice") == "true" || q.Get("withStockAndPrice") == "1",
 		Offset:              offset,
 		PageSize:            pageSize,
 	})
