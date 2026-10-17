@@ -45,6 +45,12 @@ type ImageImportResult struct {
 	ProductImageID *int64 `json:"productImageId,omitempty"`
 	IsFirst        bool   `json:"isFirst,omitempty"`
 	Error          string `json:"error,omitempty"`
+	// NotFound / HadImages / Created only apply to the SKU bulk import report:
+	// the SKU matched no product, the product already had images before this
+	// import, and this URL was newly linked (vs. already linked).
+	NotFound  bool `json:"notFound,omitempty"`
+	HadImages bool `json:"hadImages,omitempty"`
+	Created   bool `json:"created,omitempty"`
 }
 
 type ImportProductImagesResult struct {
@@ -112,11 +118,17 @@ func (s *Service) Import(ctx context.Context, input ImportProductImagesInput) (*
 		product, err := s.productRepo.FindBySKU(ctx, sku)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductNotFound) {
-				results = append(results, ImageImportResult{SKU: sku, Success: false, Error: "product not found for sku"})
+				results = append(results, ImageImportResult{SKU: sku, Success: false, NotFound: true, Error: "product not found for sku"})
 				continue
 			}
 			return nil, fmt.Errorf("error looking up product by sku %q: %w", sku, err)
 		}
+
+		existingImages, err := s.productImagesRepo.FindAllByProductID(ctx, product.ID)
+		if err != nil {
+			return nil, fmt.Errorf("error listing images for product %d: %w", product.ID, err)
+		}
+		hadImages := len(existingImages) > 0
 
 		for i, rawURL := range productInput.URLs {
 			position := i + 1
@@ -124,10 +136,11 @@ func (s *Service) Import(ctx context.Context, input ImportProductImagesInput) (*
 			isFirst := i == 0
 
 			result := ImageImportResult{
-				SKU:      sku,
-				URL:      url,
-				Position: position,
-				IsFirst:  isFirst,
+				SKU:       sku,
+				URL:       url,
+				Position:  position,
+				IsFirst:   isFirst,
+				HadImages: hadImages,
 			}
 
 			if url == "" {
@@ -200,6 +213,7 @@ func (s *Service) Import(ctx context.Context, input ImportProductImagesInput) (*
 			}
 
 			result.Success = true
+			result.Created = true
 			result.FileID = &file.ID
 			result.ProductImageID = &productImage.ID
 			results = append(results, result)

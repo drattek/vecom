@@ -66,6 +66,9 @@ const importResultSchema = z.object({
     url: z.string().optional().default(""),
     success: z.boolean(),
     error: z.string().nullish(),
+    notFound: z.boolean().optional().default(false),
+    hadImages: z.boolean().optional().default(false),
+    created: z.boolean().optional().default(false),
 })
 
 const importResponseSchema = z.object({
@@ -73,6 +76,62 @@ const importResponseSchema = z.object({
 })
 
 export type ImageImportItemResult = z.infer<typeof importResultSchema>
+
+export type SkuReportEntry = {
+    sku: string
+    /** URLs nuevas guardadas en este import. */
+    added: string[]
+    /** URLs que ya estaban ligadas al producto (sin cambios). */
+    unchanged: string[]
+    /** URLs que fallaron, con su motivo. */
+    failed: { url: string; error: string }[]
+}
+
+export type ImportReport = {
+    /** SKUs que no existen en el catálogo. */
+    notFound: string[]
+    /** SKUs que ya tenían imágenes antes del import. */
+    withPreviousImages: SkuReportEntry[]
+    /** SKUs que no tenían imágenes antes del import. */
+    withoutPreviousImages: SkuReportEntry[]
+}
+
+/** Agrupa los resultados por SKU en las tres categorías del reporte. */
+export function buildImportReport(results: ImageImportItemResult[]): ImportReport {
+    const notFound: string[] = []
+    const entries = new Map<string, { entry: SkuReportEntry; hadImages: boolean }>()
+
+    for (const result of results) {
+        if (result.notFound) {
+            if (!notFound.includes(result.sku)) notFound.push(result.sku)
+            continue
+        }
+
+        let current = entries.get(result.sku)
+        if (!current) {
+            current = {
+                entry: { sku: result.sku, added: [], unchanged: [], failed: [] },
+                hadImages: result.hadImages,
+            }
+            entries.set(result.sku, current)
+        }
+
+        if (!result.success) {
+            current.entry.failed.push({ url: result.url, error: result.error ?? "Error" })
+        } else if (result.created) {
+            current.entry.added.push(result.url)
+        } else {
+            current.entry.unchanged.push(result.url)
+        }
+    }
+
+    const all = Array.from(entries.values())
+    return {
+        notFound,
+        withPreviousImages: all.filter((item) => item.hadImages).map((item) => item.entry),
+        withoutPreviousImages: all.filter((item) => !item.hadImages).map((item) => item.entry),
+    }
+}
 
 /** SKUs por request: el backend valida cada URL con un HEAD, así que se sube por lotes. */
 const BATCH_SIZE = 10
@@ -103,7 +162,7 @@ export function useImportImagesBySku() {
                     const message = error instanceof Error ? error.message : "Error desconocido"
                     for (const group of batch) {
                         for (const url of group.urls) {
-                            results.push({ sku: group.sku, url, success: false, error: message })
+                            results.push({ sku: group.sku, url, success: false, error: message, notFound: false, hadImages: false, created: false })
                         }
                     }
                 }

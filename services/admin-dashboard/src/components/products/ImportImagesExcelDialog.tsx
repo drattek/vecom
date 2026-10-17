@@ -19,9 +19,11 @@ import {
 import { getServerErrorMessage } from "@/lib/api"
 import { useStorageDisks } from "@/lib/product-detail"
 import {
+    buildImportReport,
     parseImagesSheet,
     useImportImagesBySku,
     type ImageImportItemResult,
+    type SkuReportEntry,
     type ParsedImagesSheet,
 } from "@/lib/product-images-import"
 import { FileSpreadsheetIcon, Loader2Icon } from "lucide-react"
@@ -47,6 +49,52 @@ function storeDiskId(id: number) {
     }
 }
 
+function ReportSection({
+    title,
+    description,
+    count,
+    tone,
+    children,
+}: {
+    title: string
+    description: string
+    count: number
+    tone: "ok" | "error"
+    children: React.ReactNode
+}) {
+    return (
+        <div className="flex flex-col gap-1">
+            <p className="text-sm">
+                <span className="font-medium">{title}</span>{" "}
+                <span className={tone === "error" && count > 0 ? "text-destructive" : "text-muted-foreground"}>
+                    ({count})
+                </span>
+            </p>
+            <p className="text-xs text-muted-foreground">{description}</p>
+            {count > 0 ? (
+                <ul className="max-h-48 overflow-y-auto rounded-md border border-border p-2">{children}</ul>
+            ) : null}
+        </div>
+    )
+}
+
+function SkuEntryRow({ entry }: { entry: SkuReportEntry }) {
+    return (
+        <li className="py-1 text-xs">
+            <span className="font-medium">{entry.sku}</span>
+            <span className="text-muted-foreground">
+                {" "}· {entry.added.length} agregadas
+                {entry.unchanged.length > 0 ? ` · ${entry.unchanged.length} ya existían` : ""}
+            </span>
+            {entry.failed.map((failure, index) => (
+                <p key={`${failure.url}-${index}`} className="truncate text-destructive" title={failure.url}>
+                    {failure.url} · {failure.error}
+                </p>
+            ))}
+        </li>
+    )
+}
+
 export function ImportImagesExcelDialog() {
     const [open, setOpen] = useState(false)
     const [diskId, setDiskId] = useState<number | null>(readStoredDiskId)
@@ -65,7 +113,7 @@ export function ImportImagesExcelDialog() {
         [parsed],
     )
 
-    const failures = useMemo(() => (results ?? []).filter((result) => !result.success), [results])
+    const report = useMemo(() => (results ? buildImportReport(results) : null), [results])
 
     function reset() {
         setFileName(null)
@@ -118,7 +166,6 @@ export function ImportImagesExcelDialog() {
     }
 
     const diskItems = (disks.data ?? []).map((disk) => ({ label: disk.name, value: String(disk.id) }))
-    const succeeded = (results?.length ?? 0) - failures.length
 
     return (
         <Dialog open={open} onOpenChange={handleOpenChange}>
@@ -241,25 +288,44 @@ export function ImportImagesExcelDialog() {
                         </p>
                     ) : null}
 
-                    {results ? (
-                        <div className="flex flex-col gap-2">
-                            <p className="text-sm">
-                                <span className="font-medium">{succeeded}</span> imágenes guardadas
-                                {failures.length > 0 ? (
-                                    <span className="text-destructive"> · {failures.length} con error</span>
-                                ) : null}
-                            </p>
-                            {failures.length > 0 ? (
-                                <ul className="max-h-48 overflow-y-auto rounded-md border border-destructive/30 p-2 text-xs">
-                                    {failures.map((failure, index) => (
-                                        <li key={`${failure.sku}-${failure.url}-${index}`} className="py-0.5">
-                                            <span className="font-medium">{failure.sku || "—"}</span>
-                                            {failure.url ? <span className="text-muted-foreground"> · {failure.url}</span> : null}
-                                            <span className="text-destructive"> · {failure.error ?? "Error"}</span>
-                                        </li>
-                                    ))}
-                                </ul>
-                            ) : null}
+                    {report ? (
+                        <div className="flex flex-col gap-3">
+                            <p className="text-sm font-medium">Reporte de la importación</p>
+
+                            <ReportSection
+                                title="Sin imágenes previas"
+                                description="Se encontraron y no tenían imágenes."
+                                count={report.withoutPreviousImages.length}
+                                tone="ok"
+                            >
+                                {report.withoutPreviousImages.map((entry) => (
+                                    <SkuEntryRow key={entry.sku} entry={entry} />
+                                ))}
+                            </ReportSection>
+
+                            <ReportSection
+                                title="Con imágenes previas"
+                                description="Se encontraron y ya tenían imágenes; las URLs nuevas se agregaron."
+                                count={report.withPreviousImages.length}
+                                tone="ok"
+                            >
+                                {report.withPreviousImages.map((entry) => (
+                                    <SkuEntryRow key={entry.sku} entry={entry} />
+                                ))}
+                            </ReportSection>
+
+                            <ReportSection
+                                title="SKUs no encontrados"
+                                description="No existen en el catálogo; no se guardó nada."
+                                count={report.notFound.length}
+                                tone="error"
+                            >
+                                {report.notFound.map((sku) => (
+                                    <li key={sku} className="py-0.5 text-xs font-medium">
+                                        {sku}
+                                    </li>
+                                ))}
+                            </ReportSection>
                         </div>
                     ) : null}
 
