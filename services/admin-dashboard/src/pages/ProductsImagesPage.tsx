@@ -120,6 +120,7 @@ export function ProductsImagesPage() {
                     filterParams={filterParams}
                     emptyMessage={filtered ? "No hay productos con imagen que coincidan con los filtros." : "No hay productos con imágenes."}
                     toolbar={toolbar}
+                    exportFileName="productos-con-imagen"
                 />
             </section>
         </main>

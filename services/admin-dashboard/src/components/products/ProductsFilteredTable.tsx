@@ -1,12 +1,14 @@
 import { TablePagination } from "@/components/TablePagination";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
-import { apiClient } from "@/lib/api";
+import { Button } from "@/components/ui/button";
+import { apiClient, getServerErrorMessage } from "@/lib/api";
+import { exportProductsToExcel } from "@/lib/products-export";
 import { paginatedProductsResponseSchema } from "@/lib/schemas/products";
 import type { ProductSortColumn, SortDirection } from "@/stores/productsPaginationStore";
 import { formatPrice, ProductSKULink, ProductThumbnail, SortableTableHead, TableLoadingOverlay } from "@/components/products/ProductTableHelpers";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { Loader2Icon, SearchIcon, XIcon } from "lucide-react";
+import { DownloadIcon, Loader2Icon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useState, type ReactNode } from "react";
 
 const DEFAULT_PAGE_SIZE = 10
@@ -20,9 +22,11 @@ type ProductsFilteredTableProps = {
     emptyMessage: string
     /** Controles extra (p. ej. filtros) alineados junto al buscador. */
     toolbar?: ReactNode
+    /** Si se indica, muestra "Exportar Excel" y guarda el archivo con este nombre. */
+    exportFileName?: string
 }
 
-export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage, toolbar }: ProductsFilteredTableProps) {
+export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage, toolbar, exportFileName }: ProductsFilteredTableProps) {
     const [offset, setOffset] = useState(0);
     const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
     const [sortBy, setSortBy] = useState<ProductSortColumn | null>(null);
@@ -79,6 +83,25 @@ export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage, to
         },
     });
 
+    const [exporting, setExporting] = useState(false);
+    const [exportError, setExportError] = useState<string | null>(null);
+
+    async function handleExport() {
+        if (!exportFileName) return;
+        setExporting(true);
+        setExportError(null);
+        try {
+            await exportProductsToExcel(
+                { ...filterParams, ...(sortBy ? { sortBy, sortDir } : {}), ...(search ? { search } : {}) },
+                exportFileName,
+            );
+        } catch (exportErr) {
+            setExportError(getServerErrorMessage(exportErr, "No se pudo exportar el Excel."));
+        } finally {
+            setExporting(false);
+        }
+    }
+
     const products = data?.products ?? [];
     const total = data?.total ?? 0;
 
@@ -110,6 +133,12 @@ export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage, to
                 </div>
                 {toolbar}
                 <div className="ml-auto flex items-center gap-3">
+                    {exportFileName ? (
+                        <Button variant="outline" size="sm" onClick={() => void handleExport()} disabled={exporting || total === 0}>
+                            {exporting ? <Loader2Icon className="animate-spin" /> : <DownloadIcon />}
+                            {exporting ? "Exportando…" : "Exportar Excel"}
+                        </Button>
+                    ) : null}
                     {isFetching && !isLoading ? (
                         <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
                             <Loader2Icon className="size-4 animate-spin" />
@@ -118,6 +147,8 @@ export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage, to
                     ) : null}
                 </div>
             </div>
+
+            {exportError ? <p className="mt-2 text-sm text-destructive">{exportError}</p> : null}
 
             {isError ? (
                 <p className="mt-2 text-sm text-destructive">
