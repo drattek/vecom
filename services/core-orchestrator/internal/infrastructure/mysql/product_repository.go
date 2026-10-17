@@ -135,7 +135,7 @@ var productSortColumns = map[string]string{
 	"price":      "price_amount",
 }
 
-func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool, hasImageOnly bool, unpublishedConnectionID, unpublishedChannelID *int64) (*PaginatedProducts, error) {
+func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool, hasImageOnly bool, unpublishedConnectionID, unpublishedChannelID, sourceID *int64) (*PaginatedProducts, error) {
 	// search matches sku, part_number or name (case-insensitive via the
 	// column collation). % and _ in the term are escaped so they're treated
 	// as literals, not wildcards.
@@ -146,6 +146,10 @@ func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize 
 		like := "%" + escaped + "%"
 		filterClause += " AND (sku LIKE ? OR part_number LIKE ? OR name LIKE ?)"
 		filterArgs = append(filterArgs, like, like, like)
+	}
+	if sourceID != nil {
+		filterClause += " AND source_id = ?"
+		filterArgs = append(filterArgs, *sourceID)
 	}
 	if connectionID != nil {
 		filterClause += ` AND EXISTS (

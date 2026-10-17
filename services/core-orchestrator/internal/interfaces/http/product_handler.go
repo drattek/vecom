@@ -90,8 +90,13 @@ func (h *ProductHandler) GetProducts(w http.ResponseWriter, r *http.Request) {
 		unpublishedChannelID = &v
 	}
 
+	var sourceID *int64
+	if v, err := strconv.ParseInt(r.URL.Query().Get("sourceId"), 10, 64); err == nil {
+		sourceID = &v
+	}
+
 	// Get products from service
-	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly, hasImageOnly, unpublishedConnectionID, unpublishedChannelID)
+	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly, hasImageOnly, unpublishedConnectionID, unpublishedChannelID, sourceID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return
