@@ -21,12 +21,15 @@ export function ExternalCategoryTree({
     pickLabel = "Importar",
     pickingExternalId = null,
     busy = false,
+    allowParentPick = false,
 }: {
     connectionId: number
     onPick: (node: CategoryImportNode) => void
     pickLabel?: string
     pickingExternalId?: string | null
     busy?: boolean
+    /** Muestra el botón también en categorías con hijas (por defecto solo en hojas). */
+    allowParentPick?: boolean
 }) {
     const [childrenByKey, setChildrenByKey] = useState<Map<string, CategoryImportNode[]>>(new Map())
     const [loadingKeys, setLoadingKeys] = useState<Set<string>>(() => new Set([ROOT_KEY]))
@@ -121,6 +124,7 @@ export function ExternalCategoryTree({
                                 pickLabel={pickLabel}
                                 pickingExternalId={pickingExternalId}
                                 busy={busy}
+                                allowParentPick={allowParentPick}
                                 onToggle={toggle}
                                 onPick={onPick}
                             />
@@ -142,6 +146,7 @@ function Node({
     pickLabel,
     pickingExternalId,
     busy,
+    allowParentPick,
     onToggle,
     onPick,
 }: {
@@ -154,6 +159,7 @@ function Node({
     pickLabel: string
     pickingExternalId: string | null
     busy: boolean
+    allowParentPick: boolean
     onToggle: (key: string) => void
     onPick: (node: CategoryImportNode) => void
 }) {
@@ -186,7 +192,7 @@ function Node({
                     <span className="ml-1.5 text-xs text-muted-foreground">{node.externalId}</span>
                 </span>
 
-                {isLeaf ? (
+                {isLeaf || allowParentPick ? (
                     <Button
                         variant="outline"
                         size="sm"
@@ -222,6 +228,7 @@ function Node({
                                 pickLabel={pickLabel}
                                 pickingExternalId={pickingExternalId}
                                 busy={busy}
+                                allowParentPick={allowParentPick}
                                 onToggle={onToggle}
                                 onPick={onPick}
                             />

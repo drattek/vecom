@@ -299,6 +299,18 @@ type ImportResultDTO struct {
 // which is the single passed connection when onlySelectedConnection is true,
 // or every active connection of the same channel otherwise.
 func (s *Service) Import(ctx context.Context, connectionID int64, externalCategoryID string, actorID int64, onlySelectedConnection bool) (*ImportResultDTO, error) {
+	return s.importCategory(ctx, connectionID, externalCategoryID, actorID, onlySelectedConnection, false)
+}
+
+// ImportAllowingParents is Import without the leaf-only rule for Odoo: a
+// category that still has children can be imported (and mapped) too, since
+// Odoo accepts a product under any public category. MercadoLibre still
+// requires a leaf — it only lists items in leaf categories.
+func (s *Service) ImportAllowingParents(ctx context.Context, connectionID int64, externalCategoryID string, actorID int64, onlySelectedConnection bool) (*ImportResultDTO, error) {
+	return s.importCategory(ctx, connectionID, externalCategoryID, actorID, onlySelectedConnection, true)
+}
+
+func (s *Service) importCategory(ctx context.Context, connectionID int64, externalCategoryID string, actorID int64, onlySelectedConnection, allowParents bool) (*ImportResultDTO, error) {
 	externalCategoryID = strings.TrimSpace(externalCategoryID)
 	if connectionID <= 0 || externalCategoryID == "" || actorID <= 0 {
 		return nil, ErrInvalidInput
@@ -318,7 +330,7 @@ func (s *Service) Import(ctx context.Context, connectionID int64, externalCatego
 	case channelCodeMercadoLibre:
 		return s.importMercadoLibre(ctx, connectionID, externalCategoryID, actorID, targets)
 	case channelCodeOdoo:
-		return s.importOdoo(ctx, connectionID, externalCategoryID, actorID, targets)
+		return s.importOdoo(ctx, connectionID, externalCategoryID, actorID, targets, allowParents)
 	default:
 		return nil, ErrChannelNotSupported
 	}
@@ -397,7 +409,7 @@ func (s *Service) importMercadoLibre(ctx context.Context, connectionID int64, ex
 	}, nil
 }
 
-func (s *Service) importOdoo(ctx context.Context, connectionID int64, externalCategoryID string, actorID int64, targets []int64) (*ImportResultDTO, error) {
+func (s *Service) importOdoo(ctx context.Context, connectionID int64, externalCategoryID string, actorID int64, targets []int64, allowParents bool) (*ImportResultDTO, error) {
 	odooID, err := strconv.ParseInt(externalCategoryID, 10, 64)
 	if err != nil {
 		return nil, ErrInvalidInput
@@ -417,7 +429,7 @@ func (s *Service) importOdoo(ctx context.Context, connectionID int64, externalCa
 	}
 
 	_, hasChildren := indexOdooCategories(categories)
-	if hasChildren[odooID] {
+	if hasChildren[odooID] && !allowParents {
 		return nil, ErrNotLeaf
 	}
 

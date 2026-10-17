@@ -101,7 +101,7 @@ func (s *Service) Select(ctx context.Context, productID, connectionID int64, ext
 		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
 	}
 
-	imported, err := s.categoryImportService.Import(ctx, connectionID, externalCategoryID, actorID, true)
+	imported, err := s.categoryImportService.ImportAllowingParents(ctx, connectionID, externalCategoryID, actorID, true)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving local category for external category %q: %w", externalCategoryID, err)
 	}

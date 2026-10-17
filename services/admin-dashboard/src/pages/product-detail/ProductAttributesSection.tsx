@@ -395,6 +395,7 @@ function CategorySelector({
                 pickLabel="Seleccionar"
                 pickingExternalId={mutation.isPending ? pickingExternalId : null}
                 busy={mutation.isPending}
+                allowParentPick={!isMercadoLibre}
                 onPick={(node) => pick(node.externalId)}
             />
             <FieldError message={errorMessage} />
