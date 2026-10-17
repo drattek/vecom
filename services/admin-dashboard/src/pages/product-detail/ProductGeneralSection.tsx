@@ -167,6 +167,9 @@ function IdentificationCard({ productId, data }: { productId?: string; data: Pro
                                         autoFocus
                                         maxLength={255}
                                     />
+                                    <p className="mt-1 text-right text-xs text-muted-foreground" aria-live="polite">
+                                        {(editor.draft.name ?? "").length} / 255 caracteres
+                                    </p>
                                     <FieldError message={editor.error} />
                                 </div>
                             ) : (
