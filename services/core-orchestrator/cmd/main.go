@@ -418,6 +418,7 @@ func main() {
 		mysqlRepos.ProductRepository,
 		mysqlRepos.ChannelCategoryMapRepository,
 		mysqlRepos.ChannelProductMapRepository,
+		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelSyncQueueRepository,
 		mysqlRepos.CurrenciesRepository,
 		effectivePriceResolver,

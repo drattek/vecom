@@ -40,6 +40,7 @@ type Service struct {
 	products           *mysqlInfra.ProductRepository
 	channelCategoryMap *mysqlInfra.ChannelCategoryMapRepository
 	channelProductMap  *mysqlInfra.ChannelProductMapRepository
+	channelConnections *mysqlInfra.ChannelConnectionRepository
 	queue              *mysqlInfra.ChannelSyncQueueRepository
 	currencies         *mysqlInfra.CurrenciesRepository
 	effectivePrice     *pricingApp.EffectivePriceResolver
@@ -50,6 +51,7 @@ func NewService(
 	products *mysqlInfra.ProductRepository,
 	channelCategoryMap *mysqlInfra.ChannelCategoryMapRepository,
 	channelProductMap *mysqlInfra.ChannelProductMapRepository,
+	channelConnections *mysqlInfra.ChannelConnectionRepository,
 	queue *mysqlInfra.ChannelSyncQueueRepository,
 	currencies *mysqlInfra.CurrenciesRepository,
 	effectivePrice *pricingApp.EffectivePriceResolver,
@@ -59,6 +61,7 @@ func NewService(
 		products:           products,
 		channelCategoryMap: channelCategoryMap,
 		channelProductMap:  channelProductMap,
+		channelConnections: channelConnections,
 		queue:              queue,
 		currencies:         currencies,
 		effectivePrice:     effectivePrice,
@@ -88,6 +91,9 @@ func (s *Service) DiscoverAndEnqueue(ctx context.Context) (Result, error) {
 		return result, fmt.Errorf("error loading %s currency: %w", marketplacePriceCurrencyCode, err)
 	}
 
+	// Por conexión: ¿su canal publica sin existencias? (se resuelve una vez por corrida)
+	zeroStock := map[int64]bool{}
+
 	var afterID int64
 	for {
 		page, err := s.products.FindReadyForListingPage(ctx, afterID, discoveryPageSize)
@@ -101,7 +107,7 @@ func (s *Service) DiscoverAndEnqueue(ctx context.Context) (Result, error) {
 		for _, product := range page {
 			afterID = product.ID
 			result.ScannedProducts++
-			s.processProduct(ctx, product, mxn.ID, &result)
+			s.processProduct(ctx, product, mxn.ID, zeroStock, &result)
 		}
 
 		if len(page) < discoveryPageSize {
@@ -112,7 +118,7 @@ func (s *Service) DiscoverAndEnqueue(ctx context.Context) (Result, error) {
 	return result, nil
 }
 
-func (s *Service) processProduct(ctx context.Context, product mysqlInfra.ReadyForListingProduct, mxnCurrencyID int64, result *Result) {
+func (s *Service) processProduct(ctx context.Context, product mysqlInfra.ReadyForListingProduct, mxnCurrencyID int64, zeroStock map[int64]bool, result *Result) {
 	connectionIDs, err := s.channelCategoryMap.FindActiveConnectionIDsByCategory(ctx, product.CategoryID)
 	if err != nil {
 		log.Printf("listing discovery: product %d — error resolving connections for category %d: %v", product.ID, product.CategoryID, err)
@@ -120,13 +126,31 @@ func (s *Service) processProduct(ctx context.Context, product mysqlInfra.ReadyFo
 	}
 
 	for _, connectionID := range connectionIDs {
-		if err := s.processPair(ctx, product, connectionID, mxnCurrencyID, result); err != nil {
+		if err := s.processPair(ctx, product, connectionID, mxnCurrencyID, zeroStock, result); err != nil {
 			log.Printf("listing discovery: product %d, connection %d — %v", product.ID, connectionID, err)
 		}
 	}
 }
 
-func (s *Service) processPair(ctx context.Context, product mysqlInfra.ReadyForListingProduct, connectionID, mxnCurrencyID int64, result *Result) error {
+func (s *Service) processPair(ctx context.Context, product mysqlInfra.ReadyForListingProduct, connectionID, mxnCurrencyID int64, zeroStock map[int64]bool, result *Result) error {
+	// Sin existencias solo se publica en canales que lo permiten (Odoo, con
+	// inventario en 0); en el resto el producto espera a tener stock.
+	if product.TotalStock <= 0 {
+		allowed, cached := zeroStock[connectionID]
+		if !cached {
+			conn, err := s.channelConnections.FindByID(ctx, connectionID)
+			if err != nil {
+				return fmt.Errorf("error loading connection: %w", err)
+			}
+			allowed = conn.PublishesWithZeroStock()
+			zeroStock[connectionID] = allowed
+		}
+		if !allowed {
+			result.Skipped++
+			return nil
+		}
+	}
+
 	ok, err := s.hasSellablePrice(ctx, product, connectionID, mxnCurrencyID)
 	if err != nil {
 		return fmt.Errorf("error resolving effective price: %w", err)

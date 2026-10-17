@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	mysqlDriver "github.com/go-sql-driver/mysql"
@@ -12,6 +13,18 @@ import (
 
 var ErrChannelConnectionNotFound = errors.New("channel connection not found")
 var ErrChannelConnectionInvalidReference = errors.New("channel connection invalid reference")
+
+// zeroStockChannelCodes son los canales (ecom_channels.code) donde un producto
+// sin existencias igual se publica, con inventario en 0 y sin pausar (Odoo).
+// Es independiente de sync_zero_stock_as_paused, que además lo publica
+// suspendido.
+var zeroStockChannelCodes = map[string]bool{"ODOO": true}
+
+// PublishesWithZeroStock reporta si el canal de la conexión publica productos
+// con stock 0 (inventario en 0, activos) sin necesidad de sync_zero_stock_as_paused.
+func (c *ChannelConnectionDTO) PublishesWithZeroStock() bool {
+	return c != nil && zeroStockChannelCodes[strings.ToUpper(strings.TrimSpace(c.ChannelCode))]
+}
 
 type ChannelConnectionDTO struct {
 	ID          int64  `json:"id"`
