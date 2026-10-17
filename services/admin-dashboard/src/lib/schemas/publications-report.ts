@@ -9,6 +9,22 @@ export const publicationReportConnectionSchema = z.object({
   listings: z.number(),
 })
 
+export const publicationReportAttributeStatusSchema = z.object({
+  connectionId: z.number(),
+  connectionName: z.string(),
+  state: z.enum(['ok', 'needs_category', 'error']),
+  requiredMissing: z.number(),
+  missingNames: z.array(z.string()),
+})
+
+export const publicationsReportSummarySchema = z.object({
+  total: z.number(),
+  inOdoo: z.number(),
+  inMercadoLibre: z.number(),
+  mercadoLibreNotOdoo: z.number(),
+  odooNotMercadoLibre: z.number(),
+})
+
 export const publicationReportRowSchema = z.object({
   productId: z.number(),
   sku: z.string(),
@@ -29,6 +45,7 @@ export const publicationReportRowSchema = z.object({
     .nullish(),
   odoo: z.array(publicationReportConnectionSchema),
   mercadoLibre: z.array(publicationReportConnectionSchema),
+  meliAttributes: z.array(publicationReportAttributeStatusSchema),
 })
 
 export const paginatedPublicationsReportSchema = z.object({
@@ -36,6 +53,7 @@ export const paginatedPublicationsReportSchema = z.object({
   offset: z.number(),
   pageSize: z.number(),
   rows: z.array(publicationReportRowSchema),
+  summary: publicationsReportSummarySchema,
 })
 
 export const sourcesResponseSchema = z.object({
@@ -43,4 +61,5 @@ export const sourcesResponseSchema = z.object({
 })
 
 export type PublicationReportConnection = z.infer<typeof publicationReportConnectionSchema>
+export type PublicationReportAttributeStatus = z.infer<typeof publicationReportAttributeStatusSchema>
 export type PublicationReportRow = z.infer<typeof publicationReportRowSchema>

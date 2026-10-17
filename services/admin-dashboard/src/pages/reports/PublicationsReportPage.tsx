@@ -20,6 +20,7 @@ import { paginatedChannelConnectionsResponseSchema } from "@/lib/schemas/channel
 import {
     paginatedPublicationsReportSchema,
     sourcesResponseSchema,
+    type PublicationReportAttributeStatus,
     type PublicationReportConnection,
 } from "@/lib/schemas/publications-report"
 
@@ -75,6 +76,54 @@ function ConnectionNames({ connections }: { connections: PublicationReportConnec
                 </li>
             ))}
         </ul>
+    )
+}
+
+function SummaryCard({ label, value, hint, children }: { label: string; value?: number; hint?: string; children?: React.ReactNode }) {
+    return (
+        <div className="rounded-lg border border-border p-3">
+            <div className="text-xs text-muted-foreground">{label}</div>
+            {value !== undefined ? (
+                <div className="text-2xl font-semibold tabular-nums">{value.toLocaleString("es-MX")}</div>
+            ) : null}
+            {children}
+            {hint ? <div className="mt-0.5 text-xs text-muted-foreground">{hint}</div> : null}
+        </div>
+    )
+}
+
+function AttributeStatuses({ statuses }: { statuses: PublicationReportAttributeStatus[] }) {
+    if (statuses.length === 0) return <span className="text-xs text-muted-foreground">—</span>
+    return (
+        <div className="flex flex-col items-start gap-1">
+            {statuses.map((a) => {
+                let label = "Completos"
+                let tone = "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
+                let title = `${a.connectionName}: sin atributos requeridos pendientes`
+                if (a.state === "needs_category") {
+                    label = "Sin categoría"
+                    tone = "bg-muted text-muted-foreground"
+                    title = `${a.connectionName}: no hay categoría de MercadoLibre resuelta`
+                } else if (a.state === "error") {
+                    label = "Error"
+                    tone = "bg-destructive/10 text-destructive"
+                    title = `${a.connectionName}: no se pudo calcular`
+                } else if (a.requiredMissing > 0) {
+                    label = `Faltan ${a.requiredMissing}`
+                    tone = "bg-destructive/10 text-destructive"
+                    title = `${a.connectionName}: ${a.missingNames.join(", ")}`
+                }
+                return (
+                    <span
+                        key={a.connectionId}
+                        title={title}
+                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${tone}`}
+                    >
+                        {label}
+                    </span>
+                )
+            })}
+        </div>
     )
 }
 
@@ -178,6 +227,7 @@ export function PublicationsReportPage() {
     ]
 
     const rows = report.data?.rows ?? []
+    const summary = report.data?.summary
 
     return (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
@@ -186,6 +236,28 @@ export function PublicationsReportPage() {
                 Productos publicados (activos, en revisión o pausados) en al menos un canal, con el detalle de las
                 conexiones donde están sincronizados en Odoo y MercadoLibre.
             </p>
+
+            <div className="mt-4 grid grid-cols-2 gap-2 xl:grid-cols-4">
+                <SummaryCard label="Total de publicaciones" value={summary?.total ?? 0} hint="Productos publicados en algún canal" />
+                <SummaryCard label="Total en Odoo" value={summary?.inOdoo ?? 0} />
+                <SummaryCard label="Total en MercadoLibre" value={summary?.inMercadoLibre ?? 0} />
+                <SummaryCard label="Diferencias">
+                    <div className="mt-1 space-y-0.5 text-sm">
+                        <div>
+                            <span className="text-xl font-semibold tabular-nums">
+                                {(summary?.mercadoLibreNotOdoo ?? 0).toLocaleString("es-MX")}
+                            </span>{" "}
+                            <span className="text-xs text-muted-foreground">en MercadoLibre sin Odoo</span>
+                        </div>
+                        <div>
+                            <span className="text-xl font-semibold tabular-nums">
+                                {(summary?.odooNotMercadoLibre ?? 0).toLocaleString("es-MX")}
+                            </span>{" "}
+                            <span className="text-xs text-muted-foreground">en Odoo sin MercadoLibre</span>
+                        </div>
+                    </div>
+                </SummaryCard>
+            </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
                 <div className="relative min-w-60 flex-1">
@@ -309,6 +381,7 @@ export function PublicationsReportPage() {
                         <TableHead>MercadoLibre</TableHead>
                         <TableHead>Estado Odoo</TableHead>
                         <TableHead>Estado MercadoLibre</TableHead>
+                        <TableHead>Atributos MercadoLibre</TableHead>
                         <TableHead className="text-right">Imágenes</TableHead>
                         <TableHead>Imágenes Marketing</TableHead>
                         <TableHead className="text-right">Stock</TableHead>
@@ -318,14 +391,14 @@ export function PublicationsReportPage() {
                 <TableBody>
                     {report.isLoading && rows.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={13} className="text-center text-muted-foreground">
+                            <TableCell colSpan={14} className="text-center text-muted-foreground">
                                 Cargando reporte...
                             </TableCell>
                         </TableRow>
                     ) : null}
                     {!report.isLoading && rows.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={13} className="text-center text-muted-foreground">
+                            <TableCell colSpan={14} className="text-center text-muted-foreground">
                                 No hay productos publicados con estos filtros.
                             </TableCell>
                         </TableRow>
@@ -356,6 +429,9 @@ export function PublicationsReportPage() {
                             </TableCell>
                             <TableCell className="align-top">
                                 <ConnectionStates connections={row.mercadoLibre} />
+                            </TableCell>
+                            <TableCell className="align-top">
+                                <AttributeStatuses statuses={row.meliAttributes} />
                             </TableCell>
                             <TableCell className="text-right tabular-nums">{row.imageCount}</TableCell>
                             <TableCell>

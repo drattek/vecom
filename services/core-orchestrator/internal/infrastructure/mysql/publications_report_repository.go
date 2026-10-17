@@ -51,6 +51,18 @@ type PublicationReportPrice struct {
 	CurrencySymbol string `json:"currencySymbol"`
 }
 
+// PublicationReportAttributeStatus indica si a un producto le faltan atributos
+// requeridos de la categoría de MercadoLibre en una conexión. State es "ok",
+// "needs_category" (sin categoría externa resuelta) o "error" (no se pudo
+// calcular). Lo llena la capa de aplicación con el checklist de atributos.
+type PublicationReportAttributeStatus struct {
+	ConnectionID    int64    `json:"connectionId"`
+	ConnectionName  string   `json:"connectionName"`
+	State           string   `json:"state"`
+	RequiredMissing int      `json:"requiredMissing"`
+	MissingNames    []string `json:"missingNames"`
+}
+
 type PublicationReportRow struct {
 	ProductID    int64                         `json:"productId"`
 	SKU          string                        `json:"sku"`
@@ -65,6 +77,8 @@ type PublicationReportRow struct {
 	Price        *PublicationReportPrice       `json:"price,omitempty"`
 	Odoo         []PublicationReportConnection `json:"odoo"`
 	MercadoLibre []PublicationReportConnection `json:"mercadoLibre"`
+	// MeliAttributes: una entrada por conexión viva de MercadoLibre.
+	MeliAttributes []PublicationReportAttributeStatus `json:"meliAttributes"`
 }
 
 type PaginatedPublicationsReport struct {
@@ -102,21 +116,10 @@ var listingStateRank = map[string]int{
 	ListingStateClosed:          4,
 }
 
-// FindPublicationsReport devuelve una página de productos que están publicados
-// en al menos un canal (que cumpla los filtros de canal/conexión), con su
-// resumen de imágenes, stock, precio y las conexiones donde están publicados en
-// Odoo y MercadoLibre.
-func (r *PublicationsReportRepository) FindPublicationsReport(ctx context.Context, f PublicationsReportFilter) (*PaginatedPublicationsReport, error) {
-	if f.PageSize <= 0 {
-		f.PageSize = 50
-	}
-	if f.PageSize > 200 {
-		f.PageSize = 200
-	}
-	if f.Offset < 0 {
-		f.Offset = 0
-	}
-
+// buildPublicationsWhere arma el WHERE (alias p = ecom_products) y sus args
+// compartidos por la tabla y el resumen del reporte, para que ambos siempre
+// midan el mismo conjunto de productos.
+func buildPublicationsWhere(f PublicationsReportFilter) (string, []any) {
 	// Subconsulta de "publicado": se reutiliza para filtrar y, con otro
 	// alcance, para traer las conexiones de la página.
 	args := []any{}
@@ -152,7 +155,67 @@ func (r *PublicationsReportRepository) FindPublicationsReport(ctx context.Contex
 		where = append(where, "(p.sku LIKE ? OR p.name LIKE ? OR p.part_number LIKE ?)")
 		args = append(args, like, like, like)
 	}
-	whereSQL := strings.Join(where, " AND ")
+	return strings.Join(where, " AND "), args
+}
+
+// PublicationsReportSummary resume el conjunto de productos que cumple los
+// filtros del reporte. InOdoo/InMercadoLibre cuentan productos con al menos una
+// publicación viva en cualquier conexión de ese canal.
+type PublicationsReportSummary struct {
+	Total               int64 `json:"total"`
+	InOdoo              int64 `json:"inOdoo"`
+	InMercadoLibre      int64 `json:"inMercadoLibre"`
+	MercadoLibreNotOdoo int64 `json:"mercadoLibreNotOdoo"`
+	OdooNotMercadoLibre int64 `json:"odooNotMercadoLibre"`
+}
+
+// FindPublicationsSummary calcula los totales de las cards con los mismos
+// filtros que la tabla.
+func (r *PublicationsReportRepository) FindPublicationsSummary(ctx context.Context, f PublicationsReportFilter) (*PublicationsReportSummary, error) {
+	whereSQL, args := buildPublicationsWhere(f)
+	live := func(code string) string {
+		return `EXISTS (
+			SELECT 1 FROM ecom_channel_product_map cpm
+			JOIN ecom_channel_connections cc ON cc.id = cpm.connection_id AND cc.deleted_at IS NULL
+			JOIN ecom_channels ch ON ch.id = cc.channel_id AND ch.deleted_at IS NULL
+			WHERE cpm.product_id = p.id AND cpm.deleted_at IS NULL
+			  AND cpm.status IN (` + publishedMapStatuses + `)
+			  AND UPPER(TRIM(ch.code)) = '` + code + `')`
+	}
+
+	var out PublicationsReportSummary
+	var inOdoo, inMeli, meliNotOdoo, odooNotMeli sql.NullInt64
+	err := r.db.QueryRowContext(ctx, `
+		SELECT COUNT(*), SUM(x.in_odoo), SUM(x.in_meli),
+		       SUM(x.in_meli AND NOT x.in_odoo), SUM(x.in_odoo AND NOT x.in_meli)
+		FROM (
+			SELECT p.id, `+live(reportChannelOdoo)+` AS in_odoo, `+live(reportChannelMercadoLibre)+` AS in_meli
+			FROM ecom_products p WHERE `+whereSQL+`
+		) x`, args...).Scan(&out.Total, &inOdoo, &inMeli, &meliNotOdoo, &odooNotMeli)
+	if err != nil {
+		return nil, fmt.Errorf("error querying publications report summary: %w", err)
+	}
+	out.InOdoo, out.InMercadoLibre = inOdoo.Int64, inMeli.Int64
+	out.MercadoLibreNotOdoo, out.OdooNotMercadoLibre = meliNotOdoo.Int64, odooNotMeli.Int64
+	return &out, nil
+}
+
+// FindPublicationsReport devuelve una página de productos que están publicados
+// en al menos un canal (que cumpla los filtros de canal/conexión), con su
+// resumen de imágenes, stock, precio y las conexiones donde están publicados en
+// Odoo y MercadoLibre.
+func (r *PublicationsReportRepository) FindPublicationsReport(ctx context.Context, f PublicationsReportFilter) (*PaginatedPublicationsReport, error) {
+	if f.PageSize <= 0 {
+		f.PageSize = 50
+	}
+	if f.PageSize > 200 {
+		f.PageSize = 200
+	}
+	if f.Offset < 0 {
+		f.Offset = 0
+	}
+
+	whereSQL, args := buildPublicationsWhere(f)
 
 	var total int64
 	if err := r.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM ecom_products p WHERE `+whereSQL, args...).Scan(&total); err != nil {
@@ -223,6 +286,7 @@ func (r *PublicationsReportRepository) FindPublicationsReport(ctx context.Contex
 		}
 		row.Odoo = []PublicationReportConnection{}
 		row.MercadoLibre = []PublicationReportConnection{}
+		row.MeliAttributes = []PublicationReportAttributeStatus{}
 		index[row.ProductID] = len(out)
 		ids = append(ids, row.ProductID)
 		out = append(out, row)

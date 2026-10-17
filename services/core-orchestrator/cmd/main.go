@@ -483,7 +483,7 @@ func main() {
 	productVehicleCompatibilityHandler := httpHandler.NewProductVehicleCompatibilityHandler(productVehicleCompatibilityService)
 	productEquipmentCompatibilityHandler := httpHandler.NewProductEquipmentCompatibilityHandler(productEquipmentCompatibilityService)
 	channelListingsHandler := httpHandler.NewChannelListingsHandler(channelListingsService)
-	reportsHandler := httpHandler.NewReportsHandler(reportsApp.NewService(mysqlRepos.PublicationsReportRepository))
+	reportsHandler := httpHandler.NewReportsHandler(reportsApp.NewService(mysqlRepos.PublicationsReportRepository, productAttributeChecklistService))
 	// TEMPORARY debug handler — see MercadoLibreItemLookupHandler. Remove
 	// once no longer needed.
 	mercadoLibreItemLookupHandler := httpHandler.NewMercadoLibreItemLookupHandler(mercadoLibreTokenService)
