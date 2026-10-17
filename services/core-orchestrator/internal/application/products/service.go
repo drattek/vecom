@@ -47,7 +47,7 @@ func NewProductService(
 	}
 }
 
-func (s *ProductService) GetPaginatedProducts(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool, hasImageOnly bool) (*mysqlInfra.PaginatedProducts, error) {
+func (s *ProductService) GetPaginatedProducts(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool, hasImageOnly bool, unpublishedConnectionID, unpublishedChannelID *int64) (*mysqlInfra.PaginatedProducts, error) {
 	if offset < 0 {
 		offset = 0
 	}
@@ -69,7 +69,9 @@ func (s *ProductService) GetPaginatedProducts(ctx context.Context, offset, pageS
 	// least one image that aren't already live (synced/under_review/paused)
 	// on any connection — the ones still ready to be prepared for a channel
 	// sync. hasImageOnly restricts to products with at least one image.
-	return s.repository.FindPaginated(ctx, offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly, hasImageOnly)
+	// unpublishedConnectionID / unpublishedChannelID restrict to products with no
+	// live listing on that connection / on any connection of that channel.
+	return s.repository.FindPaginated(ctx, offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly, hasImageOnly, unpublishedConnectionID, unpublishedChannelID)
 }
 
 func (s *ProductService) GetProductByID(ctx context.Context, id int64) (*mysqlInfra.ProductDTO, error) {

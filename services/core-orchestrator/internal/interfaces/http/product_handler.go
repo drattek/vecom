@@ -80,8 +80,18 @@ func (h *ProductHandler) GetProducts(w http.ResponseWriter, r *http.Request) {
 	// hasImage restricts to products with at least one image (Productos → Imágenes).
 	hasImageOnly := r.URL.Query().Get("hasImage") == "true"
 
+	// unpublishedConnectionId / unpublishedChannelId: products with no live
+	// listing on that connection / channel (Productos → Imágenes filters).
+	var unpublishedConnectionID, unpublishedChannelID *int64
+	if v, err := strconv.ParseInt(r.URL.Query().Get("unpublishedConnectionId"), 10, 64); err == nil {
+		unpublishedConnectionID = &v
+	}
+	if v, err := strconv.ParseInt(r.URL.Query().Get("unpublishedChannelId"), 10, 64); err == nil {
+		unpublishedChannelID = &v
+	}
+
 	// Get products from service
-	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly, hasImageOnly)
+	result, err := h.service.GetPaginatedProducts(r.Context(), offset, pageSize, sortBy, sortDir, search, connectionID, pendingOnly, hasImageOnly, unpublishedConnectionID, unpublishedChannelID)
 	if err != nil {
 		writeJSONError(w, http.StatusInternalServerError, "internal error")
 		return

@@ -135,7 +135,7 @@ var productSortColumns = map[string]string{
 	"price":      "price_amount",
 }
 
-func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool, hasImageOnly bool) (*PaginatedProducts, error) {
+func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize int, sortBy, sortDir, search string, connectionID *int64, pendingOnly bool, hasImageOnly bool, unpublishedConnectionID, unpublishedChannelID *int64) (*PaginatedProducts, error) {
 	// search matches sku, part_number or name (case-insensitive via the
 	// column collation). % and _ in the term are escaped so they're treated
 	// as literals, not wildcards.
@@ -156,6 +156,28 @@ func (r *ProductRepository) FindPaginated(ctx context.Context, offset, pageSize 
 			  AND cpm2.status <> 'closed'
 		)`
 		filterArgs = append(filterArgs, *connectionID)
+	}
+	// Unpublished = no live listing (synced/under_review/paused, same notion of
+	// "live" as pendingOnly) on the given connection, or on any connection of
+	// the given channel.
+	if unpublishedConnectionID != nil {
+		filterClause += ` AND NOT EXISTS (
+			SELECT 1 FROM ecom_channel_product_map cpm4
+			WHERE cpm4.product_id = ecom_products.id AND cpm4.deleted_at IS NULL
+			  AND cpm4.connection_id = ?
+			  AND cpm4.status IN ('synced', 'under_review', 'paused')
+		)`
+		filterArgs = append(filterArgs, *unpublishedConnectionID)
+	}
+	if unpublishedChannelID != nil {
+		filterClause += ` AND NOT EXISTS (
+			SELECT 1 FROM ecom_channel_product_map cpm5
+			JOIN ecom_channel_connections cc5 ON cc5.id = cpm5.connection_id
+			WHERE cpm5.product_id = ecom_products.id AND cpm5.deleted_at IS NULL
+			  AND cc5.channel_id = ?
+			  AND cpm5.status IN ('synced', 'under_review', 'paused')
+		)`
+		filterArgs = append(filterArgs, *unpublishedChannelID)
 	}
 	if hasImageOnly {
 		filterClause += ` AND EXISTS (

@@ -7,7 +7,7 @@ import type { ProductSortColumn, SortDirection } from "@/stores/productsPaginati
 import { formatPrice, ProductSKULink, ProductThumbnail, SortableTableHead, TableLoadingOverlay } from "@/components/products/ProductTableHelpers";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { Loader2Icon, SearchIcon, XIcon } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 
 const DEFAULT_PAGE_SIZE = 10
 
@@ -18,9 +18,11 @@ type ProductsFilteredTableProps = {
     filterParams?: Record<string, string | number | boolean>
     /** Shown in the empty state when there's no active search. */
     emptyMessage: string
+    /** Controles extra (p. ej. filtros) alineados junto al buscador. */
+    toolbar?: ReactNode
 }
 
-export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage }: ProductsFilteredTableProps) {
+export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage, toolbar }: ProductsFilteredTableProps) {
     const [offset, setOffset] = useState(0);
     const [pageSize, setPageSize] = useState(DEFAULT_PAGE_SIZE);
     const [sortBy, setSortBy] = useState<ProductSortColumn | null>(null);
@@ -106,6 +108,7 @@ export function ProductsFilteredTable({ queryKey, filterParams, emptyMessage }: 
                         </button>
                     ) : null}
                 </div>
+                {toolbar}
                 <div className="ml-auto flex items-center gap-3">
                     {isFetching && !isLoading ? (
                         <span className="flex items-center gap-1.5 text-sm text-muted-foreground">
