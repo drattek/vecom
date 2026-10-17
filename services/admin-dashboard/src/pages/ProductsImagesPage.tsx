@@ -15,12 +15,12 @@ export function ProductsImagesPage() {
     const [channelId, setChannelId] = useState<string>(ALL);
     const [connectionId, setConnectionId] = useState<string>(ALL);
 
-    const { data: channels } = useQuery({
+    const { data: channelsData } = useQuery({
         queryKey: ["sidebar-product-channels"],
         staleTime: 60_000,
         queryFn: async () => {
             const response = await apiClient.get("/api/channels", { params: { offset: 0, pageSize: 100 } });
-            return paginatedChannelsResponseSchema.parse(response.data).channels;
+            return paginatedChannelsResponseSchema.parse(response.data);
         },
     });
     const { data: allConnections } = useChannelConnections();
@@ -34,7 +34,7 @@ export function ProductsImagesPage() {
         [allConnections, channelId],
     );
 
-    const channelItems = [{ label: "Todos los canales", value: ALL }, ...(channels ?? []).map((c) => ({ label: c.name, value: String(c.id) }))];
+    const channelItems = [{ label: "Todos los canales", value: ALL }, ...(channelsData?.channels ?? []).map((c) => ({ label: c.name, value: String(c.id) }))];
     const connectionItems = [{ label: "Todas las conexiones", value: ALL }, ...connections.map((c) => ({ label: c.name, value: String(c.id) }))];
 
     const filterParams: Record<string, string | number | boolean> = { hasImage: "true" };
