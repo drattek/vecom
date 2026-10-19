@@ -209,8 +209,11 @@ export function usePublishChannelListing(productId: string | undefined) {
     })
 }
 
+/** Cuántas categorías sugeridas se piden a MercadoLibre. */
+const CATEGORY_PREDICTION_LIMIT = 5
+
 /**
- * useCategoryPrediction sugiere una categoría de MercadoLibre a partir de un
+ * useCategoryPrediction sugiere categorías de MercadoLibre a partir de un
  * texto (nombre del producto) — paso previo, en el selector de categoría de
  * Sincronización, a dejar elegir del árbol completo (ver ADR 0005). Solo
  * corre con conexión y título disponibles; no se cachea entre productos
@@ -220,12 +223,11 @@ export function useCategoryPrediction(connectionId: number | null, title: string
     return useQuery({
         queryKey: ["category-prediction", connectionId, title],
         enabled: connectionId != null && Boolean(title),
-        queryFn: async (): Promise<CategoryPrediction | null> => {
+        queryFn: async (): Promise<CategoryPrediction[]> => {
             const response = await apiClient.get("/api/marketplaces/mercadolibre/category-predictor", {
-                params: { connectionId, title, limit: 1 },
+                params: { connectionId, title, limit: CATEGORY_PREDICTION_LIMIT },
             })
-            const predictions = categoryPredictionsResponseSchema.parse(response.data).predictions
-            return predictions[0] ?? null
+            return categoryPredictionsResponseSchema.parse(response.data).predictions
         },
     })
 }

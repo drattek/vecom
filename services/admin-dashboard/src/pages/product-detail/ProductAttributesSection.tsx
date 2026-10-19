@@ -360,16 +360,39 @@ function CategorySelector({
             <div className="flex flex-col gap-2">
                 {prediction.isLoading ? (
                     <p className="text-sm text-muted-foreground">Buscando categoría sugerida…</p>
-                ) : prediction.data ? (
-                    <div className="flex flex-col gap-2 rounded-lg border border-border p-3">
-                        <p className="text-sm">
-                            Categoría sugerida: <span className="font-medium">{prediction.data.category_name}</span>{" "}
-                            <span className="text-xs text-muted-foreground">({prediction.data.category_id})</span>
-                        </p>
-                        <div className="flex gap-2">
-                            <Button size="sm" disabled={mutation.isPending} onClick={() => pick(prediction.data!.category_id)}>
-                                {mutation.isPending ? "Guardando…" : "Usar esta categoría"}
-                            </Button>
+                ) : prediction.data && prediction.data.length > 0 ? (
+                    <div className="flex flex-col gap-2">
+                        <p className="text-sm text-muted-foreground">Categorías sugeridas</p>
+                        <ul className="flex flex-col gap-2">
+                            {prediction.data.map((suggestion) => (
+                                <li
+                                    key={suggestion.category_id}
+                                    className="flex items-center gap-3 rounded-lg border border-border p-3"
+                                >
+                                    <div className="min-w-0 flex-1">
+                                        <p className="text-sm">
+                                            <span className="font-medium">{suggestion.category_name}</span>{" "}
+                                            <span className="text-xs text-muted-foreground">({suggestion.category_id})</span>
+                                        </p>
+                                        {suggestion.category_path.length > 0 ? (
+                                            <p className="mt-0.5 text-xs text-muted-foreground">
+                                                {suggestion.category_path.join(" › ")}
+                                            </p>
+                                        ) : null}
+                                    </div>
+                                    <Button
+                                        size="sm"
+                                        disabled={mutation.isPending}
+                                        onClick={() => pick(suggestion.category_id)}
+                                    >
+                                        {mutation.isPending && pickingExternalId === suggestion.category_id
+                                            ? "Guardando…"
+                                            : "Usar"}
+                                    </Button>
+                                </li>
+                            ))}
+                        </ul>
+                        <div>
                             <Button size="sm" variant="outline" disabled={mutation.isPending} onClick={() => setShowTree(true)}>
                                 Elegir otra
                             </Button>

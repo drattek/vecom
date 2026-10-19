@@ -524,6 +524,39 @@ func (s *MercadoLibreCategoryPredictorService) PredictCategories(
 	}, nil
 }
 
+// PredictCategoriesWithPath is PredictCategories plus each prediction's full
+// category path (root → leaf names, from GET /categories/{id}), so a UI can
+// show where a suggestion would be published. The path lookups are best
+// effort: one that fails leaves that prediction's CategoryPath empty instead
+// of failing the whole suggestion.
+func (s *MercadoLibreCategoryPredictorService) PredictCategoriesWithPath(
+	ctx context.Context,
+	connectionID int64,
+	title string,
+	siteID string,
+	limit int,
+) (*MercadoLibreCategoryPredictorResult, error) {
+	result, err := s.PredictCategories(ctx, connectionID, title, siteID, limit)
+	if err != nil {
+		return nil, err
+	}
+
+	for i := range result.Predictions {
+		details, err := s.categoriesHandler.GetCategory(ctx, result.Predictions[i].CategoryID)
+		if err != nil {
+			log.Printf("mercadolibre predictor: connection %d — could not read path of category %s: %v", connectionID, result.Predictions[i].CategoryID, err)
+			continue
+		}
+		path := make([]string, 0, len(details.PathFromRoot))
+		for _, node := range details.PathFromRoot {
+			path = append(path, node.Name)
+		}
+		result.Predictions[i].CategoryPath = path
+	}
+
+	return result, nil
+}
+
 // GetCategoryAttributes is a thin passthrough to the underlying (public, no
 // access token needed) GET /categories/{id}/attributes call — exposed here
 // so a caller can inspect exactly how MercadoLibre tags a category's

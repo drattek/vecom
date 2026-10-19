@@ -289,7 +289,7 @@ func (h *MercadoLibreHandler) PredictCategory(w http.ResponseWriter, r *http.Req
 		limit = parsedLimit
 	}
 
-	result, err := h.predictorService.PredictCategories(r.Context(), connectionID, title, siteID, limit)
+	result, err := h.predictorService.PredictCategoriesWithPath(r.Context(), connectionID, title, siteID, limit)
 	if err != nil {
 		if errors.Is(err, syncApp.ErrInvalidMercadoLibreConnection) {
 			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")

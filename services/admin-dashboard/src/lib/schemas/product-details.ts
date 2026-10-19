@@ -410,12 +410,14 @@ export type SyncConnection = z.infer<typeof syncConnectionSchema>
 export type ProductSyncSection = z.infer<typeof productSyncSectionSchema>
 
 // Sugerencia de categoría de MercadoLibre por texto —
-// GET /api/marketplaces/mercadolibre/category-predictor?connectionId=&title=&limit=1.
+// GET /api/marketplaces/mercadolibre/category-predictor?connectionId=&title=&limit=5.
 // category_id/category_name vienen tal cual los devuelve la API de MercadoLibre
 // (snake_case), a diferencia del resto de las respuestas del core.
 export const categoryPredictionSchema = z.object({
   category_id: z.string(),
   category_name: z.string(),
+  // Nombres de la ruta completa, de la raíz a la categoría (la agrega el core).
+  category_path: z.array(z.string()).optional().default([]),
 })
 
 export const categoryPredictionsResponseSchema = z.object({

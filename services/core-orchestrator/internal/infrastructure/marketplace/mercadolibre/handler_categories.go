@@ -34,6 +34,10 @@ type CategoryPrediction struct {
 	CategoryID   string              `json:"category_id"`
 	CategoryName string              `json:"category_name"`
 	Attributes   []CategoryAttribute `json:"attributes"`
+	// CategoryPath is the category's names from the root down to itself. It is
+	// not part of domain_discovery's response: it is filled in afterwards from
+	// GET /categories/{id} (see MercadoLibreCategoryPredictorService.PredictCategoriesWithPath).
+	CategoryPath []string `json:"category_path,omitempty"`
 }
 
 type apiError struct {
