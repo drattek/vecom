@@ -37,6 +37,7 @@ import { ConnectionsPage } from './pages/settings/ConnectionsPage.tsx'
 import { BrandsPage } from './pages/settings/BrandsPage.tsx'
 import { CurrenciesPage } from './pages/settings/CurrenciesPage.tsx'
 import { ExchangeRatesPage } from './pages/settings/ExchangeRatesPage.tsx'
+import { PriceListsPage } from './pages/settings/PriceListsPage.tsx'
 import { CategoriesPage } from './pages/settings/CategoriesPage.tsx'
 import { CategoryDetailPage } from './pages/settings/CategoryDetailPage.tsx'
 import { FitmentsVehiclesPage } from './pages/settings/FitmentsVehiclesPage.tsx'
@@ -114,6 +115,10 @@ function AppRoutes() {
           <Route
             path="company-exchange-rates"
             element={<ExchangeRatesPage />}
+          />
+          <Route
+            path="pricing-price-lists"
+            element={<PriceListsPage />}
           />
           <Route
             path="marketplace-channels"

@@ -30,6 +30,12 @@ const settingsMenuGroups: SettingsMenuGroup[] = [
         ],
     },
     {
+        label: 'Precios',
+        items: [
+            { label: 'Listas de precios', to: '/settings/pricing-price-lists' },
+        ],
+    },
+    {
         label: 'Marketplace',
         items: [
             { label: 'Canales', to: '/settings/marketplace-channels' },
