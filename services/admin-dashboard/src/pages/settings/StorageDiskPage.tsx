@@ -1,15 +1,19 @@
+import { AzureCredentialsDialog } from "@/components/storage/AzureCredentialsDialog";
 import { TablePagination } from "@/components/TablePagination";
+import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiClient } from "@/lib/api";
-import { paginatedStorageDisksResponseSchema } from "@/lib/schemas/storage-disk";
+import { paginatedStorageDisksResponseSchema, type StorageDisk } from "@/lib/schemas/storage-disk";
 import { useStoragePaginationStore } from "@/stores/storageDisckPaginationStore";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
+import { useState } from "react";
 
 export function StorageDiskPage() {
     const offset = useStoragePaginationStore((state) => state.offset)
     const pageSize = useStoragePaginationStore((state) => state.pageSize)
     const setOffset = useStoragePaginationStore((state) => state.setOffset)
     const setPageSize = useStoragePaginationStore((state) => state.setPageSize)
+    const [credentialsDisk, setCredentialsDisk] = useState<StorageDisk | null>(null)
 
     const { data, isLoading, isError, error } = useQuery({
         queryKey: ["storage-disk", offset, pageSize],
@@ -72,7 +76,11 @@ export function StorageDiskPage() {
                             <TableCell>{storageDisk.name}</TableCell>
                             <TableCell>{storageDisk.bucket}</TableCell>
                             <TableCell>{storageDisk.isPublic ? "Si" : "No"}</TableCell>
-                            <TableCell></TableCell>
+                            <TableCell>
+                                <Button size="sm" variant="outline" onClick={() => setCredentialsDisk(storageDisk)}>
+                                    Credenciales de Azure
+                                </Button>
+                            </TableCell>
                         </TableRow>
                     ))}
                 </TableBody>
@@ -85,6 +93,8 @@ export function StorageDiskPage() {
                 onOffsetChange={setOffset}
                 onPageSizeChange={setPageSize}
             />
+
+            <AzureCredentialsDialog disk={credentialsDisk} onOpenChange={(open) => !open && setCredentialsDisk(null)} />
         </section>
     )
 }
