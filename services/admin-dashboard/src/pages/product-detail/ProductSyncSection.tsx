@@ -1,3 +1,4 @@
+import { ImportMeliListingDialog } from "@/components/product-detail/ImportMeliListingDialog"
 import { Badge, Field, FieldError, SectionCard, SectionState } from "@/components/product-detail/ProductDetailPrimitives"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -131,6 +132,13 @@ function ConnectionCard({
     const closedListings = connection.listings.filter(isClosedListing)
     const hasActiveRows = activeListings.length > 0 || connection.pending.length > 0
     const environmentLabel = connection.environment === "production" ? "Producción" : "Desarrollo"
+    const connections = useChannelConnections()
+    const isMercadoLibre =
+        connections.data?.find((item) => item.id === connection.connectionId)?.channelCode === MERCADOLIBRE_CHANNEL_CODE
+    // El estado del diálogo vive aquí y no en el botón: al terminar la importación
+    // la sección se refresca y la tarjeta deja de mostrar el botón, pero el
+    // resumen de pasos debe seguir visible hasta que el usuario lo cierre.
+    const [importOpen, setImportOpen] = useState(false)
 
     return (
         <SectionCard
@@ -142,17 +150,26 @@ function ConnectionCard({
             }
         >
             {!hasActiveRows ? (
-                <PublishGate
-                    productId={productId}
-                    sku={sku}
-                    connectionId={connection.connectionId}
-                    message={
-                        closedListings.length > 0
-                            ? "La publicación anterior quedó cerrada (closed) en el marketplace y no se puede recuperar. Vuelve a publicar para crear una nueva."
-                            : "Este producto no está sincronizado en esta conexión."
-                    }
-                    buttonLabel={closedListings.length > 0 ? "Volver a publicar" : "Publicar en esta conexión"}
-                />
+                <div className="flex flex-col items-center">
+                    <PublishGate
+                        productId={productId}
+                        sku={sku}
+                        connectionId={connection.connectionId}
+                        message={
+                            closedListings.length > 0
+                                ? "La publicación anterior quedó cerrada (closed) en el marketplace y no se puede recuperar. Vuelve a publicar para crear una nueva."
+                                : "Este producto no está sincronizado en esta conexión."
+                        }
+                        buttonLabel={closedListings.length > 0 ? "Volver a publicar" : "Publicar en esta conexión"}
+                    />
+                    {/* Una publicación que ya existe en MercadoLibre se vincula en
+                        vez de publicar una nueva. */}
+                    {isMercadoLibre ? (
+                        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} disabled={!productId}>
+                            Importar publicación existente
+                        </Button>
+                    ) : null}
+                </div>
             ) : (
                 <div className="flex flex-col gap-4">
                     {connection.allowsMultipleListings ? (
@@ -192,6 +209,14 @@ function ConnectionCard({
                     ) : null}
                 </div>
             )}
+            {isMercadoLibre ? (
+                <ImportMeliListingDialog
+                    productId={productId}
+                    connectionId={connection.connectionId}
+                    open={importOpen}
+                    onOpenChange={setImportOpen}
+                />
+            ) : null}
         </SectionCard>
     )
 }

@@ -23,6 +23,7 @@ import (
 	channelConfigApp "core-orchestrator/internal/application/channel_config"
 	channelConnectionsService "core-orchestrator/internal/application/channel_connections"
 	channelListingsApp "core-orchestrator/internal/application/channel_listings"
+	meliListingImportApp "core-orchestrator/internal/application/meli_listing_import"
 	reportsApp "core-orchestrator/internal/application/reports"
 	channelsService "core-orchestrator/internal/application/channels"
 	compatibilityApp "core-orchestrator/internal/application/compatibility"
@@ -310,6 +311,27 @@ func main() {
 		categoryImportService,
 		channelAttributeValuesService,
 	)
+	// Backs "Importar una publicación existente" in the product's Sincronización
+	// tab: links a listing that already exists on MercadoLibre to a local
+	// product (validating the part number), copies its data locally and pushes
+	// price/stock/title back when the product has stock and a price.
+	meliListingImportService := meliListingImportApp.NewService(
+		mysqlRepos.ProductRepository,
+		mysqlRepos.ProductDimensionsRepository,
+		mysqlRepos.ChannelRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelProductMapRepository,
+		mercadoLibreTokenService,
+		mercadoLibreProductSyncService,
+		mercadoLibreCompatibilityService,
+		productCategorySelectionService,
+		channelAttributeValuesService,
+		mysqlRepos.FilesRepository,
+		mysqlRepos.StorageDiskRepository,
+		mysqlRepos.StorageDiskCredentialsRepository,
+		productImageImportService,
+		mercadoLibreRateLimiter,
+	)
 	// TEMPORARY one-off migration service — migra vecom_sync_product /
 	// vecom_products (sistema anterior) a ecom_products / ecom_channel_product_map.
 	// Eliminar junto con su handler y su ruta al terminar la migración.
@@ -451,6 +473,7 @@ func main() {
 	productAttributeChecklistHandler := httpHandler.NewProductAttributeChecklistHandler(productAttributeChecklistService)
 	productSyncHandler := httpHandler.NewProductSyncHandler(productSyncService)
 	productCategorySelectionHandler := httpHandler.NewProductCategorySelectionHandler(productCategorySelectionService)
+	meliListingImportHandler := httpHandler.NewMeliListingImportHandler(meliListingImportService)
 	productImageImportHandler := httpHandler.NewProductImageImportHandler(productImageImportService)
 	productVideosHandler := httpHandler.NewProductVideosHandler(productVideosService)
 	productPartNumbersHandler := httpHandler.NewProductPartNumbersHandler(productPartNumbersService)
@@ -621,6 +644,7 @@ func main() {
 		userHandler,
 		mercadoLibreImageDownloadHandler,
 		reportsHandler,
+		meliListingImportHandler,
 	)
 
 	server := &http.Server{

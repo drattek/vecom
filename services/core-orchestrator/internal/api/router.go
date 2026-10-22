@@ -73,6 +73,7 @@ func NewRouter(
 	userHandler *httpHandler.UserHandler,
 	mercadoLibreImageDownloadHandler *httpHandler.MercadoLibreImageDownloadHandler,
 	reportsHandler *httpHandler.ReportsHandler,
+	meliListingImportHandler *httpHandler.MeliListingImportHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -126,8 +127,8 @@ func NewRouter(
 		protected.Post("/api/storage-disks", storageDiskHandler.CreateStorageDisk)
 		protected.Put("/api/storage-disks/{id}", storageDiskHandler.UpdateStorageDisk)
 		protected.Delete("/api/storage-disks/{id}", storageDiskHandler.DeleteStorageDisk)
-		protected.Get("/api/files", fileHandler.GetFiles)
 		protected.Put("/api/storage-disks/{id}/azure-credentials", storageDiskHandler.SetAzureCredentials)
+		protected.Get("/api/files", fileHandler.GetFiles)
 		protected.Get("/api/files/{id}", fileHandler.GetFileByID)
 		protected.Post("/api/files", fileHandler.CreateFile)
 		protected.Put("/api/files/{id}", fileHandler.UpdateFile)
@@ -294,6 +295,7 @@ func NewRouter(
 		// paso previo al botón "Publicar" en Sincronización cuando la conexión
 		// todavía no tiene ninguna publicación. Ver ADR 0005.
 		protected.Post("/api/products/{productId}/details/sync/{connectionId}/category", productCategorySelectionHandler.Select)
+		protected.Post("/api/products/{productId}/details/sync/{connectionId}/import-listing", meliListingImportHandler.Import)
 
 		// Videos por URL desde el detalle de producto (Multimedia). Solo disco +
 		// URLs; sin orden, portada ni tipo.

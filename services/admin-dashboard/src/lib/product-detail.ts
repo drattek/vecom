@@ -9,6 +9,7 @@ import {
     categoryPredictionsResponseSchema,
     channelProductCategorySelectionSchema,
     createListingsResultSchema,
+    importListingResultSchema,
     productAttributesSectionSchema,
     productGeneralSchema,
     productAttachmentImportResponseSchema,
@@ -205,6 +206,38 @@ export function usePublishChannelListing(productId: string | undefined) {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["product-details", productId, "sync"] })
+        },
+    })
+}
+
+/**
+ * useImportMeliListing vincula al producto una publicación que ya existe en
+ * MercadoLibre (botón "Importar publicación existente"): el core valida el
+ * número de parte, copia nombre / categoría / descripción / atributos /
+ * compatibilidades y, si el producto tiene stock y precio, empuja precio,
+ * stock y título. Afecta casi todas las secciones del detalle, así que al
+ * terminar se invalida todo el producto.
+ *
+ * Mismo timeout ampliado que usePublishChannelListing: encadena varias
+ * llamadas al marketplace (ítem, descripción, atributos, compatibilidades).
+ */
+// Además de las llamadas a MercadoLibre, importa y convierte a WebP (sin pérdida,
+// lento) cada imagen de la publicación y la sube a Azure.
+const IMPORT_LISTING_TIMEOUT_MS = 240_000
+
+export function useImportMeliListing(productId: string | undefined) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (input: { connectionId: number; externalId: string }) => {
+            const response = await apiClient.post(
+                `/api/products/${productId}/details/sync/${input.connectionId}/import-listing`,
+                { externalId: input.externalId },
+                { timeout: IMPORT_LISTING_TIMEOUT_MS },
+            )
+            return importListingResultSchema.parse(response.data)
+        },
+        onSettled: () => {
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId] })
         },
     })
 }

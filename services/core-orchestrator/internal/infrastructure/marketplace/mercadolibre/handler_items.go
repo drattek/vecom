@@ -229,6 +229,28 @@ func (h *ItemsHandler) UpdateItemStatus(ctx context.Context, req UpdateItemStatu
 	return h.putItem(ctx, req.AccessToken, req.ExternalID, payload)
 }
 
+type UpdateItemTitleRequest struct {
+	AccessToken string
+	ExternalID  string
+	Title       string
+}
+
+// UpdateItemTitle calls PUT /items/{id} with only the title field — a partial
+// update, so the price/stock already on the listing are left alone. family_name
+// is deliberately never sent: it isn't editable on a listing that already
+// exists. MercadoLibre also rejects a title change on items that already have
+// sales (sold_quantity > 0); callers should treat that as an expected,
+// non-fatal outcome.
+func (h *ItemsHandler) UpdateItemTitle(ctx context.Context, req UpdateItemTitleRequest) error {
+	payload, err := json.Marshal(struct {
+		Title string `json:"title"`
+	}{Title: req.Title})
+	if err != nil {
+		return fmt.Errorf("error encoding mercadolibre item title update request: %w", err)
+	}
+	return h.putItem(ctx, req.AccessToken, req.ExternalID, payload)
+}
+
 // UpdateItemPicturesRequest carries a full replacement pictures array for an
 // already-listed item — see UpdateItemPictures.
 type UpdateItemPicturesRequest struct {
@@ -453,6 +475,13 @@ type ItemDetail struct {
 	// Pictures is the item's picture list, read by the (temporary)
 	// MercadoLibreImageDownloadHandler to bulk-download a listing's images.
 	Pictures []ItemPicture `json:"pictures"`
+	// SellerID, Status and SubStatus are read by meli_listing_import.Service
+	// when linking an already-existing listing to a local product: SellerID to
+	// make sure the listing belongs to the connection's own account, and
+	// Status/SubStatus to record its live state.
+	SellerID  int64    `json:"seller_id"`
+	Status    string   `json:"status"`
+	SubStatus []string `json:"sub_status"`
 }
 
 // GetItem calls GET /items/{id} and returns the fields ItemDetail needs.

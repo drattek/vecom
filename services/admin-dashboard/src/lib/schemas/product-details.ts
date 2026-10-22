@@ -409,6 +409,31 @@ export type SyncListing = z.infer<typeof syncListingSchema>
 export type SyncConnection = z.infer<typeof syncConnectionSchema>
 export type ProductSyncSection = z.infer<typeof productSyncSectionSchema>
 
+// Importar una publicación existente de MercadoLibre (botón de la vista
+// Sincronización) — POST .../details/sync/{connectionId}/import-listing con
+// { externalId }. Cada paso (nombre, categoría, descripción, atributos,
+// compatibilidades, vínculo, precio/stock, título) informa su propio resultado:
+// "warning" es un fallo no bloqueante y "skipped" un paso que no aplicaba.
+export const importListingStepSchema = z.object({
+  step: z.string(),
+  status: z.enum(['ok', 'skipped', 'warning', 'error']),
+  detail: z.string().optional().default(''),
+})
+
+export const importListingResultSchema = z.object({
+  productId: z.number(),
+  connectionId: z.number(),
+  externalId: z.string(),
+  title: z.string().optional().default(''),
+  categoryId: z.string().optional().default(''),
+  status: z.string().optional().default(''),
+  linked: z.boolean(),
+  steps: z.array(importListingStepSchema),
+})
+
+export type ImportListingStep = z.infer<typeof importListingStepSchema>
+export type ImportListingResult = z.infer<typeof importListingResultSchema>
+
 // Sugerencia de categoría de MercadoLibre por texto —
 // GET /api/marketplaces/mercadolibre/category-predictor?connectionId=&title=&limit=5.
 // category_id/category_name vienen tal cual los devuelve la API de MercadoLibre

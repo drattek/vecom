@@ -1033,7 +1033,7 @@ func (s *MercadoLibreProductSyncService) resolvePriceStockAndToken(ctx context.C
 	basePrice, _, priceListID, err := s.effectivePriceResolver.ResolveInCurrency(ctx, productID, mxnCurrency.ID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrProductPriceNotFound) {
-			return 0, 0, "", fmt.Errorf("no active price list entry for product %d", productID)
+			return 0, 0, "", fmt.Errorf("no active price list entry for product %d: %w", productID, err)
 		}
 		return 0, 0, "", fmt.Errorf("error loading effective price for product %d: %w", productID, err)
 	}
