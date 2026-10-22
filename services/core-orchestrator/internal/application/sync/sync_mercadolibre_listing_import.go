@@ -180,16 +180,26 @@ func (s *MercadoLibreProductSyncService) pushBrandedTitle(ctx context.Context, p
 		return
 	}
 
-	title, skipReason := ComposeBrandedTitle(product.BrandID, brand.Name, item.Title)
+	// An item with a family_name (User Product listing) has its title edited
+	// through family_name and MercadoLibre rejects a direct title change; the
+	// brand is appended to that family_name. Items without one take title.
+	useFamilyName := strings.TrimSpace(item.FamilyName) != ""
+	currentTitle := item.Title
+	if useFamilyName {
+		currentTitle = item.FamilyName
+	}
+
+	title, skipReason := ComposeBrandedTitle(product.BrandID, brand.Name, currentTitle)
 	if skipReason != "" {
 		result.TitleSkippedReason = skipReason
 		return
 	}
 
 	if err := s.itemsHandler.UpdateItemTitle(ctx, mercadoLibreInfra.UpdateItemTitleRequest{
-		AccessToken: accessToken,
-		ExternalID:  externalID,
-		Title:       title,
+		AccessToken:   accessToken,
+		ExternalID:    externalID,
+		Title:         title,
+		UseFamilyName: useFamilyName,
 	}); err != nil {
 		result.TitleError = fmt.Sprintf("MercadoLibre no aceptó el nuevo título %q: %v", title, err)
 		return

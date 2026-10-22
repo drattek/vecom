@@ -250,18 +250,26 @@ type UpdateItemTitleRequest struct {
 	AccessToken string
 	ExternalID  string
 	Title       string
+	// UseFamilyName sends the new title as family_name instead of title. An item
+	// that has a family_name (User Product listings) rejects a direct title
+	// change with BODY_INVALID_FIELDS "You cannot modify the title if the item
+	// has a family_name"; its title is edited through family_name, which
+	// MercadoLibre allows only while none of the User Product's sale conditions
+	// has sales (and which then syncs to every item of that User Product).
+	// Items without a family_name take title as usual.
+	UseFamilyName bool
 }
 
-// UpdateItemTitle calls PUT /items/{id} with only the title field — a partial
-// update, so the price/stock already on the listing are left alone. family_name
-// is deliberately never sent: it isn't editable on a listing that already
-// exists. MercadoLibre also rejects a title change on items that already have
-// sales (sold_quantity > 0); callers should treat that as an expected,
-// non-fatal outcome.
+// UpdateItemTitle calls PUT /items/{id} with only the title (or family_name)
+// field — a partial update, so the price/stock already on the listing are left
+// alone. MercadoLibre rejects the change on items that already have sales;
+// callers should treat that as an expected, non-fatal outcome.
 func (h *ItemsHandler) UpdateItemTitle(ctx context.Context, req UpdateItemTitleRequest) error {
-	payload, err := json.Marshal(struct {
-		Title string `json:"title"`
-	}{Title: req.Title})
+	key := "title"
+	if req.UseFamilyName {
+		key = "family_name"
+	}
+	payload, err := json.Marshal(map[string]string{key: req.Title})
 	if err != nil {
 		return fmt.Errorf("error encoding mercadolibre item title update request: %w", err)
 	}
@@ -492,13 +500,16 @@ type ItemDetail struct {
 	// Pictures is the item's picture list, read by the (temporary)
 	// MercadoLibreImageDownloadHandler to bulk-download a listing's images.
 	Pictures []ItemPicture `json:"pictures"`
-	// SellerID, Status and SubStatus are read by meli_listing_import.Service
-	// when linking an already-existing listing to a local product: SellerID to
-	// make sure the listing belongs to the connection's own account, and
-	// Status/SubStatus to record its live state.
-	SellerID  int64    `json:"seller_id"`
-	Status    string   `json:"status"`
-	SubStatus []string `json:"sub_status"`
+	// SellerID, Status, SubStatus and FamilyName are read by
+	// meli_listing_import.Service when linking an already-existing listing to a
+	// local product: SellerID to make sure the listing belongs to the
+	// connection's own account, Status/SubStatus to record its live state, and
+	// FamilyName to know whether the title is edited through family_name (User
+	// Product listings) or through title (see UpdateItemTitleRequest).
+	SellerID   int64    `json:"seller_id"`
+	Status     string   `json:"status"`
+	SubStatus  []string `json:"sub_status"`
+	FamilyName string   `json:"family_name"`
 }
 
 // GetItem calls GET /items/{id} and returns the fields ItemDetail needs.

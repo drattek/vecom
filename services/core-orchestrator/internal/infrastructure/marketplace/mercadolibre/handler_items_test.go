@@ -1,7 +1,11 @@
 package mercadolibre
 
 import (
+	"context"
 	"encoding/json"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"testing"
 )
 
@@ -35,5 +39,43 @@ func TestItemPictureCreatePayload(t *testing.T) {
 	}
 	if string(out) != `{"source":"https://example.com/c.jpg"}` {
 		t.Errorf("payload inesperado: %s", out)
+	}
+}
+
+// Un ítem con family_name rechaza "title" (BODY_INVALID_FIELDS): su título se
+// cambia con family_name. Los demás ítems siguen usando "title".
+func TestUpdateItemTitleField(t *testing.T) {
+	tests := []struct {
+		name          string
+		useFamilyName bool
+		want          string
+	}{
+		{"ítem con family_name", true, `{"family_name":"Tolva Original Nissan"}`},
+		{"ítem sin family_name", false, `{"title":"Tolva Original Nissan"}`},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var gotMethod, gotBody string
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				gotMethod, gotBody = r.Method, string(body)
+				w.WriteHeader(http.StatusOK)
+			}))
+			defer server.Close()
+
+			handler := NewItemsHandler(NewClient(server.Client(), server.URL, nil))
+			err := handler.UpdateItemTitle(context.Background(), UpdateItemTitleRequest{
+				AccessToken:   "token",
+				ExternalID:    "MLM1",
+				Title:         "Tolva Original Nissan",
+				UseFamilyName: tt.useFamilyName,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if gotMethod != http.MethodPut || gotBody != tt.want {
+				t.Errorf("%s %s, esperaba PUT %s", gotMethod, gotBody, tt.want)
+			}
+		})
 	}
 }
