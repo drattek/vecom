@@ -23,6 +23,12 @@ server {
         proxy_ssl_server_name on;
         proxy_ssl_verify off;
         proxy_http_version 1.1;
+        # Operaciones largas (importar una publicación de MercadoLibre con sus
+        # imágenes, publicar, resincronizar) pueden tardar más del default de
+        # nginx (60 s), que corta con un 504. Nota: el ingress de Azure Container
+        # Apps tiene su propio límite de 240 s que no se configura aquí.
+        proxy_read_timeout 300s;
+        proxy_send_timeout 300s;
         # Host del upstream, no el del navegador: el ingress de Container Apps
         # enruta por Host y con el del dashboard devolvería 404.
         proxy_set_header Host $proxy_host;

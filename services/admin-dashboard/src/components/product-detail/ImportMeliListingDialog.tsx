@@ -34,6 +34,11 @@ function importErrorMessage(error: unknown): string {
         }
         const status = error.response.status
         const serverMessage = getServerErrorMessage(error, "")
+        // 502/503/504 sin mensaje del API: lo generó un proxy (nginx, el ingress)
+        // al cansarse de esperar, no el servicio. El backend sigue importando.
+        if (!serverMessage && (status === 502 || status === 503 || status === 504)) {
+            return `Un servidor intermedio cortó la espera (error ${status}), pero la importación sigue ejecutándose en el servidor. Espera uno o dos minutos y recarga la sección para ver el resultado; es seguro repetirla.`
+        }
         return serverMessage ? `${serverMessage} (error ${status})` : `El servidor respondió con el error ${status} sin detalle.`
     }
 

@@ -34,6 +34,10 @@ import (
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
 
+// importTimeout bounds a whole import, including pictures, now that it no
+// longer depends on the HTTP request staying open.
+const importTimeout = 10 * time.Minute
+
 const (
 	mercadoLibreChannelCode = "MERCADOLIBRE"
 	partNumberAttributeID   = "PART_NUMBER"
@@ -189,6 +193,13 @@ type Result struct {
 // listing is linked only after all of them succeeded, so after fixing the
 // reported problem the import can simply be run again.
 func (s *Service) Import(ctx context.Context, input ImportInput) (*Result, error) {
+	// The import must run to completion even if the client goes away: a proxy
+	// in front of the API (nginx, the Container Apps ingress) cuts a slow request
+	// with a 504, which cancels the request context and would otherwise abort the
+	// import halfway. Its own deadline bounds it instead.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), importTimeout)
+	defer cancel()
+
 	if input.ProductID <= 0 || input.ConnectionID <= 0 || input.ActorID <= 0 || strings.TrimSpace(input.ExternalID) == "" {
 		return nil, ErrInvalidInput
 	}
@@ -262,19 +273,31 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*Result, error
 		CategoryID:   item.CategoryID,
 	}
 	failed := false
+	started := time.Now()
+	logf := func(format string, args ...any) {
+		log.Printf("meli listing import: product=%d item=%s: "+format, append([]any{product.ID, externalID}, args...)...)
+	}
 	record := func(step, status, detail string) {
 		result.Steps = append(result.Steps, StepResult{Step: step, Status: status, Detail: detail})
 		if status == StatusError {
 			failed = true
 		}
+		logf("step=%s status=%s elapsed=%s detail=%s", step, status, time.Since(started).Round(time.Millisecond), detail)
 	}
+	// run logs when a step starts, so if the import stalls the last "started"
+	// line without a matching result is the step it is stuck in.
+	run := func(step string, fn func()) {
+		logf("step=%s started", step)
+		fn()
+	}
+	logf("started (part number validated)")
 
-	s.importName(ctx, product, item, input.ActorID, record)
-	selection := s.importCategory(ctx, product, item, input, record)
-	s.importDescription(ctx, product, item, accessToken, input.ActorID, record)
-	s.importAttributes(ctx, product, item, selection, input, record)
-	s.importCompatibilities(ctx, product, externalID, accessToken, input.ActorID, record)
-	s.importImages(ctx, product, item, input.ActorID, record)
+	run(StepName, func() { s.importName(ctx, product, item, input.ActorID, record) })
+	var selection *productCategorySelectionApp.SelectionDTO
+	run(StepCategory, func() { selection = s.importCategory(ctx, product, item, input, record) })
+	run(StepDescription, func() { s.importDescription(ctx, product, item, accessToken, input.ActorID, record) })
+	run(StepAttributes, func() { s.importAttributes(ctx, product, item, selection, input, record) })
+	run(StepCompatibilities, func() { s.importCompatibilities(ctx, product, externalID, accessToken, input.ActorID, record) })
 
 	if failed {
 		record(StepLink, StatusSkipped, "No se vinculó la publicación porque hubo errores al guardar la información; corrígelos y vuelve a intentar.")
@@ -308,9 +331,17 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*Result, error
 	if err != nil {
 		refreshed = product
 	}
-	push := s.productSyncService.PushImportedListing(ctx, refreshed, input.ConnectionID, listing, item)
-	recordPush(push, record)
+	run(StepPriceStock, func() {
+		push := s.productSyncService.PushImportedListing(ctx, refreshed, input.ConnectionID, listing, item)
+		recordPush(push, record)
+	})
 
+	// Pictures go last: they are by far the slowest step (download, lossless
+	// WebP conversion, upload) and supplementary, so the listing is already
+	// linked and up to date in MercadoLibre by the time they run.
+	run(StepImages, func() { s.importImages(ctx, product, item, input.ActorID, record) })
+
+	logf("finished in %s (linked=%t)", time.Since(started).Round(time.Millisecond), result.Linked)
 	return result, nil
 }
 
