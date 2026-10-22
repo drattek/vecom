@@ -141,8 +141,8 @@ func (h *MercadoLibreImageDownloadHandler) downloadItemImages(ctx context.Contex
 
 	for i, picture := range item.Pictures {
 		index := i + 1
-		if err := h.downloadAndSaveAsWebP(ctx, picture.Source, dir, sku, index); err != nil {
-			result.Errors = append(result.Errors, fmt.Sprintf("image %d (%s): %v", index, picture.Source, err))
+		if err := h.downloadAndSaveAsWebP(ctx, picture.DownloadURL(), dir, sku, index); err != nil {
+			result.Errors = append(result.Errors, fmt.Sprintf("image %d (%s): %v", index, picture.DownloadURL(), err))
 			continue
 		}
 		result.ImagesDownloaded++

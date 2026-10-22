@@ -100,7 +100,7 @@ func (s *Service) importImages(ctx context.Context, product *mysqlInfra.ProductD
 			continue
 		}
 
-		data, err := s.downloadAsWebP(ctx, picture.Source)
+		data, err := s.downloadAsWebP(ctx, picture.DownloadURL())
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("imagen %d: %v", position, err))
 			continue

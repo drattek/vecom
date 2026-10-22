@@ -25,9 +25,26 @@ func NewItemsHandler(client *Client) *ItemsHandler {
 	return &ItemsHandler{client: client}
 }
 
-// ItemPicture is one entry of an item's pictures array: {"source": url}.
+// ItemPicture is one entry of an item's pictures array. When creating or
+// updating an item a picture is sent as {"source": url}; when an item is read
+// back MercadoLibre returns it as {"id", "url", "secure_url", ...} and leaves
+// "source" out — so Source is empty on pictures read from GET /items, and
+// URLs must be taken through DownloadURL.
 type ItemPicture struct {
-	Source string `json:"source"`
+	Source    string `json:"source"`
+	URL       string `json:"url,omitempty"`
+	SecureURL string `json:"secure_url,omitempty"`
+}
+
+// DownloadURL is the address to fetch the picture from: the HTTPS one when
+// MercadoLibre gave both, falling back to Source for pictures built locally.
+func (p ItemPicture) DownloadURL() string {
+	for _, candidate := range []string{p.SecureURL, p.URL, p.Source} {
+		if candidate = strings.TrimSpace(candidate); candidate != "" {
+			return candidate
+		}
+	}
+	return ""
 }
 
 // ItemAttribute is one entry of an item's attributes array. Most attributes
