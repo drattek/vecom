@@ -11,7 +11,8 @@ type MySQLRepositories struct {
 	ProductRepository                         *mysqlInfra.ProductRepository
 	AuthRepository                            *mysqlInfra.AuthRepository
 	StorageDiskRepository                     *mysqlInfra.StorageDiskRepository
-	FilesRepository                           *mysqlInfra.FilesRepository
+	StorageDiskCredentialsRepository          *mysqlInfra.StorageDiskCredentialsRepository
+	FilesRepository                          *mysqlInfra.FilesRepository
 	ChannelRepository                         *mysqlInfra.ChannelRepository
 	ChannelConnectionRepository               *mysqlInfra.ChannelConnectionRepository
 	BrandsRepository                          *mysqlInfra.BrandsRepository
@@ -67,6 +68,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 	productRepository := mysqlInfra.NewProductRepository(db)
 	authRepository := mysqlInfra.NewAuthRepository(db)
 	storageDiskRepository := mysqlInfra.NewStorageDiskRepository(db)
+	storageDiskCredentialsRepository := mysqlInfra.NewStorageDiskCredentialsRepository(db, mysqlInfra.NewCredentialCipher())
 	filesRepository := mysqlInfra.NewFilesRepository(db)
 	channelRepository := mysqlInfra.NewChannelRepository(db)
 	channelConnectionRepository := mysqlInfra.NewChannelConnectionRepository(db)
@@ -120,6 +122,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 		ProductRepository:                         productRepository,
 		AuthRepository:                            authRepository,
 		StorageDiskRepository:                     storageDiskRepository,
+		StorageDiskCredentialsRepository:          storageDiskCredentialsRepository,
 		FilesRepository:                           filesRepository,
 		ChannelRepository:                         channelRepository,
 		ChannelConnectionRepository:               channelConnectionRepository,

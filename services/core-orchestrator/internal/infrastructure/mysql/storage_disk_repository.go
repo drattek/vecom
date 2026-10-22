@@ -127,6 +127,26 @@ func (r *StorageDiskRepository) FindByID(ctx context.Context, id int64) (*Storag
 	return &storageDisk, nil
 }
 
+// FindByCode finds a live disk by its unique code, case-insensitively.
+func (r *StorageDiskRepository) FindByCode(ctx context.Context, code string) (*StorageDiskDTO, error) {
+	query := `
+		SELECT id, name, code, base_url, bucket, endpoint, is_public, created_by, updated_by, created_at, updated_at, deleted_at
+		FROM ecom_storage_disks
+		WHERE UPPER(code) = UPPER(?) AND deleted_at IS NULL
+		LIMIT 1
+	`
+
+	storageDisk, err := scanStorageDisk(r.db.QueryRowContext(ctx, query, code))
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrStorageDiskNotFound
+		}
+		return nil, err
+	}
+
+	return &storageDisk, nil
+}
+
 func (r *StorageDiskRepository) Create(ctx context.Context, input CreateStorageDiskInput) (*StorageDiskDTO, error) {
 	query := `
 		INSERT INTO ecom_storage_disks (name, code, base_url, bucket, endpoint, is_public, created_by, updated_by)

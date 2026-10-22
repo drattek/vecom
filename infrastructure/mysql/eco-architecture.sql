@@ -63,6 +63,23 @@ create table ecom_storage_disks (
     deleted_at timestamp default null
 );
 
+create table ecom_storage_disk_credentials (
+    id bigint unsigned primary key auto_increment,
+    disk_id bigint unsigned not null,
+    key_name varchar(100) not null,
+    value text not null,
+    is_encrypted boolean default 1,
+    created_by bigint unsigned not null,
+    updated_by bigint unsigned default null,
+    created_at timestamp default current_timestamp,
+    updated_at timestamp default current_timestamp on update current_timestamp,
+    deleted_at timestamp default null,
+    unique key uq_storage_disk_credential (disk_id, key_name),
+    constraint fk_storage_disk_credential_disk foreign key (disk_id) references ecom_storage_disks(id),
+    constraint fk_storage_disk_credential_created foreign key (created_by) references ecom_api_user(id),
+    constraint fk_storage_disk_credential_updated foreign key (updated_by) references ecom_api_user(id)
+);
+
 create table ecom_files (
     id bigint unsigned primary key auto_increment,
     disk_id bigint unsigned not null ,

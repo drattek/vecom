@@ -127,6 +127,7 @@ func NewRouter(
 		protected.Put("/api/storage-disks/{id}", storageDiskHandler.UpdateStorageDisk)
 		protected.Delete("/api/storage-disks/{id}", storageDiskHandler.DeleteStorageDisk)
 		protected.Get("/api/files", fileHandler.GetFiles)
+		protected.Put("/api/storage-disks/{id}/azure-credentials", storageDiskHandler.SetAzureCredentials)
 		protected.Get("/api/files/{id}", fileHandler.GetFileByID)
 		protected.Post("/api/files", fileHandler.CreateFile)
 		protected.Put("/api/files/{id}", fileHandler.UpdateFile)

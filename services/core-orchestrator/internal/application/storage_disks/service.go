@@ -14,8 +14,9 @@ var ErrStorageDiskCodeAlreadyExists = errors.New("storage disk code already exis
 var ErrInvalidStorageDiskPayload = errors.New("invalid storage disk payload")
 
 type StorageDiskService struct {
-	db         *sql.DB
-	repository *mysqlInfra.StorageDiskRepository
+	db                    *sql.DB
+	repository            *mysqlInfra.StorageDiskRepository
+	credentialsRepository *mysqlInfra.StorageDiskCredentialsRepository
 }
 
 type UpsertStorageDiskInput struct {
@@ -27,8 +28,8 @@ type UpsertStorageDiskInput struct {
 	IsPublic bool
 }
 
-func NewStorageDiskService(db *sql.DB, repository *mysqlInfra.StorageDiskRepository) *StorageDiskService {
-	return &StorageDiskService{db: db, repository: repository}
+func NewStorageDiskService(db *sql.DB, repository *mysqlInfra.StorageDiskRepository, credentialsRepository *mysqlInfra.StorageDiskCredentialsRepository) *StorageDiskService {
+	return &StorageDiskService{db: db, repository: repository, credentialsRepository: credentialsRepository}
 }
 
 func (s *StorageDiskService) GetPaginatedStorageDisks(ctx context.Context, offset, pageSize int) (*mysqlInfra.PaginatedStorageDisks, error) {

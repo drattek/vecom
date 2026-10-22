@@ -95,7 +95,7 @@ func main() {
 
 	// Initialize services
 	productService := prodService.NewProductService(db, mysqlRepos.ProductRepository, mysqlRepos.PendingProductVehicleFitmentsRepository, mysqlRepos.ProductVehicleCompatibilityRepository, mysqlRepos.PartNumberSupersessionsRepository)
-	storageDiskService := storageDisksService.NewStorageDiskService(db, mysqlRepos.StorageDiskRepository)
+	storageDiskService := storageDisksService.NewStorageDiskService(db, mysqlRepos.StorageDiskRepository, mysqlRepos.StorageDiskCredentialsRepository)
 	fileService := filesService.NewFileService(db, mysqlRepos.FilesRepository)
 	channelService := channelsService.NewChannelService(db, mysqlRepos.ChannelRepository, mysqlRepos.ChannelProductMapRepository)
 	channelConnectionService := channelConnectionsService.NewChannelConnectionService(db, mysqlRepos.ChannelConnectionRepository)
