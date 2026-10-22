@@ -63,6 +63,8 @@ const stepLabels: Record<string, string> = {
     link: "Vínculo con la publicación",
     price_stock: "Precio y stock",
     title: "Título con marca",
+    listing_type: "Tipo de publicación Premium",
+    official_store: "Fuera de tienda oficial",
 }
 
 const statusLabels: Record<ImportListingStep["status"], string> = {

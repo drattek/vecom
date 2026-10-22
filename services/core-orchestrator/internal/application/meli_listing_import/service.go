@@ -58,6 +58,8 @@ const (
 	StepImages          = "images"
 	StepLink            = "link"
 	StepPriceStock      = "price_stock"
+	StepListingType     = "listing_type"
+	StepOfficialStore   = "official_store"
 	StepTitle           = "title"
 
 	StatusOK      = "ok"
@@ -336,6 +338,10 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*Result, error
 		recordPush(push, record)
 	})
 
+	run(StepListingType, func() {
+		recordNormalize(s.productSyncService.NormalizeImportedListing(ctx, input.ConnectionID, listing, item), record)
+	})
+
 	// Pictures go last: they are by far the slowest step (download, lossless
 	// WebP conversion, upload) and supplementary, so the listing is already
 	// linked and up to date in MercadoLibre by the time they run.
@@ -343,6 +349,26 @@ func (s *Service) Import(ctx context.Context, input ImportInput) (*Result, error
 
 	logf("finished in %s (linked=%t)", time.Since(started).Round(time.Millisecond), result.Linked)
 	return result, nil
+}
+
+func recordNormalize(normalize *syncApp.ImportedListingNormalizeResult, record func(step, status, detail string)) {
+	switch {
+	case normalize.ListingTypeError != "":
+		record(StepListingType, StatusWarning, normalize.ListingTypeError)
+	case normalize.ListingTypeChanged:
+		record(StepListingType, StatusOK, fmt.Sprintf("Tipo de publicación cambiado de %q a Premium.", normalize.ListingTypeFrom))
+	default:
+		record(StepListingType, StatusSkipped, normalize.ListingTypeSkippedReason)
+	}
+
+	switch {
+	case normalize.OfficialStoreError != "":
+		record(StepOfficialStore, StatusWarning, normalize.OfficialStoreError)
+	case normalize.OfficialStoreRemoved:
+		record(StepOfficialStore, StatusOK, fmt.Sprintf("Publicación sacada de la tienda oficial %d.", normalize.OfficialStoreID))
+	default:
+		record(StepOfficialStore, StatusSkipped, normalize.OfficialStoreSkippedReason)
+	}
 }
 
 func (s *Service) requireMercadoLibreConnection(ctx context.Context, connectionID int64) error {

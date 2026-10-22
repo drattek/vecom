@@ -263,3 +263,75 @@ func normalizeTitleWords(s string) string {
 		return !unicode.IsLetter(r) && !unicode.IsDigit(r)
 	}), " ")
 }
+
+// ImportedListingNormalizeResult reports how NormalizeImportedListing brought an
+// imported listing in line with how this system publishes: Premium listing type
+// and outside any official store. As in ImportedListingPushResult, *Skipped
+// fields explain a deliberate no-op and *Error fields are real failures.
+type ImportedListingNormalizeResult struct {
+	ListingTypeChanged       bool   `json:"listingTypeChanged"`
+	ListingTypeFrom          string `json:"listingTypeFrom,omitempty"`
+	ListingTypeSkippedReason string `json:"listingTypeSkippedReason,omitempty"`
+	ListingTypeError         string `json:"listingTypeError,omitempty"`
+
+	OfficialStoreRemoved       bool   `json:"officialStoreRemoved"`
+	OfficialStoreID            int64  `json:"officialStoreId,omitempty"`
+	OfficialStoreSkippedReason string `json:"officialStoreSkippedReason,omitempty"`
+	OfficialStoreError         string `json:"officialStoreError,omitempty"`
+}
+
+// NormalizeImportedListing makes an already-existing MercadoLibre listing match
+// how this system publishes (see createNewItem): listing type Premium
+// (mercadoLibreItemListingTypeID) and no official store. It moves the listing to
+// Premium when it has another type, and detaches it from its official store when
+// it has one. Closed and under_review listings are left alone, like in every
+// other automatic flow. MercadoLibre may refuse either change (a listing type can
+// be changed only once; removing a store isn't a documented operation), which is
+// reported in the matching *Error field and never fails the import.
+func (s *MercadoLibreProductSyncService) NormalizeImportedListing(ctx context.Context, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO, item *mercadoLibreInfra.ItemDetail) *ImportedListingNormalizeResult {
+	result := &ImportedListingNormalizeResult{}
+	externalID := derefString(listing.ExternalID)
+
+	switch listing.Status {
+	case mercadoLibreMapStatusClosed:
+		reason := "la publicación está cerrada en MercadoLibre; no se modifica"
+		result.ListingTypeSkippedReason, result.OfficialStoreSkippedReason = reason, reason
+		return result
+	case mercadoLibreMapStatusUnderReview:
+		reason := "la publicación está en revisión en MercadoLibre; corrige los datos del producto y usa Resincronizar"
+		result.ListingTypeSkippedReason, result.OfficialStoreSkippedReason = reason, reason
+		return result
+	}
+
+	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
+	if err != nil {
+		message := fmt.Sprintf("no se pudo obtener el token de MercadoLibre: %v", err)
+		result.ListingTypeError, result.OfficialStoreError = message, message
+		return result
+	}
+
+	switch {
+	case strings.EqualFold(item.ListingTypeID, mercadoLibreItemListingTypeID):
+		result.ListingTypeSkippedReason = "la publicación ya es Premium"
+	default:
+		result.ListingTypeFrom = item.ListingTypeID
+		if err := s.itemsHandler.UpdateItemListingType(ctx, accessToken, externalID, mercadoLibreItemListingTypeID); err != nil {
+			result.ListingTypeError = fmt.Sprintf("MercadoLibre no permitió cambiar el tipo de publicación de %q a Premium: %v", item.ListingTypeID, err)
+		} else {
+			result.ListingTypeChanged = true
+		}
+	}
+
+	if item.OfficialStoreID == nil || *item.OfficialStoreID == 0 {
+		result.OfficialStoreSkippedReason = "la publicación no está en una tienda oficial"
+		return result
+	}
+	result.OfficialStoreID = *item.OfficialStoreID
+	if err := s.itemsHandler.RemoveItemOfficialStore(ctx, accessToken, externalID); err != nil {
+		result.OfficialStoreError = fmt.Sprintf("MercadoLibre no permitió sacar la publicación de la tienda oficial %d: %v", *item.OfficialStoreID, err)
+		return result
+	}
+	result.OfficialStoreRemoved = true
+
+	return result
+}

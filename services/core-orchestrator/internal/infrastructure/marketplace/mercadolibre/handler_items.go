@@ -246,6 +246,69 @@ func (h *ItemsHandler) UpdateItemStatus(ctx context.Context, req UpdateItemStatu
 	return h.putItem(ctx, req.AccessToken, req.ExternalID, payload)
 }
 
+// UpdateItemListingType moves an existing item to listingTypeID (e.g.
+// "gold_pro", Premium) with POST …/listing_type {"id": listingTypeID}.
+// MercadoLibre documents the route as /marketplace/items/{id}/listing_type; the
+// older /items/{id}/listing_type is tried when that one answers 404. It only
+// accepts a type the item can move to (and a listing type may be changed only
+// once, and not on items with certain sales conditions), so callers must treat a
+// rejection as non-fatal.
+func (h *ItemsHandler) UpdateItemListingType(ctx context.Context, accessToken, externalID, listingTypeID string) error {
+	payload, err := json.Marshal(struct {
+		ID string `json:"id"`
+	}{ID: listingTypeID})
+	if err != nil {
+		return fmt.Errorf("error encoding mercadolibre listing type request: %w", err)
+	}
+
+	err = h.postItemPath(ctx, accessToken, fmt.Sprintf("/marketplace/items/%s/listing_type", externalID), payload)
+	if err != nil && strings.Contains(err.Error(), "(404)") {
+		err = h.postItemPath(ctx, accessToken, fmt.Sprintf("/items/%s/listing_type", externalID), payload)
+	}
+	return err
+}
+
+// postItemPath sends payload as the JSON body of POST {baseURL}{path}.
+func (h *ItemsHandler) postItemPath(ctx context.Context, accessToken, path string, payload []byte) error {
+	log.Printf("mercadolibre items: POST %s payload: %s", path, payload)
+
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, h.client.baseURL+path, bytes.NewReader(payload))
+	if err != nil {
+		return fmt.Errorf("error creating mercadolibre request: %w", err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+accessToken)
+
+	response, err := h.client.Do(request)
+	if err != nil {
+		return fmt.Errorf("error calling mercadolibre endpoint %s: %w", path, err)
+	}
+	defer response.Body.Close()
+
+	responsePayload, err := io.ReadAll(response.Body)
+	if err != nil {
+		return fmt.Errorf("error reading mercadolibre response from %s: %w", path, err)
+	}
+	if response.StatusCode < 200 || response.StatusCode > 299 {
+		return fmt.Errorf("mercadolibre %s failed: %w", path, parseItemAPIError(response.StatusCode, responsePayload))
+	}
+	return nil
+}
+
+// RemoveItemOfficialStore detaches an item from its official store with
+// PUT /items/{id} {"official_store_id": null} — the same explicit null
+// CreateItemVals sends to publish outside a store. MercadoLibre doesn't document
+// removing a store from an existing item, so it may be refused (for instance
+// for brand-type accounts, which must always carry a store); callers must treat
+// a rejection as non-fatal.
+func (h *ItemsHandler) RemoveItemOfficialStore(ctx context.Context, accessToken, externalID string) error {
+	payload, err := json.Marshal(map[string]any{"official_store_id": nil})
+	if err != nil {
+		return fmt.Errorf("error encoding mercadolibre official store request: %w", err)
+	}
+	return h.putItem(ctx, accessToken, externalID, payload)
+}
+
 type UpdateItemTitleRequest struct {
 	AccessToken string
 	ExternalID  string
@@ -510,6 +573,11 @@ type ItemDetail struct {
 	Status     string   `json:"status"`
 	SubStatus  []string `json:"sub_status"`
 	FamilyName string   `json:"family_name"`
+	// ListingTypeID (e.g. "gold_pro" = Premium, "gold_special" = Clásica) and
+	// OfficialStoreID (nil when the item isn't in an official store) are read by
+	// meli_listing_import.Service to normalise an imported listing.
+	ListingTypeID   string `json:"listing_type_id"`
+	OfficialStoreID *int64 `json:"official_store_id"`
 }
 
 // GetItem calls GET /items/{id} and returns the fields ItemDetail needs.
