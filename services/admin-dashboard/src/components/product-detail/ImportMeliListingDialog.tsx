@@ -13,7 +13,40 @@ import { Label } from "@/components/ui/label"
 import { getServerErrorMessage } from "@/lib/api"
 import { useImportMeliListing } from "@/lib/product-detail"
 import type { ImportListingResult, ImportListingStep } from "@/lib/schemas/product-details"
+import axios from "axios"
 import { useState } from "react"
+import { ZodError } from "zod"
+
+/**
+ * Motivo legible de un fallo al importar. getServerErrorMessage devuelve su
+ * texto de respaldo cuando no hay mensaje del servidor (timeout, red caída, una
+ * respuesta que no cumple el schema), que es justo cuando más hace falta saber
+ * qué pasó; aquí cada caso se nombra y el detalle técnico también va a la consola.
+ */
+function importErrorMessage(error: unknown): string {
+    console.error("Error al importar la publicación", error)
+
+    if (axios.isAxiosError(error)) {
+        if (!error.response) {
+            return error.code === "ECONNABORTED"
+                ? "El servidor tardó demasiado en responder. La importación pudo haber avanzado parcialmente: revisa el producto y vuelve a intentar (es seguro repetirla)."
+                : `No hubo respuesta del servidor (${error.message}). Revisa tu conexión o que el servicio esté en línea.`
+        }
+        const status = error.response.status
+        const serverMessage = getServerErrorMessage(error, "")
+        return serverMessage ? `${serverMessage} (error ${status})` : `El servidor respondió con el error ${status} sin detalle.`
+    }
+
+    if (error instanceof ZodError) {
+        const detail = error.issues
+            .slice(0, 3)
+            .map((issue) => `${issue.path.join(".") || "respuesta"}: ${issue.message}`)
+            .join("; ")
+        return `El servidor respondió con un formato inesperado (${detail}). La importación pudo haberse completado: recarga la sección.`
+    }
+
+    return error instanceof Error ? `No se pudo importar la publicación: ${error.message}` : "No se pudo importar la publicación."
+}
 
 const stepLabels: Record<string, string> = {
     name: "Nombre del producto",
@@ -89,7 +122,7 @@ export function ImportMeliListingDialog({
             { connectionId, externalId: trimmedId },
             {
                 onSuccess: setResult,
-                onError: (error) => setErrorMessage(getServerErrorMessage(error, "No se pudo importar la publicación.")),
+                onError: (error) => setErrorMessage(importErrorMessage(error)),
             },
         )
     }
