@@ -14,9 +14,14 @@ import (
 )
 
 // MeliListingImportHandler serves "Importar una publicación existente" in the
-// product detail page's Sincronización tab: POST
-// /api/products/{productId}/details/sync/{connectionId}/import-listing links a
-// MercadoLibre listing that already exists to the product.
+// product detail page's Sincronización tab.
+//
+// POST /api/products/{productId}/details/sync/{connectionId}/import-listing
+// validates the request and starts the import in the background, answering 202
+// with a job; GET /api/products/{productId}/import-listing-jobs/{jobId} returns
+// that job's progress. The import is not done inside the request because it can
+// outlast the response time any proxy in front of the API allows (Cloudflare
+// answers 524 after 100 s).
 type MeliListingImportHandler struct {
 	service *meliListingImportApp.Service
 }
@@ -53,7 +58,7 @@ func (h *MeliListingImportHandler) Import(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	result, err := h.service.Import(r.Context(), meliListingImportApp.ImportInput{
+	job, err := h.service.Start(r.Context(), meliListingImportApp.ImportInput{
 		ProductID:    productID,
 		ConnectionID: connectionID,
 		ExternalID:   req.ExternalID,
@@ -91,6 +96,9 @@ func (h *MeliListingImportHandler) Import(w http.ResponseWriter, r *http.Request
 		case errors.Is(err, meliListingImportApp.ErrListingFetch):
 			log.Printf("meli listing import: %v", err)
 			writeJSONError(w, http.StatusBadGateway, "No se pudo consultar la publicación en MercadoLibre. Intenta de nuevo.")
+		case errors.Is(err, meliListingImportApp.ErrJobStore):
+			log.Printf("meli listing import: %v", err)
+			writeJSONError(w, http.StatusServiceUnavailable, "No se pudo iniciar la importación: el almacén de progreso (Redis) no está disponible.")
 		default:
 			log.Printf("meli listing import: %v", err)
 			writeJSONError(w, http.StatusInternalServerError, "internal error")
@@ -98,7 +106,30 @@ func (h *MeliListingImportHandler) Import(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	writeJSONResponse(w, result)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(job)
+}
+
+// GetImportJob returns the progress of an import started with Import.
+func (h *MeliListingImportHandler) GetImportJob(w http.ResponseWriter, r *http.Request) {
+	productID, ok := parseDetailProductID(w, r)
+	if !ok {
+		return
+	}
+
+	job, err := h.service.GetJob(r.Context(), productID, chi.URLParam(r, "jobId"))
+	if err != nil {
+		if errors.Is(err, meliListingImportApp.ErrJobNotFound) {
+			writeJSONError(w, http.StatusNotFound, "No se encontró el avance de la importación (pudo haber caducado). Recarga la sección para ver el resultado.")
+			return
+		}
+		log.Printf("meli listing import: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	writeJSONResponse(w, job)
 }
 
 func partNumberMismatchMessage(err *meliListingImportApp.PartNumberMismatchError) string {

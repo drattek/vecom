@@ -34,8 +34,8 @@ import (
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
 
-// importTimeout bounds a whole import, including pictures, now that it no
-// longer depends on the HTTP request staying open.
+// importTimeout bounds a whole import, including pictures. It runs in the
+// background (see Start), not tied to the HTTP request that started it.
 const importTimeout = 10 * time.Minute
 
 const (
@@ -114,6 +114,7 @@ type Service struct {
 	storageDiskCredentialsRepository *mysqlInfra.StorageDiskCredentialsRepository
 	productImageImportService        *productImageImportApp.Service
 	pictureClient                    *http.Client
+	jobs                             JobStore
 	itemsHandler                 *mercadoLibreInfra.ItemsHandler
 	usersHandler                  *mercadoLibreInfra.UsersHandler
 }
@@ -133,6 +134,7 @@ func NewService(
 	storageDiskRepository *mysqlInfra.StorageDiskRepository,
 	storageDiskCredentialsRepository *mysqlInfra.StorageDiskCredentialsRepository,
 	productImageImportService *productImageImportApp.Service,
+	jobs JobStore,
 	rateLimiter *mercadoLibreInfra.RateLimiter,
 ) *Service {
 	client := mercadoLibreInfra.NewClient(nil, "", rateLimiter)
@@ -154,6 +156,7 @@ func NewService(
 		storageDiskCredentialsRepository: storageDiskCredentialsRepository,
 		productImageImportService:        productImageImportService,
 		pictureClient:                    &http.Client{Timeout: 30 * time.Second},
+		jobs:                             jobs,
 		itemsHandler:                 mercadoLibreInfra.NewItemsHandler(client),
 		usersHandler:                  mercadoLibreInfra.NewUsersHandler(client),
 	}
@@ -187,168 +190,6 @@ type Result struct {
 	Status       string       `json:"status"`
 	Linked       bool         `json:"linked"`
 	Steps        []StepResult `json:"steps"`
-}
-
-// Import runs the whole flow. Errors returned here mean nothing was written
-// (validation failed); once the local writes start, failures are reported per
-// step in the Result instead. The local writes are each idempotent and the
-// listing is linked only after all of them succeeded, so after fixing the
-// reported problem the import can simply be run again.
-func (s *Service) Import(ctx context.Context, input ImportInput) (*Result, error) {
-	// The import must run to completion even if the client goes away: a proxy
-	// in front of the API (nginx, the Container Apps ingress) cuts a slow request
-	// with a 504, which cancels the request context and would otherwise abort the
-	// import halfway. Its own deadline bounds it instead.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), importTimeout)
-	defer cancel()
-
-	if input.ProductID <= 0 || input.ConnectionID <= 0 || input.ActorID <= 0 || strings.TrimSpace(input.ExternalID) == "" {
-		return nil, ErrInvalidInput
-	}
-	externalID, err := NormalizeItemID(input.ExternalID)
-	if err != nil {
-		return nil, err
-	}
-
-	product, err := s.productRepository.FindByID(ctx, input.ProductID)
-	if err != nil {
-		return nil, err
-	}
-
-	if err := s.requireMercadoLibreConnection(ctx, input.ConnectionID); err != nil {
-		return nil, err
-	}
-
-	active, err := s.channelProductMapRepository.CountActiveListings(ctx, product.ID, input.ConnectionID)
-	if err != nil {
-		return nil, err
-	}
-	if active > 0 {
-		return nil, ErrProductAlreadyListed
-	}
-
-	if existing, err := s.channelProductMapRepository.FindByConnectionAndExternalID(ctx, input.ConnectionID, externalID); err == nil {
-		if existing.ProductID != product.ID {
-			return nil, fmt.Errorf("%w (product %d)", ErrListingLinkedToOtherProduct, existing.ProductID)
-		}
-	} else if !errors.Is(err, mysqlInfra.ErrChannelProductMapNotFound) {
-		return nil, fmt.Errorf("error looking up listing %s: %w", externalID, err)
-	}
-
-	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, input.ConnectionID)
-	if err != nil {
-		return nil, fmt.Errorf("error getting mercadolibre access token: %w", err)
-	}
-
-	item, err := s.itemsHandler.GetItem(ctx, accessToken, externalID)
-	if err != nil {
-		// parseItemAPIError doesn't expose a typed status, only "(404): ...".
-		if strings.Contains(err.Error(), "(404)") {
-			return nil, fmt.Errorf("%w: %s", ErrListingNotFound, externalID)
-		}
-		return nil, fmt.Errorf("%w (%s): %v", ErrListingFetch, externalID, err)
-	}
-	// A listing MercadoLibre reports as permanently dead (closed, or
-	// under_review/forbidden) can't be recovered, so there is nothing to link.
-	mapStatus := syncApp.FoldMercadoLibreItemStatus(item.Status, item.SubStatus)
-	if strings.EqualFold(item.Status, meliStatusClosed) || mapStatus == meliMapStatusClosed {
-		return nil, ErrListingClosed
-	}
-
-	me, err := s.usersHandler.GetMe(ctx, accessToken)
-	if err != nil {
-		return nil, fmt.Errorf("error resolving the connection's mercadolibre account: %w", err)
-	}
-	if item.SellerID != me.ID {
-		return nil, ErrListingNotOwned
-	}
-
-	if err := validatePartNumber(product.PartNumber, item.Attributes); err != nil {
-		return nil, err
-	}
-
-	result := &Result{
-		ProductID:    product.ID,
-		ConnectionID: input.ConnectionID,
-		ExternalID:   externalID,
-		Title:        strings.TrimSpace(item.Title),
-		CategoryID:   item.CategoryID,
-	}
-	failed := false
-	started := time.Now()
-	logf := func(format string, args ...any) {
-		log.Printf("meli listing import: product=%d item=%s: "+format, append([]any{product.ID, externalID}, args...)...)
-	}
-	record := func(step, status, detail string) {
-		result.Steps = append(result.Steps, StepResult{Step: step, Status: status, Detail: detail})
-		if status == StatusError {
-			failed = true
-		}
-		logf("step=%s status=%s elapsed=%s detail=%s", step, status, time.Since(started).Round(time.Millisecond), detail)
-	}
-	// run logs when a step starts, so if the import stalls the last "started"
-	// line without a matching result is the step it is stuck in.
-	run := func(step string, fn func()) {
-		logf("step=%s started", step)
-		fn()
-	}
-	logf("started (part number validated)")
-
-	run(StepName, func() { s.importName(ctx, product, item, input.ActorID, record) })
-	var selection *productCategorySelectionApp.SelectionDTO
-	run(StepCategory, func() { selection = s.importCategory(ctx, product, item, input, record) })
-	run(StepDescription, func() { s.importDescription(ctx, product, item, accessToken, input.ActorID, record) })
-	run(StepAttributes, func() { s.importAttributes(ctx, product, item, selection, input, record) })
-	run(StepCompatibilities, func() { s.importCompatibilities(ctx, product, externalID, accessToken, input.ActorID, record) })
-
-	if failed {
-		record(StepLink, StatusSkipped, "No se vinculó la publicación porque hubo errores al guardar la información; corrígelos y vuelve a intentar.")
-		return result, nil
-	}
-
-	pausedReason := ""
-	if mapStatus == meliMapStatusPaused {
-		// Paused by someone other than this system: never auto-reactivated.
-		pausedReason = pausedReasonUser
-	}
-	listing, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
-		ProductID:          product.ID,
-		ConnectionID:       input.ConnectionID,
-		ListingTitle:       result.Title,
-		ExternalID:         externalID,
-		ExternalCategoryID: item.CategoryID,
-		Status:             mapStatus,
-		PausedReason:       pausedReason,
-		ActorID:            input.ActorID,
-	})
-	if err != nil {
-		record(StepLink, StatusError, fmt.Sprintf("No se pudo registrar la publicación: %v", err))
-		return result, nil
-	}
-	result.Linked = true
-	result.Status = mapStatus
-	record(StepLink, StatusOK, fmt.Sprintf("Publicación %s vinculada (estado: %s).", externalID, mapStatus))
-
-	refreshed, err := s.productRepository.FindByID(ctx, product.ID)
-	if err != nil {
-		refreshed = product
-	}
-	run(StepPriceStock, func() {
-		push := s.productSyncService.PushImportedListing(ctx, refreshed, input.ConnectionID, listing, item)
-		recordPush(push, record)
-	})
-
-	run(StepListingType, func() {
-		recordNormalize(s.productSyncService.NormalizeImportedListing(ctx, input.ConnectionID, listing, item), record)
-	})
-
-	// Pictures go last: they are by far the slowest step (download, lossless
-	// WebP conversion, upload) and supplementary, so the listing is already
-	// linked and up to date in MercadoLibre by the time they run.
-	run(StepImages, func() { s.importImages(ctx, product, item, input.ActorID, record) })
-
-	logf("finished in %s (linked=%t)", time.Since(started).Round(time.Millisecond), result.Linked)
-	return result, nil
 }
 
 func recordNormalize(normalize *syncApp.ImportedListingNormalizeResult, record func(step, status, detail string)) {

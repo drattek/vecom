@@ -330,6 +330,7 @@ func main() {
 		mysqlRepos.StorageDiskRepository,
 		mysqlRepos.StorageDiskCredentialsRepository,
 		productImageImportService,
+		redisInfra.NewImportJobStore(redisInfra.NewClient(cfg)),
 		mercadoLibreRateLimiter,
 	)
 	// TEMPORARY one-off migration service — migra vecom_sync_product /

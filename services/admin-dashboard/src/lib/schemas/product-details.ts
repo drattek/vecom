@@ -428,11 +428,26 @@ export const importListingResultSchema = z.object({
   categoryId: z.string().optional().default(''),
   status: z.string().optional().default(''),
   linked: z.boolean(),
-  steps: z.array(importListingStepSchema),
+  // Go serializa un slice vacío/nil como null.
+  steps: z.array(importListingStepSchema).nullish().transform((steps) => steps ?? []),
+})
+
+// La importación corre en segundo plano en el core: el POST responde 202 con un
+// job y el avance se consulta con GET .../import-listing-jobs/{jobId}. "result"
+// se va llenando paso a paso mientras status es "running"; "failed" es solo para
+// una importación que no pudo terminar (error interno o reinicio del servicio).
+export const importListingJobSchema = z.object({
+  jobId: z.string(),
+  productId: z.number(),
+  connectionId: z.number(),
+  status: z.enum(['running', 'done', 'failed']),
+  error: z.string().optional().default(''),
+  result: importListingResultSchema.nullish(),
 })
 
 export type ImportListingStep = z.infer<typeof importListingStepSchema>
 export type ImportListingResult = z.infer<typeof importListingResultSchema>
+export type ImportListingJob = z.infer<typeof importListingJobSchema>
 
 // Sugerencia de categoría de MercadoLibre por texto —
 // GET /api/marketplaces/mercadolibre/category-predictor?connectionId=&title=&limit=5.

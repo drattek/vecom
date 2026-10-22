@@ -9,7 +9,7 @@ import {
     categoryPredictionsResponseSchema,
     channelProductCategorySelectionSchema,
     createListingsResultSchema,
-    importListingResultSchema,
+    importListingJobSchema,
     productAttributesSectionSchema,
     productGeneralSchema,
     productAttachmentImportResponseSchema,
@@ -212,33 +212,47 @@ export function usePublishChannelListing(productId: string | undefined) {
 
 /**
  * useImportMeliListing vincula al producto una publicación que ya existe en
- * MercadoLibre (botón "Importar publicación existente"): el core valida el
- * número de parte, copia nombre / categoría / descripción / atributos /
- * compatibilidades y, si el producto tiene stock y precio, empuja precio,
- * stock y título. Afecta casi todas las secciones del detalle, así que al
- * terminar se invalida todo el producto.
- *
- * Mismo timeout ampliado que usePublishChannelListing: encadena varias
- * llamadas al marketplace (ítem, descripción, atributos, compatibilidades).
+ * MercadoLibre (botón "Importar publicación existente"). El POST valida el
+ * número de parte y arranca la importación en segundo plano en el core,
+ * respondiendo enseguida con un job: la importación (que incluye convertir y
+ * subir imágenes) puede tardar más de lo que un proxy espera una respuesta
+ * (Cloudflare corta a los 100 s con un 524), así que el avance se consulta con
+ * useImportMeliListingJob.
  */
-// Además de las llamadas a MercadoLibre, importa y convierte a WebP (sin pérdida,
-// lento) cada imagen de la publicación y la sube a Azure.
-const IMPORT_LISTING_TIMEOUT_MS = 240_000
-
 export function useImportMeliListing(productId: string | undefined) {
-    const queryClient = useQueryClient()
     return useMutation({
         mutationFn: async (input: { connectionId: number; externalId: string }) => {
             const response = await apiClient.post(
                 `/api/products/${productId}/details/sync/${input.connectionId}/import-listing`,
                 { externalId: input.externalId },
-                { timeout: IMPORT_LISTING_TIMEOUT_MS },
             )
-            return importListingResultSchema.parse(response.data)
+            return importListingJobSchema.parse(response.data)
         },
-        onSettled: () => {
+    })
+}
+
+// Cada cuánto se consulta el avance de una importación en curso.
+const IMPORT_JOB_POLL_MS = 2_000
+
+/**
+ * useImportMeliListingJob consulta el avance del job cada 2 s mientras siga en
+ * "running" (y se detiene al terminar). Con cada cambio se invalida el producto,
+ * porque la importación va actualizando su nombre, categoría, imágenes, etc.
+ */
+export function useImportMeliListingJob(productId: string | undefined, jobId: string | null) {
+    const queryClient = useQueryClient()
+    return useQuery({
+        queryKey: ["import-listing-job", productId, jobId],
+        enabled: Boolean(productId) && jobId != null,
+        queryFn: async () => {
+            const response = await apiClient.get(`/api/products/${productId}/import-listing-jobs/${jobId}`)
+            const job = importListingJobSchema.parse(response.data)
             queryClient.invalidateQueries({ queryKey: ["product-details", productId] })
+            return job
         },
+        refetchInterval: (query) => (query.state.data?.status === "running" || !query.state.data ? IMPORT_JOB_POLL_MS : false),
+        // Un fallo puntual de red mientras se consulta no debe detener el avance.
+        retry: 3,
     })
 }
 

@@ -296,6 +296,7 @@ func NewRouter(
 		// todavía no tiene ninguna publicación. Ver ADR 0005.
 		protected.Post("/api/products/{productId}/details/sync/{connectionId}/category", productCategorySelectionHandler.Select)
 		protected.Post("/api/products/{productId}/details/sync/{connectionId}/import-listing", meliListingImportHandler.Import)
+		protected.Get("/api/products/{productId}/import-listing-jobs/{jobId}", meliListingImportHandler.GetImportJob)
 
 		// Videos por URL desde el detalle de producto (Multimedia). Solo disco +
 		// URLs; sin orden, portada ni tipo.
