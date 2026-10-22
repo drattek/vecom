@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"unicode"
 	"unicode/utf8"
@@ -51,9 +52,14 @@ type ImportedListingPushResult struct {
 //  2. appends the brand to the listing's title (see ComposeBrandedTitle).
 //
 // Unlike Refresh it is never gated on "did price/stock change since the last
-// sync" — an import always pushes. It leaves a paused/under_review/closed
-// listing alone, same as every other sync path (a human or MercadoLibre put it
-// there). Only price and quantity are sent: the package attributes
+// sync" — an import always pushes — and it does not skip a paused listing: a
+// listing that already exists is very often paused precisely because it ran out
+// of stock, and bringing it back in line with the local price/stock is the
+// point of importing it (MercadoLibre reactivates an out-of-stock listing on
+// its own once it has stock again). The live status is re-read afterwards and
+// recorded as it really is. Closed and under_review listings are left alone,
+// as in every other automatic flow. Only price
+// and quantity are sent: the package attributes
 // updateExistingListings adds would overwrite whatever the seller had on the
 // listing with generic defaults when the product has no dimensions of its own.
 // A title MercadoLibre refuses (items with sales can't change it) is reported
@@ -62,8 +68,17 @@ func (s *MercadoLibreProductSyncService) PushImportedListing(ctx context.Context
 	result := &ImportedListingPushResult{}
 	externalID := derefString(listing.ExternalID)
 
-	if isPausedOrUnderReview(listing.Status) {
-		reason := fmt.Sprintf("la publicación está en estado %q en MercadoLibre; no se modifica", listing.Status)
+	// closed can't be recovered and under_review is never updated automatically
+	// (the user fixes the product's data and presses "Resincronizar"); a paused
+	// listing is updated like any other.
+	switch listing.Status {
+	case mercadoLibreMapStatusClosed:
+		reason := "la publicación está cerrada en MercadoLibre; no se modifica"
+		result.PriceStockSkippedReason = reason
+		result.TitleSkippedReason = reason
+		return result
+	case mercadoLibreMapStatusUnderReview:
+		reason := "la publicación está en revisión en MercadoLibre; corrige los datos del producto y usa Resincronizar"
 		result.PriceStockSkippedReason = reason
 		result.TitleSkippedReason = reason
 		return result
@@ -100,16 +115,7 @@ func (s *MercadoLibreProductSyncService) PushImportedListing(ctx context.Context
 		},
 	}); err != nil {
 		result.PriceStockError = fmt.Sprintf("error actualizando precio y stock en MercadoLibre: %v", err)
-	} else if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
-		ProductID:          product.ID,
-		ConnectionID:       connectionID,
-		VehicleFitmentID:   listing.VehicleFitmentID,
-		ListingTitle:       derefString(listing.ListingTitle),
-		ExternalID:         externalID,
-		ExternalCategoryID: derefString(listing.ExternalCategoryID),
-		Status:             mercadoLibreMapStatusSynced,
-		ActorID:            systemMercadoLibreSyncActorID,
-	}); err != nil {
+	} else if _, err := s.channelProductMapRepository.Upsert(ctx, s.liveListingMapInput(ctx, product, connectionID, listing, accessToken)); err != nil {
 		result.PriceStockError = fmt.Sprintf("precio y stock enviados, pero no se pudo registrar la sincronización: %v", err)
 	} else {
 		result.PriceStockUpdated = true
@@ -120,6 +126,44 @@ func (s *MercadoLibreProductSyncService) PushImportedListing(ctx context.Context
 	s.pushBrandedTitle(ctx, product, item, externalID, accessToken, result)
 
 	return result
+}
+
+// liveListingStatus returns externalID's current status on MercadoLibre folded
+// into the ecom_channel_product_map vocabulary, or fallback if it can't be read.
+func (s *MercadoLibreProductSyncService) liveListingStatus(ctx context.Context, accessToken, externalID, fallback string) string {
+	live, err := s.itemsHandler.GetItem(ctx, accessToken, externalID)
+	if err != nil {
+		log.Printf("mercadolibre: listing %s — could not re-read its status after a push, keeping %q: %v", externalID, fallback, err)
+		return fallback
+	}
+	return foldMercadoLibreStatus(live.Status, live.SubStatus)
+}
+
+// liveListingMapInput builds the ecom_channel_product_map upsert for listing
+// right after a price/stock push, with the status MercadoLibre reports now (the
+// push may have reactivated an out-of-stock listing). A listing that is still
+// paused is recorded with paused_reason 'user' — this system didn't pause it, so
+// no later refresh reactivates it on its own. If the status can't be read, the
+// one recorded at import time is kept.
+func (s *MercadoLibreProductSyncService) liveListingMapInput(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO, accessToken string) mysqlInfra.UpsertChannelProductMapInput {
+	status := s.liveListingStatus(ctx, accessToken, derefString(listing.ExternalID), listing.Status)
+
+	pausedReason := ""
+	if status == mercadoLibreMapStatusPaused {
+		pausedReason = "user"
+	}
+
+	return mysqlInfra.UpsertChannelProductMapInput{
+		ProductID:          product.ID,
+		ConnectionID:       connectionID,
+		VehicleFitmentID:   listing.VehicleFitmentID,
+		ListingTitle:       derefString(listing.ListingTitle),
+		ExternalID:         derefString(listing.ExternalID),
+		ExternalCategoryID: derefString(listing.ExternalCategoryID),
+		Status:             status,
+		PausedReason:       pausedReason,
+		ActorID:            systemMercadoLibreSyncActorID,
+	}
 }
 
 // pushBrandedTitle appends the product's brand to the listing's current title

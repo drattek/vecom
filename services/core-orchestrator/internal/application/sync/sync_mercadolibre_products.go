@@ -48,11 +48,11 @@ const (
 	// retried.
 	mercadoLibreSubStatusForbidden = "forbidden"
 
-	// ecom_channel_product_map.status values. under_review, paused and closed
-	// each mean "leave this listing alone on the next sync" (see
-	// isPausedOrUnderReview), but are kept as distinct values (rather than
-	// all folding into one) so the map's status column mirrors MercadoLibre's
-	// own vocabulary.
+	// ecom_channel_product_map.status values. under_review and closed mean
+	// "leave this listing alone on the next sync" (a paused one is still updated
+	// while the product has stock and a price), but all are kept as distinct
+	// values (rather than folding into one) so the map's status column mirrors
+	// MercadoLibre's own vocabulary.
 	mercadoLibreMapStatusSynced      = "synced"
 	mercadoLibreMapStatusPaused      = "paused"
 	mercadoLibreMapStatusUnderReview = "under_review"
@@ -357,8 +357,8 @@ func (s *MercadoLibreProductSyncService) Publish(ctx context.Context, product *m
 // import from that package is needed here). channel_listings.RefreshListings
 // calls this before it walks ecom_channel_product_map, so that by the time
 // Refresh (below) runs, every row's status already reflects MercadoLibre's
-// live state and Refresh's isPausedOrUnderReview gate correctly leaves alone
-// a listing the marketplace itself has since put under review/paused —
+// live state and Refresh handles a listing the marketplace itself has since put
+// under review or paused correctly (a closed one is left alone) —
 // otherwise a listing MercadoLibre silently moved to under_review since its
 // last local sync would still look "synced" here and get an update call that
 // MercadoLibre would reject anyway. It also reconciles category drift the
@@ -378,10 +378,9 @@ func (s *MercadoLibreProductSyncService) SyncListingStatus(ctx context.Context, 
 // listing. It fires when product's effective price or total stock changed
 // since listing.LastSyncedAt (see priceOrStockChangedSince, shared with
 // Odoo's Refresh in sync_odoo_products.go) — or unconditionally when the
-// listing is currently under_review, since that status is otherwise a dead
-// end: MercadoLibre sometimes reactivates a listing without this system's
-// local status ever finding out, and the only way to detect that is to just
-// retry the update and see whether MercadoLibre now accepts it. The PUT
+// listing is paused (see isPaused in the body). A listing under_review is never
+// touched here (it is fixed by editing the product and pressing "Resincronizar",
+// see Resync). The PUT
 // /items call sends only price, stock, and attributes — MercadoLibre's
 // update endpoint requires price/stock together regardless of which one
 // actually moved, and attributes ride along for free so a custom attribute
@@ -391,16 +390,9 @@ func (s *MercadoLibreProductSyncService) SyncListingStatus(ctx context.Context, 
 // calls SyncListingStatus right before this, which already reconciles any
 // category drift against MercadoLibre's live state (see
 // RefreshChannelProductMapStatusAndCategory) — resending it here would just
-// repeat that work with a possibly stale local value. Listings currently
-// paused/closed are left untouched, same as updateExistingListings — only
-// under_review gets this extra retry. A successful retry falls through to
-// the same Upsert every other successful update goes through, which always
-// writes status "synced" — exactly what should happen once MercadoLibre
-// confirms the listing is no longer under review. A retry MercadoLibre still
-// rejects is treated as the expected outcome for a listing that's still
-// genuinely under review, not a batch error: the row is left completely
-// untouched (already recorded as under_review) so the next refresh run
-// simply tries again.
+// repeat that work with a possibly stale local value. Closed and under_review
+// listings are left untouched; paused ones are updated when the product has
+// stock and a price (see the isPaused comment in the body).
 func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error) {
 	externalID := derefString(listing.ExternalID)
 	if externalID == "" {
@@ -409,17 +401,25 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 	if listing.Status == mercadoLibreMapStatusClosed {
 		return false, nil
 	}
-	// A paused listing is left alone except for one case: this service put it
-	// in paused itself (paused_reason='zero_stock') on a prior refresh because
-	// qty hit 0 and the connection had sync_zero_stock_as_paused on. If stock
-	// came back, we reactivate it here. Any other paused listing (user-paused,
-	// unknown reason) is treated like today and skipped — the sync must not
-	// override a human decision.
-	isZeroStockPaused := listing.Status == mercadoLibreMapStatusPaused && derefString(listing.PausedReason) == pausedReasonZeroStock
-	if listing.Status == mercadoLibreMapStatusPaused && !isZeroStockPaused {
+	// under_review is never updated automatically: MercadoLibre won't accept
+	// the update until the listing's data is fixed, so the user corrects the
+	// product and presses "Resincronizar" (Resync), which does retry it.
+	if listing.Status == mercadoLibreMapStatusUnderReview {
 		return false, nil
 	}
-	isUnderReview := listing.Status == mercadoLibreMapStatusUnderReview
+	// A paused listing is updated whenever the product has stock and a price:
+	// price/stock are pushed even if nothing changed since the last sync (the
+	// listing is often paused only because MercadoLibre still shows no stock),
+	// and what happens to its status depends on who paused it. One this service
+	// paused itself (paused_reason='zero_stock') on a prior refresh because qty
+	// hit 0 and the connection had sync_zero_stock_as_paused on is reactivated
+	// here once stock came back. Any other paused listing (user-paused, unknown
+	// reason) gets the new price/stock but is never reactivated by us — the sync
+	// must not override a human decision — and keeps whatever status
+	// MercadoLibre reports afterwards. With no stock or no price there is
+	// nothing to push to a paused listing, so it is left alone.
+	isPaused := listing.Status == mercadoLibreMapStatusPaused
+	isZeroStockPaused := isPaused && derefString(listing.PausedReason) == pausedReasonZeroStock
 	// El sku de pinnedSKUPriceOverrideSKU se refresca siempre, sin pasar por el
 	// gate de "solo si cambió precio/stock" (ver mercadoLibreRefreshPriceStockGateEnabled
 	// más abajo): su precio fijo debe mantenerse en MercadoLibre incluso cuando
@@ -444,7 +444,7 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 		return false, fmt.Errorf("error loading stock for product %d: %w", product.ID, err)
 	}
 
-	if mercadoLibreRefreshPriceStockGateEnabled && !isUnderReview && !isPinnedSKU && !priceOrStockChangedSince(priceUpdatedAt, stocks, listing.LastSyncedAt) {
+	if mercadoLibreRefreshPriceStockGateEnabled && !isPaused && !isPinnedSKU && !priceOrStockChangedSince(priceUpdatedAt, stocks, listing.LastSyncedAt) {
 		return false, nil
 	}
 
@@ -465,7 +465,7 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 	// leave the listing as it is. A price change on a different product would
 	// still have cleared priceOrStockChangedSince above, which is why this
 	// has to be re-checked here after qtyAvailable is computed.
-	if isZeroStockPaused && qtyAvailable <= 0 {
+	if isPaused && (qtyAvailable <= 0 || finalPrice <= 0) {
 		return false, nil
 	}
 
@@ -529,10 +529,6 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 			Attributes:        attributes,
 		},
 	}); err != nil {
-		if isUnderReview {
-			log.Printf("mercadolibre: listing %s still under review, leaving status unchanged: %v", externalID, err)
-			return false, nil
-		}
 		return false, fmt.Errorf("error updating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
 	}
 
@@ -563,6 +559,15 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 			return false, fmt.Errorf("error reactivating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
 		}
 		log.Printf("mercadolibre: listing %s reactivated (stock back) for product %d", externalID, product.ID)
+	case isPaused && !isZeroStockPaused:
+		// Paused by someone else: price/stock were pushed, but the status is
+		// whatever MercadoLibre says now (it reactivates an out-of-stock
+		// listing on its own); a listing that stays paused is recorded as
+		// user-paused so no later refresh reactivates it.
+		nextMapStatus = s.liveListingStatus(ctx, accessToken, externalID, listing.Status)
+		if nextMapStatus == mercadoLibreMapStatusPaused {
+			nextPausedReason = "user"
+		}
 	}
 
 	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
@@ -602,15 +607,15 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 	if listing.Status == mercadoLibreMapStatusClosed {
 		return false, nil
 	}
-	// Resync treats paused the same way Refresh does: left alone unless we
-	// paused it ourselves because of zero stock (see Refresh's doc comment on
-	// isZeroStockPaused). Pictures/attributes are deliberately resent as part
-	// of the usual Resync flow, since reactivating a listing is a good moment
-	// to also refresh them in case anything changed while it was paused.
-	isZeroStockPaused := listing.Status == mercadoLibreMapStatusPaused && derefString(listing.PausedReason) == pausedReasonZeroStock
-	if listing.Status == mercadoLibreMapStatusPaused && !isZeroStockPaused {
-		return false, nil
-	}
+	// Resync treats paused the same way Refresh does (see its isPaused comment):
+	// updated whenever the product has stock and a price. Pictures/attributes
+	// are deliberately resent as part of the usual Resync flow, since
+	// reactivating a listing is a good moment to also refresh them in case
+	// anything changed while it was paused. under_review is the one status that
+	// is only ever touched from here: it can't be updated automatically, so the
+	// user fixes the product's data and presses "Resincronizar", which retries it.
+	isPaused := listing.Status == mercadoLibreMapStatusPaused
+	isZeroStockPaused := isPaused && derefString(listing.PausedReason) == pausedReasonZeroStock
 	isUnderReview := listing.Status == mercadoLibreMapStatusUnderReview
 
 	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, mercadoLibreItemCurrencyID)
@@ -642,9 +647,9 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 		qtyAvailable += stock.AvailableQty
 	}
 
-	// Same short-circuit as Refresh: nothing to send if we're the ones who
-	// paused this (zero_stock) and stock is still at 0.
-	if isZeroStockPaused && qtyAvailable <= 0 {
+	// Same short-circuit as Refresh: nothing to send to a paused listing while
+	// the product has no stock or no price.
+	if isPaused && (qtyAvailable <= 0 || finalPrice <= 0) {
 		return false, nil
 	}
 
@@ -749,6 +754,13 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 			return false, fmt.Errorf("error reactivating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
 		}
 		log.Printf("mercadolibre: resync — listing %s reactivated (stock back) for product %d", externalID, product.ID)
+	case isPaused && !isZeroStockPaused:
+		// Paused by someone else: see Refresh — record whatever status
+		// MercadoLibre reports now, never reactivating it ourselves.
+		nextMapStatus = s.liveListingStatus(ctx, accessToken, externalID, listing.Status)
+		if nextMapStatus == mercadoLibreMapStatusPaused {
+			nextPausedReason = "user"
+		}
 	}
 
 	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
@@ -861,10 +873,9 @@ func fitmentIDsEqual(a, b *int64) bool {
 // mercadoLibreMapStatusClosed, not "under_review" — MercadoLibre's own docs
 // confirm this specific combination never recovers through the normal
 // review flow, so treating it as merely "under review" would make
-// RefreshChannelProductMapStatus (and anything gating on
-// isPausedOrUnderReview) keep expecting it to come back on its own. Absent
-// that, under_review and paused each map to their own distinct value (see
-// isPausedOrUnderReview); every other MercadoLibre status (active, closed,
+// RefreshChannelProductMapStatus (and anything gating on the closed /
+// under_review statuses) keep expecting it to come back on its own. Absent
+// that, under_review and paused each map to their own distinct value; every other MercadoLibre status (active, closed,
 // inactive, ...) folds into mercadoLibreMapStatusSynced since none of them
 // are branched on today.
 func foldMercadoLibreStatus(rawStatus string, subStatus []string) string {
@@ -882,15 +893,6 @@ func foldMercadoLibreStatus(rawStatus string, subStatus []string) string {
 	default:
 		return mercadoLibreMapStatusSynced
 	}
-}
-
-// isPausedOrUnderReview reports whether a channel_product_map status means
-// "leave this listing alone on the next sync" — true for paused,
-// under_review, and closed (which also covers a forbidden listing folded to
-// closed by foldMercadoLibreStatus — there's nothing to recover, so it
-// should never be retried either).
-func isPausedOrUnderReview(status string) bool {
-	return status == mercadoLibreMapStatusPaused || status == mercadoLibreMapStatusUnderReview || status == mercadoLibreMapStatusClosed
 }
 
 func derefString(s *string) string {
@@ -1072,7 +1074,8 @@ type updateListingsOutcome struct {
 // updateExistingListings refreshes price/stock on every one of a product's
 // existing listings — no pictures/attributes/category/title, since those
 // only apply when creating a new listing. Listings whose last known status
-// is paused or under_review (see isPausedOrUnderReview) are left untouched.
+// is closed or under_review are left untouched, and a paused one is updated
+// only while the product has stock and a price (see the loop body).
 // A single listing's update failing does
 // not stop the others from being attempted; the first such error is still
 // returned (after every listing has been tried) so the batch caller can
@@ -1094,8 +1097,13 @@ func (s *MercadoLibreProductSyncService) updateExistingListings(
 			continue
 		}
 
-		if isPausedOrUnderReview(listing.Status) {
-			log.Printf("mercadolibre update: product %d — listing %s is paused/under_review, skipping", product.ID, externalID)
+		// closed (unrecoverable) and under_review (fixed by editing the product
+		// and pressing "Resincronizar") are never updated from here; a paused
+		// listing is, but only while the product has stock and a price.
+		isPaused := listing.Status == mercadoLibreMapStatusPaused
+		if listing.Status == mercadoLibreMapStatusClosed || listing.Status == mercadoLibreMapStatusUnderReview ||
+			(isPaused && (qtyAvailable <= 0 || finalPrice <= 0)) {
+			log.Printf("mercadolibre update: product %d — listing %s is %s, skipping", product.ID, externalID, listing.Status)
 			outcome.SkippedExternalIDs = append(outcome.SkippedExternalIDs, externalID)
 			continue
 		}
@@ -1117,6 +1125,17 @@ func (s *MercadoLibreProductSyncService) updateExistingListings(
 			continue
 		}
 
+		// A listing that was paused keeps whatever status MercadoLibre reports
+		// now (it reactivates an out-of-stock one by itself); one that stays
+		// paused is recorded as user-paused so it is never reactivated by us.
+		nextStatus, nextPausedReason := mercadoLibreMapStatusSynced, ""
+		if isPaused {
+			nextStatus = s.liveListingStatus(ctx, accessToken, externalID, listing.Status)
+			if nextStatus == mercadoLibreMapStatusPaused {
+				nextPausedReason = "user"
+			}
+		}
+
 		if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 			ProductID:          product.ID,
 			ConnectionID:       listing.ConnectionID,
@@ -1124,7 +1143,8 @@ func (s *MercadoLibreProductSyncService) updateExistingListings(
 			ListingTitle:       derefString(listing.ListingTitle),
 			ExternalID:         externalID,
 			ExternalCategoryID: derefString(listing.ExternalCategoryID),
-			Status:             mercadoLibreMapStatusSynced,
+			Status:             nextStatus,
+			PausedReason:       nextPausedReason,
 			ActorID:            systemMercadoLibreSyncActorID,
 		}); err != nil {
 			log.Printf("mercadolibre update: product %d — error recording update for listing %s: %v", product.ID, externalID, err)
@@ -1784,8 +1804,8 @@ type ChannelProductMapStatusResult struct {
 // own state, so a listing paused or put under review directly on
 // MercadoLibre (by the seller from its own site, or by MercadoLibre's policy
 // enforcement) would otherwise go unnoticed here indefinitely — including
-// isPausedOrUnderReview continuing to see the stale local status and (not)
-// skip it accordingly. Rows with no external_id yet (never successfully
+// Refresh continuing to see the stale local status and (not) skip it
+// accordingly. Rows with no external_id yet (never successfully
 // published) are skipped, same as RefreshListings' refreshOne.
 func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatus(ctx context.Context, connectionID int64) (*ChannelProductMapStatusResult, error) {
 	if connectionID <= 0 {

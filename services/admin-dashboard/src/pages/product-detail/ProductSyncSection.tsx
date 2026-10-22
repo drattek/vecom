@@ -551,7 +551,7 @@ function ResyncOutcomes({ outcomes }: { outcomes: RefreshOutcome[] }) {
                         ? `Error: ${outcome.error}`
                         : outcome.updated
                           ? `Resincronizado${outcome.externalId ? ` (${outcome.externalId})` : ""}.`
-                          : "Sin cambios (publicación pausada, cerrada, o sin id externo todavía)."}
+                          : "Sin cambios (publicación cerrada, pausada sin stock o precio, o sin id externo todavía)."}
                 </li>
             ))}
         </ul>

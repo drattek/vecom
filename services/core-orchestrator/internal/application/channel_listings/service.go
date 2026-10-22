@@ -116,7 +116,7 @@ type Refresher interface {
 // listing's live status/category from the marketplace before RefreshListings
 // walks ecom_channel_product_map, so the price/stock push that follows sees
 // up-to-date state and correctly leaves alone a listing the marketplace
-// itself has since put under review/paused (see Refresh/isPausedOrUnderReview
+// itself has since put under review/paused (see Refresh
 // on the MercadoLibre side, and
 // MercadoLibreProductSyncService.RefreshChannelProductMapStatusAndCategory,
 // the only implementation of this today). A channel with nothing equivalent
