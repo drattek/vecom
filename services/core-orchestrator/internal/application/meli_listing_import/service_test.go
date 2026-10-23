@@ -97,3 +97,18 @@ func TestBlobName(t *testing.T) {
 		}
 	}
 }
+
+func TestCompatibilityErrorSummary(t *testing.T) {
+	tests := map[string]string{
+		"error fetching mercadolibre catalog product MLMU1: Get \"x\": context deadline exceeded": "se agotó el tiempo",
+		"mercadolibre items fetch failed: (429): too many requests":                              "MercadoLibre limitó las consultas (429)",
+		"mercadolibre item fetch failed: (404): not found":                                       "vehículo no encontrado en el catálogo de MercadoLibre (404)",
+		"catalog product MLMU2 is missing brand/model/year attributes":                           "el producto de catálogo no trae marca, modelo o año",
+		"error creating vehicle fitment: duplicate":                                              "error creating vehicle fitment",
+	}
+	for message, want := range tests {
+		if got := compatibilityErrorSummary(message); got != want {
+			t.Errorf("compatibilityErrorSummary(%q) = %q, esperaba %q", message, got, want)
+		}
+	}
+}

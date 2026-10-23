@@ -21,6 +21,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -36,7 +37,15 @@ import (
 
 // importTimeout bounds a whole import, including pictures. It runs in the
 // background (see Start), not tied to the HTTP request that started it.
-const importTimeout = 10 * time.Minute
+const importTimeout = 35 * time.Minute
+
+// compatibilitiesTimeout bounds the compatibilities step on its own. It is the
+// slowest step by far: every compatibility is resolved with one MercadoLibre
+// catalog request, and those share the platform-wide budget of
+// MercadoLibreRateLimit calls per minute (90), so a part that fits 1,300 vehicles
+// needs at least ~15 minutes. It runs last, with its own budget, so it can never
+// starve the steps that matter more (linking, price/stock, images).
+const compatibilitiesTimeout = 20 * time.Minute
 
 const (
 	mercadoLibreChannelCode = "MERCADOLIBRE"
@@ -503,17 +512,75 @@ func (s *Service) importCompatibilities(ctx context.Context, product *mysqlInfra
 		record(StepCompatibilities, StatusWarning, fmt.Sprintf("No se pudieron consultar las compatibilidades: %v", err))
 		return
 	}
-	linked := 0
-	for _, outcome := range outcomes {
-		if outcome.CompatibilityID != 0 {
-			linked++
-		}
-	}
 	if len(outcomes) == 0 {
 		record(StepCompatibilities, StatusSkipped, "La publicación no tiene compatibilidades registradas.")
 		return
 	}
-	record(StepCompatibilities, StatusOK, fmt.Sprintf("%d de %d compatibilidad(es) vinculadas al producto (%d vehículo(s) nuevos).", linked, len(outcomes), len(newFitments)))
+
+	// Each entry ends up linked, already linked from before, left out because
+	// MercadoLibre manages it (no individual vehicle), or failed. Counting them
+	// apart is what makes "0 vinculadas" readable: a re-run reports everything
+	// as "ya estaba", which is not the same as nothing having worked.
+	var linked, alreadyLinked, catalogManaged, failed int
+	errorSamples := map[string]int{}
+	for _, outcome := range outcomes {
+		switch {
+		case outcome.Error != "":
+			failed++
+			errorSamples[compatibilityErrorSummary(outcome.Error)]++
+		case outcome.CompatibilityID != 0:
+			linked++
+		case strings.Contains(outcome.SkipReason, "already linked"):
+			alreadyLinked++
+		default:
+			catalogManaged++
+		}
+	}
+
+	detail := fmt.Sprintf("%d compatibilidad(es) en la publicación: %d nuevas vinculadas, %d ya estaban vinculadas, %d administradas por MercadoLibre sin vehículo individual, %d con error (%d vehículo(s) nuevos creados).",
+		len(outcomes), linked, alreadyLinked, catalogManaged, failed, len(newFitments))
+	if failed == 0 {
+		record(StepCompatibilities, StatusOK, detail)
+		return
+	}
+
+	causes := make([]string, 0, len(errorSamples))
+	for cause, count := range errorSamples {
+		causes = append(causes, fmt.Sprintf("%s (%d)", cause, count))
+	}
+	sort.Strings(causes)
+	if len(causes) > 3 {
+		causes = causes[:3]
+	}
+	if ctx.Err() != nil {
+		detail += " Se agotó el tiempo disponible para este paso; vuelve a importar para continuar con las que faltan."
+	}
+	record(StepCompatibilities, StatusWarning, detail+" Causas: "+strings.Join(causes, "; "))
+}
+
+// compatibilityErrorSummary shortens a per-entry compatibility error to its
+// cause, dropping the ids and raw payloads that make every message unique, so
+// failures of the same kind can be counted together.
+func compatibilityErrorSummary(message string) string {
+	switch {
+	case strings.Contains(message, "context deadline exceeded"):
+		return "se agotó el tiempo"
+	case strings.Contains(message, "context canceled"):
+		return "cancelado"
+	case strings.Contains(message, "(429)"):
+		return "MercadoLibre limitó las consultas (429)"
+	case strings.Contains(message, "(404)"):
+		return "vehículo no encontrado en el catálogo de MercadoLibre (404)"
+	case strings.Contains(message, "missing brand/model/year"):
+		return "el producto de catálogo no trae marca, modelo o año"
+	}
+	if i := strings.Index(message, ":"); i > 0 && i < 80 {
+		return message[:i]
+	}
+	if len(message) > 80 {
+		return message[:80]
+	}
+	return message
 }
 
 // --- helpers -----------------------------------------------------------------

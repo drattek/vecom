@@ -200,7 +200,6 @@ func (s *Service) execute(ctx context.Context, p *prepared, job *Job) {
 	run(StepCategory, func() { selection = s.importCategory(ctx, product, item, input, record) })
 	run(StepDescription, func() { s.importDescription(ctx, product, item, accessToken, input.ActorID, record) })
 	run(StepAttributes, func() { s.importAttributes(ctx, product, item, selection, input, record) })
-	run(StepCompatibilities, func() { s.importCompatibilities(ctx, product, externalID, accessToken, input.ActorID, record) })
 
 	if failed {
 		record(StepLink, StatusSkipped, "No se vinculó la publicación porque hubo errores al guardar la información; corrígelos y vuelve a intentar.")
@@ -243,8 +242,17 @@ func (s *Service) execute(ctx context.Context, p *prepared, job *Job) {
 		recordNormalize(s.productSyncService.NormalizeImportedListing(ctx, input.ConnectionID, listing, item), record)
 	})
 
-	// Pictures go last: they are by far the slowest step (download, lossless
-	// WebP conversion, upload) and supplementary, so the listing is already
-	// linked and up to date in MercadoLibre by the time they run.
+	// Pictures and compatibilities go last: they are the slow steps (pictures:
+	// download, lossless WebP conversion, upload; compatibilities: one rate-limited
+	// MercadoLibre request per vehicle) and supplementary, so the listing is
+	// already linked and up to date in MercadoLibre by the time they run, and
+	// neither can starve the steps above of time. Compatibilities are last and get
+	// their own budget (compatibilitiesTimeout), since they can take far longer
+	// than everything else together.
 	run(StepImages, func() { s.importImages(ctx, product, item, input.ActorID, record) })
+	run(StepCompatibilities, func() {
+		compatCtx, cancel := context.WithTimeout(ctx, compatibilitiesTimeout)
+		defer cancel()
+		s.importCompatibilities(compatCtx, product, externalID, accessToken, input.ActorID, record)
+	})
 }

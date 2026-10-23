@@ -496,7 +496,13 @@ func (s *MercadoLibreCompatibilityService) DiagnoseItem(ctx context.Context, con
 func (s *MercadoLibreCompatibilityService) linkCompatibilityEntriesToProduct(ctx context.Context, accessToken string, entries []mercadoLibreInfra.ItemCompatibilityEntry, productID, actorID int64) ([]CopyLocalCompatibilityOutcome, []CreatedVehicleFitment) {
 	results := make([]CopyLocalCompatibilityOutcome, 0, len(entries))
 	newFitments := make([]CreatedVehicleFitment, 0)
-	for _, entry := range entries {
+	for i, entry := range entries {
+		// Each entry costs one rate-limited MercadoLibre request, so a part with
+		// hundreds of vehicles takes minutes: log progress so a slow run is
+		// visibly working rather than stuck.
+		if i > 0 && i%100 == 0 {
+			log.Printf("mercadolibre compatibilities: product %d — %d/%d entries processed", productID, i, len(entries))
+		}
 		outcome := CopyLocalCompatibilityOutcome{CatalogProductID: entry.CatalogProductID, CatalogProductName: entry.CatalogProductName}
 
 		catalogProductID := strings.TrimSpace(entry.CatalogProductID)
