@@ -74,6 +74,7 @@ func NewRouter(
 	mercadoLibreImageDownloadHandler *httpHandler.MercadoLibreImageDownloadHandler,
 	reportsHandler *httpHandler.ReportsHandler,
 	meliListingImportHandler *httpHandler.MeliListingImportHandler,
+	meliBulkImportHandler *httpHandler.MeliBulkImportHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -297,6 +298,13 @@ func NewRouter(
 		protected.Post("/api/products/{productId}/details/sync/{connectionId}/category", productCategorySelectionHandler.Select)
 		protected.Post("/api/products/{productId}/details/sync/{connectionId}/import-listing", meliListingImportHandler.Import)
 		protected.Get("/api/products/{productId}/import-listing-jobs/{jobId}", meliListingImportHandler.GetImportJob)
+
+		// Importación masiva de publicaciones de MercadoLibre por Excel.
+		protected.Post("/api/meli-bulk-import/batches", meliBulkImportHandler.Upload)
+		protected.Get("/api/meli-bulk-import/items", meliBulkImportHandler.List)
+		protected.Get("/api/meli-bulk-import/summary", meliBulkImportHandler.Summary)
+		protected.Post("/api/meli-bulk-import/items/{itemId}/retry", meliBulkImportHandler.Retry)
+		protected.Post("/api/meli-bulk-import/retry", meliBulkImportHandler.RetryAll)
 
 		// Videos por URL desde el detalle de producto (Multimedia). Solo disco +
 		// URLs; sin orden, portada ni tipo.

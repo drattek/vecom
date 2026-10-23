@@ -23,6 +23,7 @@ import (
 	channelConfigApp "core-orchestrator/internal/application/channel_config"
 	channelConnectionsService "core-orchestrator/internal/application/channel_connections"
 	channelListingsApp "core-orchestrator/internal/application/channel_listings"
+	meliBulkImportApp "core-orchestrator/internal/application/meli_bulk_import"
 	meliListingImportApp "core-orchestrator/internal/application/meli_listing_import"
 	reportsApp "core-orchestrator/internal/application/reports"
 	channelsService "core-orchestrator/internal/application/channels"
@@ -475,6 +476,18 @@ func main() {
 	productSyncHandler := httpHandler.NewProductSyncHandler(productSyncService)
 	productCategorySelectionHandler := httpHandler.NewProductCategorySelectionHandler(productCategorySelectionService)
 	meliListingImportHandler := httpHandler.NewMeliListingImportHandler(meliListingImportService)
+	// Importación masiva por Excel (Productos → Importar): cola en MySQL que el
+	// worker de más abajo drena de uno en uno con el mismo flujo de
+	// meliListingImportService.
+	meliBulkImportService := meliBulkImportApp.NewService(
+		db,
+		mysqlInfra.NewMeliImportRepository(db),
+		mysqlRepos.ProductRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelRepository,
+		meliListingImportService,
+	)
+	meliBulkImportHandler := httpHandler.NewMeliBulkImportHandler(meliBulkImportService)
 	productImageImportHandler := httpHandler.NewProductImageImportHandler(productImageImportService)
 	productVideosHandler := httpHandler.NewProductVideosHandler(productVideosService)
 	productPartNumbersHandler := httpHandler.NewProductPartNumbersHandler(productPartNumbersService)
@@ -622,6 +635,10 @@ func main() {
 	)
 	go safe.Supervise(bgCtx, "listing discovery scheduler", listingDiscoveryScheduler.Start)
 
+	// Meli bulk import worker: importa de uno en uno las filas en cola del
+	// Excel de Productos → Importar (ecom_meli_import_items).
+	go safe.Supervise(bgCtx, "meli bulk import worker", meliBulkImportService.Start)
+
 	// Create router and start server.
 	router := api.NewRouter(
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
@@ -646,6 +663,7 @@ func main() {
 		mercadoLibreImageDownloadHandler,
 		reportsHandler,
 		meliListingImportHandler,
+		meliBulkImportHandler,
 	)
 
 	server := &http.Server{

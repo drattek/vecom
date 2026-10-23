@@ -6,7 +6,6 @@ import (
 	"log"
 	"net/http"
 	"strconv"
-	"strings"
 
 	meliListingImportApp "core-orchestrator/internal/application/meli_listing_import"
 	syncApp "core-orchestrator/internal/application/sync"
@@ -133,8 +132,5 @@ func (h *MeliListingImportHandler) GetImportJob(w http.ResponseWriter, r *http.R
 }
 
 func partNumberMismatchMessage(err *meliListingImportApp.PartNumberMismatchError) string {
-	if len(err.ListingPartNumbers) == 0 {
-		return "La publicación no tiene el atributo Número de parte (PART_NUMBER), así que no se puede validar contra el número de parte del producto (" + err.ProductPartNumber + ")."
-	}
-	return "El número de parte de la publicación (" + strings.Join(err.ListingPartNumbers, ", ") + ") no coincide con el del producto (" + err.ProductPartNumber + ")."
+	return err.Message()
 }

@@ -105,6 +105,14 @@ func (e *PartNumberMismatchError) Error() string {
 	return fmt.Sprintf("the listing's part number (%s) doesn't match the product's (%q)", strings.Join(e.ListingPartNumbers, ", "), e.ProductPartNumber)
 }
 
+// Message describes the mismatch for the user (Spanish).
+func (e *PartNumberMismatchError) Message() string {
+	if len(e.ListingPartNumbers) == 0 {
+		return "La publicación no tiene el atributo Número de parte (PART_NUMBER) ni un SKU que coincida con el número de parte del producto (" + e.ProductPartNumber + ")."
+	}
+	return "El número de parte de la publicación (" + strings.Join(e.ListingPartNumbers, ", ") + ") no coincide con el del producto (" + e.ProductPartNumber + ")."
+}
+
 type Service struct {
 	productRepository             *mysqlInfra.ProductRepository
 	productDimensionsRepository   *mysqlInfra.ProductDimensionsRepository

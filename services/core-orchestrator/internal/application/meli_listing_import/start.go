@@ -41,26 +41,9 @@ func (s *Service) Start(ctx context.Context, input ImportInput) (*Job, error) {
 		return nil, err
 	}
 
-	jobID, err := newJobID()
+	job, err := newRunningJob(p, input)
 	if err != nil {
 		return nil, err
-	}
-	now := time.Now()
-	job := &Job{
-		ID:           jobID,
-		ProductID:    p.product.ID,
-		ConnectionID: input.ConnectionID,
-		Status:       JobRunning,
-		Result: &Result{
-			ProductID:    p.product.ID,
-			ConnectionID: input.ConnectionID,
-			ExternalID:   p.externalID,
-			Title:        strings.TrimSpace(p.item.Title),
-			CategoryID:   p.item.CategoryID,
-			Steps:        []StepResult{},
-		},
-		StartedAt: now,
-		UpdatedAt: now,
 	}
 
 	payload, err := json.Marshal(job)
@@ -87,6 +70,57 @@ func (s *Service) Start(ctx context.Context, input ImportInput) (*Job, error) {
 	}()
 
 	return response, nil
+}
+
+func newRunningJob(p *prepared, input ImportInput) (*Job, error) {
+	jobID, err := newJobID()
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	return &Job{
+		ID:           jobID,
+		ProductID:    p.product.ID,
+		ConnectionID: input.ConnectionID,
+		Status:       JobRunning,
+		Result: &Result{
+			ProductID:    p.product.ID,
+			ConnectionID: input.ConnectionID,
+			ExternalID:   p.externalID,
+			Title:        strings.TrimSpace(p.item.Title),
+			CategoryID:   p.item.CategoryID,
+			Steps:        []StepResult{},
+		},
+		StartedAt: now,
+		UpdatedAt: now,
+	}, nil
+}
+
+// ErrImportPanicked is returned by RunSync when the import hit a panic (already
+// logged by safe.Do).
+var ErrImportPanicked = errors.New("internal error during the import (see the server log)")
+
+// RunSync validates and runs the whole import in the calling goroutine,
+// returning its result — what the bulk (Excel) import uses, one listing at a
+// time, from its own background worker. Same checks and steps as Start; the
+// errors returned before anything is written are the same too (e.g.
+// ErrProductAlreadyListed, *PartNumberMismatchError).
+func (s *Service) RunSync(ctx context.Context, input ImportInput) (*Result, error) {
+	p, err := s.prepare(ctx, input)
+	if err != nil {
+		return nil, err
+	}
+	job, err := newRunningJob(p, input)
+	if err != nil {
+		return nil, err
+	}
+
+	runCtx, cancel := context.WithTimeout(ctx, importTimeout)
+	defer cancel()
+	if !safe.Do("meli-listing-import-bulk", func() { s.execute(runCtx, p, job) }) {
+		return nil, ErrImportPanicked
+	}
+	return job.Result, nil
 }
 
 // prepare runs every check that can reject an import before anything is
