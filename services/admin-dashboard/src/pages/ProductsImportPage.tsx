@@ -51,9 +51,6 @@ const STEP_LABEL: Record<string, string> = {
     images: "Imágenes",
     link: "Vinculación",
     price_stock: "Precio y stock",
-    listing_type: "Tipo de publicación",
-    official_store: "Tienda oficial",
-    title: "Título",
 }
 
 function formatDate(value: string | null | undefined) {
@@ -66,8 +63,32 @@ function StatusTag({ status }: { status: BulkImportStatus }) {
     return <span className={cn("inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium", className)}>{label}</span>
 }
 
+// Resultado del paso "Precio y stock" (lo que se envió a MercadoLibre al vincular):
+// ok = enviados, skipped = no se envió (p. ej. sin stock o sin precio), error = falló.
+function PriceStockCell({ item }: { item: BulkImportItem }) {
+    const step = item.steps?.find((s) => s.step === "price_stock")
+    if (!step) return <span className="text-muted-foreground">—</span>
+
+    const tag =
+        step.status === "ok"
+            ? { label: "Enviados", className: "bg-green-100 text-green-800" }
+            : step.status === "error"
+              ? { label: "Error", className: "bg-red-100 text-red-800" }
+              : { label: "No enviados", className: "bg-amber-100 text-amber-800" }
+    return (
+        <div className="flex max-w-56 flex-col gap-0.5 whitespace-normal">
+            <span className={cn("inline-flex w-fit items-center rounded-full px-2 py-0.5 text-xs font-medium", tag.className)}>
+                {tag.label}
+            </span>
+            {step.detail ? <span className="text-xs text-muted-foreground">{step.detail}</span> : null}
+        </div>
+    )
+}
+
 function stepsSummary(item: BulkImportItem) {
-    const problems = (item.steps ?? []).filter((step) => step.status === "error" || step.status === "warning")
+    const problems = (item.steps ?? []).filter(
+        (step) => step.step !== "price_stock" && (step.status === "error" || step.status === "warning"),
+    )
     if (problems.length === 0) return null
     return problems.map((step) => `${STEP_LABEL[step.step] ?? step.step}: ${step.detail ?? step.status}`).join(" · ")
 }
@@ -303,6 +324,7 @@ export function ProductsImportPage() {
                                 <TableHead>meli_id</TableHead>
                                 <TableHead>Producto</TableHead>
                                 <TableHead>Estado</TableHead>
+                                <TableHead>Precio y stock</TableHead>
                                 <TableHead>{tab === "history" ? "Concluido" : "Archivo"}</TableHead>
                                 <TableHead>Detalle</TableHead>
                                 <TableHead className="w-24" />
@@ -311,14 +333,14 @@ export function ProductsImportPage() {
                         <TableBody>
                             {itemsQuery.isLoading ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                                         Cargando…
                                     </TableCell>
                                 </TableRow>
                             ) : null}
                             {!itemsQuery.isLoading && items.length === 0 ? (
                                 <TableRow>
-                                    <TableCell colSpan={7} className="text-center text-muted-foreground">
+                                    <TableCell colSpan={8} className="text-center text-muted-foreground">
                                         {search
                                             ? "No hay filas que coincidan con la búsqueda."
                                             : tab === "history"
@@ -342,6 +364,9 @@ export function ProductsImportPage() {
                                     <TableCell>{item.productName ?? item.listingTitle ?? "—"}</TableCell>
                                     <TableCell>
                                         <StatusTag status={item.status} />
+                                    </TableCell>
+                                    <TableCell>
+                                        <PriceStockCell item={item} />
                                     </TableCell>
                                     <TableCell className="text-xs text-muted-foreground">
                                         {tab === "history" ? formatDate(item.finishedAt) : item.batchFile}
