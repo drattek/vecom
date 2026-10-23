@@ -608,7 +608,12 @@ func NormalizeItemID(raw string) (string, error) {
 // the product's part number, ignoring case and any punctuation or spacing
 // ("26310-2J000" == "263102j000"). The attribute may hold several numbers
 // separated by commas, semicolons or pipes.
-func validatePartNumber(productPartNumber string, attributes []mercadoLibreInfra.ItemAttribute) error {
+//
+// When the listing carries no PART_NUMBER at all, it falls back to the seller's
+// own SKU (SELLER_SKU attribute or seller_custom_field), which in this catalog
+// equals the part number: it must match the product's part number or SKU.
+func validatePartNumber(productPartNumber, productSKU string, item *mercadoLibreInfra.ItemDetail) error {
+	attributes := item.Attributes
 	want := normalizePartNumber(productPartNumber)
 
 	var listingNumbers []string
@@ -630,6 +635,20 @@ func validatePartNumber(productPartNumber string, attributes []mercadoLibreInfra
 			if normalizePartNumber(number) == want {
 				return nil
 			}
+		}
+	}
+
+	if len(listingNumbers) == 0 {
+		sellerSKU := strings.TrimSpace(item.SellerCustomField)
+		for _, attr := range attributes {
+			if attr.ID == "SELLER_SKU" && strings.TrimSpace(attr.ValueName) != "" {
+				sellerSKU = strings.TrimSpace(attr.ValueName)
+				break
+			}
+		}
+		if got := normalizePartNumber(sellerSKU); got != "" &&
+			(got == want || got == normalizePartNumber(productSKU)) {
+			return nil
 		}
 	}
 	return &PartNumberMismatchError{ProductPartNumber: productPartNumber, ListingPartNumbers: listingNumbers}

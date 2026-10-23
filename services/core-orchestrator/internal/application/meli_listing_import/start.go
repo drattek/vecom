@@ -155,7 +155,7 @@ func (s *Service) prepare(ctx context.Context, input ImportInput) (*prepared, er
 		return nil, ErrListingNotOwned
 	}
 
-	if err := validatePartNumber(product.PartNumber, item.Attributes); err != nil {
+	if err := validatePartNumber(product.PartNumber, product.SKU, item); err != nil {
 		return nil, err
 	}
 

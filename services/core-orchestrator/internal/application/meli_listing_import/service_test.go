@@ -30,30 +30,46 @@ func TestNormalizeItemID(t *testing.T) {
 }
 
 func TestValidatePartNumber(t *testing.T) {
-	attrs := func(values ...string) []mercadoLibreInfra.ItemAttribute {
+	attrs := func(values ...string) *mercadoLibreInfra.ItemDetail {
 		out := []mercadoLibreInfra.ItemAttribute{{ID: "BRAND", ValueName: "Nissan"}}
 		for _, v := range values {
 			out = append(out, mercadoLibreInfra.ItemAttribute{ID: "PART_NUMBER", ValueName: v})
 		}
-		return out
+		return &mercadoLibreInfra.ItemDetail{Attributes: out}
 	}
 
-	if err := validatePartNumber("26310-2J000", attrs("263102j000")); err != nil {
+	if err := validatePartNumber("26310-2J000", "SKU-1", attrs("263102j000")); err != nil {
 		t.Errorf("debía coincidir ignorando guiones y mayúsculas: %v", err)
 	}
-	if err := validatePartNumber("26310-2J000", attrs("AAA111, 26310 2J000")); err != nil {
+	if err := validatePartNumber("26310-2J000", "SKU-1", attrs("AAA111, 26310 2J000")); err != nil {
 		t.Errorf("debía coincidir con uno de varios valores: %v", err)
 	}
 
 	var mismatch *PartNumberMismatchError
-	if err := validatePartNumber("26310-2J000", attrs("OTRO-123")); !errors.As(err, &mismatch) || len(mismatch.ListingPartNumbers) != 1 {
+	if err := validatePartNumber("26310-2J000", "SKU-1", attrs("OTRO-123")); !errors.As(err, &mismatch) || len(mismatch.ListingPartNumbers) != 1 {
 		t.Errorf("debía reportar discrepancia: %v", err)
 	}
-	if err := validatePartNumber("26310-2J000", attrs()); !errors.As(err, &mismatch) || len(mismatch.ListingPartNumbers) != 0 {
+	if err := validatePartNumber("26310-2J000", "SKU-1", attrs()); !errors.As(err, &mismatch) || len(mismatch.ListingPartNumbers) != 0 {
 		t.Errorf("sin PART_NUMBER debía reportar discrepancia: %v", err)
 	}
-	if err := validatePartNumber("", attrs("")); !errors.As(err, &mismatch) {
+	if err := validatePartNumber("", "SKU-1", attrs("")); !errors.As(err, &mismatch) {
 		t.Errorf("un número de parte vacío nunca debe coincidir: %v", err)
+	}
+
+	// Sin PART_NUMBER, el SKU del vendedor se valida contra el número de parte.
+	withSKU := attrs()
+	withSKU.Attributes = append(withSKU.Attributes, mercadoLibreInfra.ItemAttribute{ID: "SELLER_SKU", ValueName: "26310-2j000"})
+	if err := validatePartNumber("26310-2J000", "SKU-1", withSKU); err != nil {
+		t.Errorf("SELLER_SKU igual al número de parte debía validar: %v", err)
+	}
+	legacy := attrs()
+	legacy.SellerCustomField = "SKU-1"
+	if err := validatePartNumber("26310-2J000", "SKU-1", legacy); err != nil {
+		t.Errorf("seller_custom_field igual al SKU debía validar: %v", err)
+	}
+	legacy.SellerCustomField = "OTRO"
+	if err := validatePartNumber("26310-2J000", "SKU-1", legacy); !errors.As(err, &mismatch) {
+		t.Errorf("SKU distinto debía reportar discrepancia: %v", err)
 	}
 }
 
