@@ -8,8 +8,9 @@
 // data into the local product (name, category link, description, dimensions and
 // category attributes, vehicle compatibilities), records the listing in
 // ecom_channel_product_map, and — only when the product currently has stock and
-// a price — pushes the current price/stock back and appends the brand to the
-// title (see sync.MercadoLibreProductSyncService.PushImportedListing).
+// a price — pushes the current price/stock back (see
+// sync.MercadoLibreProductSyncService.PushImportedListing). The listing's title,
+// family_name, listing type and official store are left as they are.
 //
 // Nothing is written to MercadoLibre before every local step has succeeded.
 package meli_listing_import
@@ -67,9 +68,6 @@ const (
 	StepImages          = "images"
 	StepLink            = "link"
 	StepPriceStock      = "price_stock"
-	StepListingType     = "listing_type"
-	StepOfficialStore   = "official_store"
-	StepTitle           = "title"
 
 	StatusOK      = "ok"
 	StatusSkipped = "skipped"
@@ -209,26 +207,6 @@ type Result struct {
 	Steps        []StepResult `json:"steps"`
 }
 
-func recordNormalize(normalize *syncApp.ImportedListingNormalizeResult, record func(step, status, detail string)) {
-	switch {
-	case normalize.ListingTypeError != "":
-		record(StepListingType, StatusWarning, normalize.ListingTypeError)
-	case normalize.ListingTypeChanged:
-		record(StepListingType, StatusOK, fmt.Sprintf("Tipo de publicación cambiado de %q a Premium.", normalize.ListingTypeFrom))
-	default:
-		record(StepListingType, StatusSkipped, normalize.ListingTypeSkippedReason)
-	}
-
-	switch {
-	case normalize.OfficialStoreError != "":
-		record(StepOfficialStore, StatusWarning, normalize.OfficialStoreError)
-	case normalize.OfficialStoreRemoved:
-		record(StepOfficialStore, StatusOK, fmt.Sprintf("Publicación sacada de la tienda oficial %d.", normalize.OfficialStoreID))
-	default:
-		record(StepOfficialStore, StatusSkipped, normalize.OfficialStoreSkippedReason)
-	}
-}
-
 func (s *Service) requireMercadoLibreConnection(ctx context.Context, connectionID int64) error {
 	connection, err := s.channelConnectionRepository.FindByID(ctx, connectionID)
 	if err != nil {
@@ -254,16 +232,6 @@ func recordPush(push *syncApp.ImportedListingPushResult, record func(step, statu
 		record(StepPriceStock, StatusSkipped, push.PriceStockSkippedReason)
 	}
 
-	switch {
-	case push.TitleError != "":
-		// MercadoLibre refusing a title (e.g. the item already has sales) is
-		// expected sometimes; the import itself is complete.
-		record(StepTitle, StatusWarning, push.TitleError)
-	case push.TitleUpdated:
-		record(StepTitle, StatusOK, fmt.Sprintf("Título actualizado a %q.", push.Title))
-	default:
-		record(StepTitle, StatusSkipped, push.TitleSkippedReason)
-	}
 }
 
 // --- local steps -------------------------------------------------------------

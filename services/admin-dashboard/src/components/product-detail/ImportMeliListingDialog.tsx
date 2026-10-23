@@ -62,9 +62,6 @@ const stepLabels: Record<string, string> = {
     images: "Imágenes",
     link: "Vínculo con la publicación",
     price_stock: "Precio y stock",
-    title: "Título con marca",
-    listing_type: "Tipo de publicación Premium",
-    official_store: "Fuera de tienda oficial",
 }
 
 const statusLabels: Record<ImportListingStep["status"], string> = {
@@ -183,7 +180,7 @@ export function ImportMeliListingDialog({
                             Se actualizarán el nombre, la categoría de esta conexión, la descripción, los atributos y las
                             compatibilidades del producto con lo que tiene la publicación, y se agregarán sus imágenes
                             (convertidas a WebP) a las que ya tenga. Si el producto tiene stock y precio, también se enviarán
-                            el precio y el stock, y se agregará la marca al título. Puede tardar un par de minutos.
+                            el precio y el stock. Puede tardar un par de minutos.
                         </p>
                     ) : null}
 

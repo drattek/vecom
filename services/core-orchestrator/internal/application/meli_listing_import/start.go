@@ -272,10 +272,6 @@ func (s *Service) execute(ctx context.Context, p *prepared, job *Job) {
 		recordPush(push, record)
 	})
 
-	run(StepListingType, func() {
-		recordNormalize(s.productSyncService.NormalizeImportedListing(ctx, input.ConnectionID, listing, item), record)
-	})
-
 	// Pictures and compatibilities go last: they are the slow steps (pictures:
 	// download, lossless WebP conversion, upload; compatibilities: one rate-limited
 	// MercadoLibre request per vehicle) and supplementary, so the listing is
