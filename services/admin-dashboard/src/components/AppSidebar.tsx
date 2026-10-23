@@ -281,6 +281,14 @@ export function AppSidebar() {
                               <span>Imágenes</span>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
+                          <SidebarMenuSubItem>
+                            <SidebarMenuSubButton
+                              render={<Link to="/products/import" />}
+                              isActive={location.pathname === '/products/import'}
+                            >
+                              <span>Importar</span>
+                            </SidebarMenuSubButton>
+                          </SidebarMenuSubItem>
                           {productChannels.map((channel) => {
                             const channelPath = `/products/channels/${channel.id}`
                             const isChannelActive = location.pathname === channelPath
