@@ -553,6 +553,7 @@ export const refreshOutcomeSchema = z.object({
   updated: z.boolean().optional().default(false),
   skipped: z.boolean().optional().default(false),
   error: z.string().optional().default(''),
+  message: z.string().optional().default(''),
 })
 
 export const resyncListingsResultSchema = z.object({

@@ -798,6 +798,43 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 	return true, nil
 }
 
+// SyncCompatibilities implements channel_listings.CompatibilitiesSyncer: it
+// reports only the product's vehicle compatibilities to an already-published
+// listing, independent of price/stock and of the listing being paused (a
+// listing MercadoLibre paused for incomplete_compatibilities is exactly the
+// case this exists for). Unlike the best-effort push inside Resync, errors
+// are returned so the user sees them.
+func (s *MercadoLibreProductSyncService) SyncCompatibilities(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, string, error) {
+	if s.compatibilityService == nil {
+		return false, "", fmt.Errorf("mercadolibre compatibilities service is not configured")
+	}
+	externalID := strings.TrimSpace(derefString(listing.ExternalID))
+	if externalID == "" {
+		return false, "la publicación todavía no tiene id externo", nil
+	}
+	if listing.Status == mercadoLibreMapStatusClosed {
+		return false, "la publicación está cerrada", nil
+	}
+
+	accessToken, err := s.tokenService.EnsureValidAccessToken(ctx, connectionID)
+	if err != nil {
+		return false, "", fmt.Errorf("error getting mercadolibre access token for connection %d: %w", connectionID, err)
+	}
+
+	outcome, err := s.compatibilityService.PushForNewListing(ctx, accessToken, externalID, product, nil)
+	if err != nil {
+		return false, "", err
+	}
+	if outcome.Error != "" {
+		return false, "", errors.New(outcome.Error)
+	}
+	if outcome.Skipped {
+		return false, outcome.SkipReason, nil
+	}
+	return outcome.CreatedCompatibilitiesCount > 0,
+		fmt.Sprintf("%d compatibilidad(es) reportada(s)", outcome.CreatedCompatibilitiesCount), nil
+}
+
 // CloseListing sets listing's item to "closed" on MercadoLibre and records the
 // row as closed locally, so the next publish creates a fresh listing for it
 // (channel_listings.publishOne ignores closed rows). The caller decides which

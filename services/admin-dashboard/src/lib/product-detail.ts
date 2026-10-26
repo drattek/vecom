@@ -335,6 +335,29 @@ export function useResyncChannelListing(productId: string | undefined) {
 }
 
 /**
+ * useSyncChannelCompatibilities reporta solo las compatibilidades de vehículos
+ * del producto a sus publicaciones existentes en una conexión (POST
+ * /api/channel-listings/compatibilities), sin tocar precio, stock, atributos
+ * ni imágenes, y aunque la publicación esté pausada.
+ */
+export function useSyncChannelCompatibilities(productId: string | undefined) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (input: { connectionId: number }) => {
+            const response = await apiClient.post(
+                "/api/channel-listings/compatibilities",
+                { connectionId: input.connectionId, productId: Number(productId) },
+                { timeout: PUBLISH_LISTING_TIMEOUT_MS },
+            )
+            return resyncListingsResultSchema.parse(response.data)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId, "sync"] })
+        },
+    })
+}
+
+/**
  * useCloseChannelListings cierra en el marketplace las publicaciones indicadas
  * (solo paused/under_review; las closed no necesitan llamada). Es el primer
  * paso de "Resincronizar" cuando cambió la categoría: una vez cerradas, el

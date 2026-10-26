@@ -11,6 +11,7 @@ import {
     useProductSection,
     usePublishChannelListing,
     useResyncChannelListing,
+    useSyncChannelCompatibilities,
 } from "@/lib/product-detail"
 import {
     productGeneralSchema,
@@ -198,6 +199,9 @@ function ConnectionCard({
                             connectionId={connection.connectionId}
                             listings={activeListings}
                         />
+                    ) : null}
+                    {isMercadoLibre && activeListings.length > 0 ? (
+                        <SyncCompatibilitiesButton productId={productId} connectionId={connection.connectionId} />
                     ) : null}
                     {closedListings.length > 0 ? (
                         <ClosedListingsNotice
@@ -537,6 +541,50 @@ function ResyncButton({
                 </ul>
             ) : null}
             {outcomes ? <ResyncOutcomes outcomes={outcomes} /> : null}
+            <FieldError message={errorMessage} />
+        </div>
+    )
+}
+
+/**
+ * Botón que dispara POST /api/channel-listings/compatibilities: reporta solo
+ * las compatibilidades de vehículos a las publicaciones existentes (también si
+ * están pausadas), sin tocar precio, stock, atributos ni imágenes.
+ */
+function SyncCompatibilitiesButton({ productId, connectionId }: { productId?: string; connectionId: number }) {
+    const mutation = useSyncChannelCompatibilities(productId)
+    const [outcomes, setOutcomes] = useState<RefreshOutcome[] | null>(null)
+    const [errorMessage, setErrorMessage] = useState<string | null>(null)
+
+    function sync() {
+        setOutcomes(null)
+        setErrorMessage(null)
+        mutation.mutate(
+            { connectionId },
+            {
+                onSuccess: (result) => setOutcomes(result.results),
+                onError: (error) =>
+                    setErrorMessage(getServerErrorMessage(error, "No se pudieron sincronizar las compatibilidades.")),
+            },
+        )
+    }
+
+    return (
+        <div className="flex flex-col items-start gap-2">
+            <Button size="sm" variant="outline" onClick={sync} disabled={mutation.isPending || !productId}>
+                {mutation.isPending ? "Sincronizando compatibilidades…" : "Sincronizar compatibilidades"}
+            </Button>
+            {outcomes ? (
+                <ul className="flex w-full max-w-md flex-col gap-1 text-left text-xs">
+                    {outcomes.map((outcome, index) => (
+                        <li key={index} className={outcome.error ? "text-destructive" : "text-muted-foreground"}>
+                            {outcome.error
+                                ? `Error${outcome.externalId ? ` (${outcome.externalId})` : ""}: ${outcome.error}`
+                                : `${outcome.externalId ? `${outcome.externalId}: ` : ""}${outcome.message || "Sin cambios."}`}
+                        </li>
+                    ))}
+                </ul>
+            ) : null}
             <FieldError message={errorMessage} />
         </div>
     )

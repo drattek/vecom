@@ -67,6 +67,8 @@ var (
 	ErrNoPublisherForChannel     = errors.New("no listing publisher registered for this connection's channel")
 	ErrNoRefresherForChannel     = errors.New("no listing refresher registered for this connection's channel")
 	ErrNoFullRefresherForChannel = errors.New("no full resync refresher registered for this connection's channel")
+
+	ErrNoCompatibilitiesSyncerForChannel = errors.New("this connection's channel does not support syncing vehicle compatibilities")
 	ErrNoCloserForChannel        = errors.New("no listing closer registered for this connection's channel")
 	ErrInvalidProductID          = errors.New("invalid productId")
 	// ErrChannelListingsNotReady is returned by PublishQueuedProduct, wrapped
@@ -138,6 +140,17 @@ type StatusSyncer interface {
 // attributes/images, all of which it allows changing freely.
 type FullRefresher interface {
 	Resync(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error)
+}
+
+// CompatibilitiesSyncer is optionally implemented by the same service that
+// implements FullRefresher (MercadoLibre today) to report only the product's
+// vehicle compatibilities to an already-published listing, without touching
+// price, stock, attributes, description or pictures — and regardless of the
+// listing being paused. message describes the result for the user (how many
+// were reported, or why nothing was); updated is true only when new
+// compatibilities were accepted by the marketplace.
+type CompatibilitiesSyncer interface {
+	SyncCompatibilities(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (updated bool, message string, err error)
 }
 
 // Closer is implemented by marketplace sync services that can end a
@@ -506,6 +519,9 @@ type RefreshOutcome struct {
 	Updated bool   `json:"updated,omitempty"`
 	Skipped bool   `json:"skipped,omitempty"`
 	Error   string `json:"error,omitempty"`
+	// Message is an optional human-readable detail (used by the
+	// compatibilities-only sync to say how many were reported or why none).
+	Message string `json:"message,omitempty"`
 }
 
 type RefreshListingsResult struct {
@@ -700,6 +716,78 @@ func (s *Service) resyncOne(ctx context.Context, fullRefresher FullRefresher, li
 	outcome.Updated = updated
 	outcome.Skipped = !updated
 	return outcome
+}
+
+// SyncProductCompatibilities reports only the vehicle compatibilities of
+// (input.ProductID, input.ConnectionID) to every non-closed listing already
+// recorded for that pair, via the channel's CompatibilitiesSyncer. One row
+// failing doesn't stop the rest of the batch.
+func (s *Service) SyncProductCompatibilities(ctx context.Context, input ResyncListingsInput) (*RefreshListingsResult, error) {
+	if input.ProductID <= 0 {
+		return nil, ErrInvalidProductID
+	}
+	if input.ConnectionID <= 0 {
+		return nil, ErrInvalidChannelConnection
+	}
+
+	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
+			return nil, ErrInvalidChannelConnection
+		}
+		return nil, fmt.Errorf("error loading connection %d: %w", input.ConnectionID, err)
+	}
+
+	channel, err := s.channelRepository.FindByID(ctx, connection.ChannelID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
+	}
+
+	syncer, ok := s.fullRefreshers[normalizeChannelCode(channel.Code)].(CompatibilitiesSyncer)
+	if !ok {
+		return nil, fmt.Errorf("%w: %s", ErrNoCompatibilitiesSyncerForChannel, channel.Code)
+	}
+
+	product, err := s.productRepository.FindByID(ctx, input.ProductID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading product %d: %w", input.ProductID, err)
+	}
+
+	listings, err := s.channelProductMapRepository.FindAllByProductAndConnection(ctx, input.ProductID, input.ConnectionID)
+	if err != nil {
+		return nil, fmt.Errorf("error loading channel product map for product %d, connection %d: %w", input.ProductID, input.ConnectionID, err)
+	}
+
+	results := make([]RefreshOutcome, 0, len(listings))
+	for i := range listings {
+		listing := &listings[i]
+		outcome := RefreshOutcome{ProductID: listing.ProductID, SKU: product.SKU}
+		if listing.ExternalID != nil {
+			outcome.ExternalID = strings.TrimSpace(*listing.ExternalID)
+		}
+		if outcome.ExternalID == "" {
+			outcome.Skipped = true
+			outcome.Message = "la publicación todavía no tiene id externo"
+			results = append(results, outcome)
+			continue
+		}
+
+		updated, message, err := syncer.SyncCompatibilities(ctx, product, listing.ConnectionID, listing)
+		if err != nil {
+			outcome.Error = err.Error()
+			s.recordListingFailure(ctx, listing, mysqlInfra.ListingEventResync, err)
+		} else {
+			if updated {
+				s.recordListingChange(ctx, listing, mysqlInfra.ListingEventResync, "compatibilidades sincronizadas")
+			}
+			outcome.Updated = updated
+			outcome.Skipped = !updated
+			outcome.Message = message
+		}
+		results = append(results, outcome)
+	}
+
+	return &RefreshListingsResult{Results: results}, nil
 }
 
 // CloseListingsInput names the rows (ids of ecom_channel_product_map) of
