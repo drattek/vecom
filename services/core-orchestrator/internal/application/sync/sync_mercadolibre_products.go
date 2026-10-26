@@ -598,7 +598,8 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 // exists (title outright on items with sales — see
 // mercadoLibreRefreshFamilyNameEnabled's doc comment; category is treated
 // the same way here, left to RefreshChannelProductMapStatusAndCategory to
-// keep in sync from MercadoLibre's own side instead).
+// keep in sync from MercadoLibre's own side instead). It also reports the
+// product's vehicle compatibilities (non-fatal, see the end of this method).
 func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, error) {
 	externalID := derefString(listing.ExternalID)
 	if externalID == "" {
@@ -775,6 +776,23 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 		ActorID:            systemMercadoLibreSyncActorID,
 	}); err != nil {
 		return false, fmt.Errorf("error recording channel product map for product %d: %w", product.ID, err)
+	}
+
+	// Report the product's vehicle compatibilities too, same as at creation.
+	// Non-fatal: price/stock/attributes/pictures are already updated, and a
+	// compatibilities failure shouldn't mark the whole resync as failed.
+	if s.compatibilityService != nil {
+		outcome, err := s.compatibilityService.PushForNewListing(ctx, accessToken, externalID, product, nil)
+		switch {
+		case err != nil:
+			log.Printf("mercadolibre: resync — product %d: compatibilities push failed for externalId=%s: %v", product.ID, externalID, err)
+		case outcome.Error != "":
+			log.Printf("mercadolibre: resync — product %d: compatibilities push errored for externalId=%s: %s", product.ID, externalID, outcome.Error)
+		case outcome.Skipped:
+			log.Printf("mercadolibre: resync — product %d: compatibilities push skipped for externalId=%s: %s", product.ID, externalID, outcome.SkipReason)
+		default:
+			log.Printf("mercadolibre: resync — product %d: %d vehicle compatibilit(ies) reported for externalId=%s", product.ID, outcome.CreatedCompatibilitiesCount, externalID)
+		}
 	}
 
 	return true, nil
