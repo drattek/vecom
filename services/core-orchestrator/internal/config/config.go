@@ -78,6 +78,12 @@ type Config struct {
 	ListingDiscoveryRunAtHour   int
 	ListingDiscoveryRunAtMinute int
 
+	// MeliImportMissingRunAtHour/MeliImportMissingRunAtMinute configure the
+	// server-local time of day MeliImportMissingScheduler requeues the bulk
+	// import rows that were missing a SKU. Default is 02:00.
+	MeliImportMissingRunAtHour   int
+	MeliImportMissingRunAtMinute int
+
 	// CompatibilitiesFixRunAtHour/CompatibilitiesFixRunAtMinute configure the
 	// server-local time of day CompatibilitiesFixScheduler runs once a day,
 	// re-checking every active MERCADOLIBRE connection for listings still
@@ -282,6 +288,20 @@ func Load() Config {
 		}
 	}
 
+	meliImportMissingRunAtHour := 2
+	if raw := os.Getenv("MELI_IMPORT_MISSING_RUN_AT_HOUR"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 23 {
+			meliImportMissingRunAtHour = parsed
+		}
+	}
+
+	meliImportMissingRunAtMinute := 0
+	if raw := os.Getenv("MELI_IMPORT_MISSING_RUN_AT_MINUTE"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed >= 0 && parsed <= 59 {
+			meliImportMissingRunAtMinute = parsed
+		}
+	}
+
 	shutdownTimeoutSeconds := 25
 	if raw := os.Getenv("SERVER_SHUTDOWN_TIMEOUT_SECONDS"); raw != "" {
 		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
@@ -344,6 +364,9 @@ func Load() Config {
 
 		ListingDiscoveryRunAtHour:   listingDiscoveryRunAtHour,
 		ListingDiscoveryRunAtMinute: listingDiscoveryRunAtMinute,
+
+		MeliImportMissingRunAtHour:   meliImportMissingRunAtHour,
+		MeliImportMissingRunAtMinute: meliImportMissingRunAtMinute,
 
 		CompatibilitiesFixRunAtHour:   compatibilitiesFixRunAtHour,
 		CompatibilitiesFixRunAtMinute: compatibilitiesFixRunAtMinute,

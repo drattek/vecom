@@ -315,6 +315,29 @@ func (s *Service) RetryAll(ctx context.Context, status string, connectionID, act
 	return requeued, nil
 }
 
+// systemActorID is the audit actor of the automatic retry of missing rows.
+const systemActorID int64 = 1
+
+// RetryMissing requeues, on every connection, the missing rows whose SKU exists
+// in ecom_products by now; the rest stay missing. It returns how many were
+// requeued out of how many missing rows there were.
+func (s *Service) RetryMissing(ctx context.Context) (requeued, missing int, err error) {
+	items, err := s.repo.ListByStatus(ctx, mysqlInfra.MeliImportMissing, 0)
+	if err != nil {
+		return 0, 0, err
+	}
+	for i := range items {
+		switch err := s.requeue(ctx, &items[i], systemActorID); {
+		case err == nil:
+			requeued++
+		case errors.Is(err, ErrStillMissing):
+		default:
+			return requeued, len(items), err
+		}
+	}
+	return requeued, len(items), nil
+}
+
 func (s *Service) requeue(ctx context.Context, item *mysqlInfra.MeliImportItemDTO, actorID int64) error {
 	productID := item.ProductID
 	if productID == nil || item.Status == mysqlInfra.MeliImportMissing {

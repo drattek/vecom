@@ -641,6 +641,18 @@ func main() {
 	// Excel de Productos → Importar (ecom_meli_import_items).
 	go safe.Supervise(bgCtx, "meli bulk import worker", meliBulkImportService.Start)
 
+	// Una vez al día (02:00 por defecto) reencola las filas "faltantes" de esa
+	// importación cuyo SKU ya existe en ecom_products; el worker de arriba las
+	// vincula.
+	meliImportMissingScheduler := schedulers.NewMeliImportMissingScheduler(
+		meliBulkImportService,
+		schedulers.MeliImportMissingSchedulerConfig{
+			RunAtHour:   cfg.MeliImportMissingRunAtHour,
+			RunAtMinute: cfg.MeliImportMissingRunAtMinute,
+		},
+	)
+	go safe.Supervise(bgCtx, "meli import missing scheduler", meliImportMissingScheduler.Start)
+
 	// Create router and start server.
 	router := api.NewRouter(
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
