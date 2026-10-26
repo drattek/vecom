@@ -351,6 +351,75 @@ func (r *MeliImportRepository) listItems(ctx context.Context, where string, args
 	return &MeliImportItemsPage{Items: items, Total: total}, nil
 }
 
+// MeliImportBatchDTO es un lote (un Excel subido).
+type MeliImportBatchDTO struct {
+	ID           int64     `json:"id"`
+	ConnectionID int64     `json:"connectionId"`
+	FileName     string    `json:"fileName"`
+	TotalRows    int       `json:"totalRows"`
+	CreatedAt    time.Time `json:"createdAt"`
+}
+
+var ErrMeliImportBatchNotFound = errors.New("meli import batch not found")
+
+// ListBatches devuelve los lotes más recientes primero, opcionalmente de una
+// sola conexión.
+func (r *MeliImportRepository) ListBatches(ctx context.Context, connectionID int64, limit int) ([]MeliImportBatchDTO, error) {
+	query := `
+		SELECT id, connection_id, file_name, total_rows, created_at
+		FROM ecom_meli_import_batches
+		WHERE deleted_at IS NULL`
+	var args []any
+	if connectionID > 0 {
+		query += " AND connection_id = ?"
+		args = append(args, connectionID)
+	}
+	query += " ORDER BY id DESC LIMIT ?"
+	args = append(args, limit)
+
+	rows, err := r.db.QueryContext(ctx, query, args...)
+	if err != nil {
+		return nil, fmt.Errorf("error listing meli import batches: %w", err)
+	}
+	defer rows.Close()
+
+	batches := []MeliImportBatchDTO{}
+	for rows.Next() {
+		var b MeliImportBatchDTO
+		if err := rows.Scan(&b.ID, &b.ConnectionID, &b.FileName, &b.TotalRows, &b.CreatedAt); err != nil {
+			return nil, fmt.Errorf("error scanning meli import batch: %w", err)
+		}
+		batches = append(batches, b)
+	}
+	return batches, rows.Err()
+}
+
+// FindBatch devuelve un lote por id.
+func (r *MeliImportRepository) FindBatch(ctx context.Context, id int64) (*MeliImportBatchDTO, error) {
+	var b MeliImportBatchDTO
+	err := r.db.QueryRowContext(ctx, `
+		SELECT id, connection_id, file_name, total_rows, created_at
+		FROM ecom_meli_import_batches
+		WHERE id = ? AND deleted_at IS NULL`, id).Scan(&b.ID, &b.ConnectionID, &b.FileName, &b.TotalRows, &b.CreatedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrMeliImportBatchNotFound
+	}
+	if err != nil {
+		return nil, fmt.Errorf("error finding meli import batch %d: %w", id, err)
+	}
+	return &b, nil
+}
+
+// ListByBatch devuelve todas las filas de un lote en el orden del Excel.
+func (r *MeliImportRepository) ListByBatch(ctx context.Context, batchID int64) ([]MeliImportItemDTO, error) {
+	where, args := meliImportWhere(MeliImportItemFilter{BatchID: batchID})
+	page, err := r.listItems(ctx, where, args, "i.sheet_row, i.id", 0, 100000)
+	if err != nil {
+		return nil, err
+	}
+	return page.Items, nil
+}
+
 // CountByStatus devuelve cuántas filas hay por estado (para los contadores de
 // los filtros), opcionalmente de una sola conexión o lote.
 func (r *MeliImportRepository) CountByStatus(ctx context.Context, connectionID, batchID int64) (map[string]int, error) {

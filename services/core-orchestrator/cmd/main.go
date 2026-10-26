@@ -486,6 +486,8 @@ func main() {
 		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelRepository,
 		meliListingImportService,
+		mercadoLibreTokenService,
+		mercadoLibreRateLimiter,
 	)
 	meliBulkImportHandler := httpHandler.NewMeliBulkImportHandler(meliBulkImportService)
 	productImageImportHandler := httpHandler.NewProductImageImportHandler(productImageImportService)

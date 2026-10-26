@@ -22,6 +22,7 @@ import (
 
 	meliListingImportApp "core-orchestrator/internal/application/meli_listing_import"
 	syncApp "core-orchestrator/internal/application/sync"
+	mercadoLibreInfra "core-orchestrator/internal/infrastructure/marketplace/mercadolibre"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 
 	"github.com/xuri/excelize/v2"
@@ -53,6 +54,13 @@ type Service struct {
 	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository
 	channelRepository           *mysqlInfra.ChannelRepository
 	importer                    listingImporter
+	tokenService                *syncApp.MercadoLibreTokenService
+	itemsHandler                *mercadoLibreInfra.ItemsHandler
+}
+
+// ListBatches returns the most recent uploaded files, newest first.
+func (s *Service) ListBatches(ctx context.Context, connectionID int64) ([]mysqlInfra.MeliImportBatchDTO, error) {
+	return s.repo.ListBatches(ctx, connectionID, 200)
 }
 
 func NewService(
@@ -62,8 +70,12 @@ func NewService(
 	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository,
 	channelRepository *mysqlInfra.ChannelRepository,
 	importer *meliListingImportApp.Service,
+	tokenService *syncApp.MercadoLibreTokenService,
+	rateLimiter *mercadoLibreInfra.RateLimiter,
 ) *Service {
 	return &Service{
+		tokenService:                tokenService,
+		itemsHandler:                mercadoLibreInfra.NewItemsHandler(mercadoLibreInfra.NewClient(nil, "", rateLimiter)),
 		db:                          db,
 		repo:                        repo,
 		productRepository:           productRepository,

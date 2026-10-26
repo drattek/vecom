@@ -459,6 +459,8 @@ type ItemStatus struct {
 	CategoryID string   `json:"categoryId"`
 	Title      string   `json:"title"`
 	Permalink  string   `json:"permalink"`
+	// Tags are the item's MercadoLibre tags (e.g. "moderation_penalty").
+	Tags []string `json:"tags"`
 }
 
 type multigetItemEntry struct {
@@ -470,6 +472,7 @@ type multigetItemEntry struct {
 		CategoryID string   `json:"category_id"`
 		Title      string   `json:"title"`
 		Permalink  string   `json:"permalink"`
+		Tags       []string `json:"tags"`
 	} `json:"body"`
 }
 
@@ -520,7 +523,7 @@ func (h *ItemsHandler) GetItemsStatus(ctx context.Context, accessToken string, e
 				log.Printf("mercadolibre items status: id=%s returned code=%d, skipping", entry.Body.ID, entry.Code)
 				continue
 			}
-			statuses = append(statuses, ItemStatus{ID: entry.Body.ID, Status: entry.Body.Status, SubStatus: entry.Body.SubStatus, CategoryID: entry.Body.CategoryID, Title: entry.Body.Title, Permalink: entry.Body.Permalink})
+			statuses = append(statuses, ItemStatus{ID: entry.Body.ID, Status: entry.Body.Status, SubStatus: entry.Body.SubStatus, CategoryID: entry.Body.CategoryID, Title: entry.Body.Title, Permalink: entry.Body.Permalink, Tags: entry.Body.Tags})
 		}
 	}
 

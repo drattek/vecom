@@ -3,8 +3,10 @@ package http
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
+	"path/filepath"
 	"strconv"
 	"strings"
 
@@ -31,7 +33,9 @@ var bulkImportStatuses = map[string]bool{
 // views over that queue and its history.
 //
 //	POST /api/meli-bulk-import/batches      multipart: file + connectionId
-//	GET  /api/meli-bulk-import/items        ?status=a,b&batchId=&connectionId=&search=&history=true&offset=&pageSize=
+//	GET  /api/meli-bulk-import/batches      ?connectionId=  → uploaded files, newest first
+//	GET  /api/meli-bulk-import/batches/{batchId}/export  → .xlsx report of the batch
+//	GET  /api/meli-bulk-import/items       ?status=a,b&batchId=&connectionId=&search=&history=true&offset=&pageSize=
 //	GET  /api/meli-bulk-import/summary      ?connectionId=&batchId=  → count per status
 //	POST /api/meli-bulk-import/items/{itemId}/retry
 //	POST /api/meli-bulk-import/retry        {"status":"failed|missing","connectionId":N}
@@ -136,6 +140,48 @@ func (h *MeliBulkImportHandler) List(w http.ResponseWriter, r *http.Request) {
 		"offset":   filter.Offset,
 		"pageSize": filter.PageSize,
 	})
+}
+
+func (h *MeliBulkImportHandler) ListBatches(w http.ResponseWriter, r *http.Request) {
+	batches, err := h.service.ListBatches(r.Context(), int64(queryInt(r.URL.Query().Get("connectionId"), 0)))
+	if err != nil {
+		log.Printf("meli bulk import: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+	writeJSONResponse(w, map[string]any{"batches": batches})
+}
+
+func (h *MeliBulkImportHandler) ExportBatch(w http.ResponseWriter, r *http.Request) {
+	batchID, err := strconv.ParseInt(chi.URLParam(r, "batchId"), 10, 64)
+	if err != nil || batchID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "invalid batch id")
+		return
+	}
+
+	fileName, content, err := h.service.ExportBatch(r.Context(), batchID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrMeliImportBatchNotFound) {
+			writeJSONError(w, http.StatusNotFound, "No se encontró el lote.")
+			return
+		}
+		log.Printf("meli bulk import: export batch %d: %v", batchID, err)
+		writeJSONError(w, http.StatusBadGateway, "No se pudo generar el reporte; revisa la conexión con MercadoLibre e inténtalo de nuevo.")
+		return
+	}
+
+	// The name is the uploaded file's, so strip anything that could break the header.
+	base := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+	base = strings.Map(func(r rune) rune {
+		if r < 32 || r == '"' || r == '\\' || r == '/' {
+			return '_'
+		}
+		return r
+	}, base)
+	w.Header().Set("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="reporte-%s.xlsx"`, base))
+	w.Header().Set("Access-Control-Expose-Headers", "Content-Disposition")
+	w.Write(content)
 }
 
 func (h *MeliBulkImportHandler) Summary(w http.ResponseWriter, r *http.Request) {

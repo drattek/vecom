@@ -106,6 +106,47 @@ export function useBulkImportItems(query: BulkImportQuery, polling: boolean) {
     })
 }
 
+const bulkImportBatchSchema = z.object({
+    id: z.number(),
+    connectionId: z.number(),
+    fileName: z.string(),
+    totalRows: z.number(),
+    createdAt: z.string(),
+})
+export type BulkImportBatch = z.infer<typeof bulkImportBatchSchema>
+
+export function useBulkImportBatches() {
+    return useQuery({
+        queryKey: ["meli-bulk-import", "batches"],
+        queryFn: async () => {
+            const response = await apiClient.get("/api/meli-bulk-import/batches")
+            return z.object({ batches: z.array(bulkImportBatchSchema) }).parse(response.data).batches
+        },
+    })
+}
+
+// Descarga el Excel de un lote (SKU, ID de MercadoLibre, categoría, vinculación,
+// precio/stock y moderación de precio). El estado se consulta en vivo a
+// MercadoLibre, por lo que puede tardar con lotes grandes.
+export function useExportBulkImportBatch() {
+    return useMutation({
+        mutationFn: async (batchId: number) => {
+            const response = await apiClient.get<Blob>(`/api/meli-bulk-import/batches/${batchId}/export`, {
+                responseType: "blob",
+                timeout: UPLOAD_TIMEOUT_MS,
+            })
+            const disposition = String(response.headers["content-disposition"] ?? "")
+            const fileName = /filename="([^"]+)"/.exec(disposition)?.[1] ?? `reporte-lote-${batchId}.xlsx`
+            const url = URL.createObjectURL(response.data)
+            const link = document.createElement("a")
+            link.href = url
+            link.download = fileName
+            link.click()
+            URL.revokeObjectURL(url)
+        },
+    })
+}
+
 export function useUploadBulkImport() {
     const queryClient = useQueryClient()
     return useMutation({

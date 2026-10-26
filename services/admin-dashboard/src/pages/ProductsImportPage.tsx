@@ -5,8 +5,10 @@ import { Input } from "@/components/ui/input"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { getServerErrorMessage } from "@/lib/api"
 import {
+    useBulkImportBatches,
     useBulkImportItems,
     useBulkImportSummary,
+    useExportBulkImportBatch,
     useRetryBulkImportAll,
     useRetryBulkImportItem,
     useUploadBulkImport,
@@ -15,7 +17,7 @@ import {
 } from "@/lib/meli-bulk-import"
 import { useChannelConnections } from "@/lib/product-detail"
 import { cn } from "@/lib/utils"
-import { Loader2Icon, RotateCcwIcon, SearchIcon, UploadIcon, XIcon } from "lucide-react"
+import { DownloadIcon, Loader2Icon, RotateCcwIcon, SearchIcon, UploadIcon, XIcon } from "lucide-react"
 import { useEffect, useMemo, useRef, useState } from "react"
 import { Link } from "react-router-dom"
 
@@ -144,6 +146,9 @@ export function ProductsImportPage() {
     const upload = useUploadBulkImport()
     const retryItem = useRetryBulkImportItem()
     const retryAll = useRetryBulkImportAll()
+    const batchesQuery = useBulkImportBatches()
+    const exportBatch = useExportBulkImportBatch()
+    const [exportBatchId, setExportBatchId] = useState<number | null>(null)
 
     function countFor(key: Filter): number {
         const statuses = FILTERS.find((f) => f.key === key)?.statuses ?? []
@@ -227,6 +232,35 @@ export function ProductsImportPage() {
                             {upload.isPending ? "Subiendo…" : "Seleccionar archivo Excel"}
                         </Button>
                     </div>
+                    <div className="flex flex-col gap-1">
+                        <label htmlFor="bulk-import-export-batch" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
+                            Reporte de un lote
+                        </label>
+                        <div className="flex items-center gap-2">
+                            <select
+                                id="bulk-import-export-batch"
+                                value={exportBatchId ?? ""}
+                                onChange={(event) => setExportBatchId(event.target.value ? Number(event.target.value) : null)}
+                                className="h-9 min-w-56 max-w-80 rounded-md border border-input bg-transparent px-2 text-sm"
+                            >
+                                <option value="">Selecciona un archivo…</option>
+                                {(batchesQuery.data ?? []).map((batch) => (
+                                    <option key={batch.id} value={batch.id}>
+                                        {batch.fileName} · {formatDate(batch.createdAt)} ({batch.totalRows})
+                                    </option>
+                                ))}
+                            </select>
+                            <Button
+                                variant="outline"
+                                size="sm"
+                                disabled={exportBatchId == null || exportBatch.isPending}
+                                onClick={() => exportBatchId != null && exportBatch.mutate(exportBatchId)}
+                            >
+                                {exportBatch.isPending ? <Loader2Icon className="animate-spin" /> : <DownloadIcon />}
+                                {exportBatch.isPending ? "Generando…" : "Exportar Excel"}
+                            </Button>
+                        </div>
+                    </div>
                     {inProgress > 0 ? (
                         <p className="flex items-center gap-1.5 pb-2 text-sm text-muted-foreground">
                             <Loader2Icon className="size-4 animate-spin" />
@@ -234,6 +268,9 @@ export function ProductsImportPage() {
                         </p>
                     ) : null}
                 </div>
+                {exportBatch.isError ? (
+                    <p className="shrink-0 text-sm text-destructive">{getServerErrorMessage(exportBatch.error, "No se pudo generar el reporte.")}</p>
+                ) : null}
                 {uploadMessage ? (
                     <p className={cn("shrink-0 text-sm", uploadMessage.ok ? "text-green-700" : "text-destructive")}>{uploadMessage.text}</p>
                 ) : null}

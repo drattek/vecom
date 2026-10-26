@@ -301,6 +301,8 @@ func NewRouter(
 
 		// Importación masiva de publicaciones de MercadoLibre por Excel.
 		protected.Post("/api/meli-bulk-import/batches", meliBulkImportHandler.Upload)
+		protected.Get("/api/meli-bulk-import/batches", meliBulkImportHandler.ListBatches)
+		protected.Get("/api/meli-bulk-import/batches/{batchId}/export", meliBulkImportHandler.ExportBatch)
 		protected.Get("/api/meli-bulk-import/items", meliBulkImportHandler.List)
 		protected.Get("/api/meli-bulk-import/summary", meliBulkImportHandler.Summary)
 		protected.Post("/api/meli-bulk-import/items/{itemId}/retry", meliBulkImportHandler.Retry)
