@@ -1299,21 +1299,72 @@ func (s *OdooProductSyncService) syncProductFitments(
 	productTmplID int64,
 	productID int64,
 ) error {
+	_, err := s.pushProductFitments(ctx, handler, credentials, productTmplID, productID)
+	return err
+}
+
+// pushProductFitments is syncProductFitments returning Odoo's linked/unlinked
+// summary, for callers that report it.
+func (s *OdooProductSyncService) pushProductFitments(
+	ctx context.Context,
+	handler *odooInfra.FitmentsHandler,
+	credentials odooInfra.Credentials,
+	productTmplID int64,
+	productID int64,
+) (*odooInfra.SyncFitmentsResult, error) {
 	fitments, err := s.resolveProductFitments(ctx, productID)
 	if err != nil {
-		return fmt.Errorf("error resolving fitments for product %d: %w", productID, err)
+		return nil, fmt.Errorf("error resolving fitments for product %d: %w", productID, err)
 	}
 
 	result, err := handler.SyncProductFitments(ctx, credentials, productTmplID, fitments)
 	if err != nil {
-		return fmt.Errorf("error syncing odoo fitments for product %d (odoo template %d): %w", productID, productTmplID, err)
+		return nil, fmt.Errorf("error syncing odoo fitments for product %d (odoo template %d): %w", productID, productTmplID, err)
 	}
 
 	if result.Linked > 0 || result.Unlinked > 0 {
 		log.Printf("odoo fitments: product %d (odoo template %d) — %d linked, %d unlinked", productID, productTmplID, result.Linked, result.Unlinked)
 	}
 
-	return nil
+	return result, nil
+}
+
+// SyncCompatibilities pushes only product's machine/vehicle compatibilities to
+// its already-published Odoo template (listing.ExternalID), leaving price,
+// stock, sale_ok, attributes and images untouched — so it also applies to
+// paused listings. It always sends the product's complete list (see
+// syncProductFitments). Implements channel_listings.CompatibilitiesSyncer;
+// updated is true when Odoo linked or unlinked any model.
+func (s *OdooProductSyncService) SyncCompatibilities(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO) (bool, string, error) {
+	externalIDStr := strings.TrimSpace(derefString(listing.ExternalID))
+	templateID, err := strconv.ParseInt(externalIDStr, 10, 64)
+	if err != nil {
+		return false, "", fmt.Errorf("error parsing external id %q for product %d: %w", externalIDStr, product.ID, err)
+	}
+
+	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
+	if err != nil {
+		return false, "", fmt.Errorf("error loading odoo connection %d: %w", connectionID, err)
+	}
+
+	odooURL, ok := values["odoo_url"]
+	if !ok || odooURL == "" {
+		return false, "", fmt.Errorf("%w: odoo_url", ErrMissingOdooSettings)
+	}
+	apiKey, ok := values["apikey"]
+	if !ok || apiKey == "" {
+		return false, "", fmt.Errorf("%w: ApiKey", ErrMissingOdooCredentials)
+	}
+	credentials := odooInfra.Credentials{APIKey: apiKey, Database: values["x-odoo-database"]}
+
+	client := odooInfra.NewClient(s.odooAPIClient, odooURL, s.rateLimiter)
+	result, err := s.pushProductFitments(ctx, odooInfra.NewFitmentsHandler(client), credentials, templateID, product.ID)
+	if err != nil {
+		return false, "", err
+	}
+
+	message := fmt.Sprintf("compatibilidades sincronizadas: %d vinculadas, %d desvinculadas", result.Linked, result.Unlinked)
+	return result.Linked > 0 || result.Unlinked > 0, message, nil
 }
 
 // syncProductInfo reconciles Odoo's website.sale.product.info rows for

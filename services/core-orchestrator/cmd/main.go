@@ -574,6 +574,7 @@ func main() {
 	marketplaceWorker := workers.NewMarketplaceWorker(
 		mysqlRepos.ChannelSyncQueueRepository,
 		channelListingsService,
+		channelListingsService,
 		workers.MarketplaceWorkerConfig{
 			PollInterval: cfg.SyncQueuePollInterval,
 			BatchSize:    cfg.SyncQueueBatchSize,

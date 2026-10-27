@@ -241,6 +241,48 @@ func (h *ChannelListingsHandler) SyncCompatibilities(w http.ResponseWriter, r *h
 	json.NewEncoder(w).Encode(result)
 }
 
+type enqueueCompatibilitiesRequest struct {
+	ConnectionID int64 `json:"connectionId"`
+}
+
+// EnqueueCompatibilities accepts a connectionId and queues every product
+// published on it so MarketplaceWorker pushes its compatibilities (machinery and
+// vehicles) in the background. Driven by the "Sincronizar compatibilidades"
+// button of the connection view; responds 202 with how many products were
+// queued.
+func (h *ChannelListingsHandler) EnqueueCompatibilities(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req enqueueCompatibilitiesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.service.EnqueueConnectionCompatibilities(r.Context(), req.ConnectionID, user.ID)
+	if err != nil {
+		if errors.Is(err, channelListingsApp.ErrInvalidChannelConnection) {
+			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
+			return
+		}
+		if errors.Is(err, channelListingsApp.ErrNoCompatibilitiesSyncerForChannel) {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		log.Printf("channel listings enqueue compatibilities: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(result)
+}
+
 type closeChannelListingsRequest struct {
 	ProductID    int64   `json:"productId"`
 	ConnectionID int64   `json:"connectionId"`

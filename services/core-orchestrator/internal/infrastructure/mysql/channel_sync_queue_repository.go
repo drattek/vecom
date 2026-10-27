@@ -19,6 +19,14 @@ const defaultChannelSyncQueueSyncType = "full"
 // is gone.
 const ChannelSyncQueueListingSyncType = "listing"
 
+// ChannelSyncQueueCompatibilitiesSyncType is the sync_type of the rows produced
+// by the "Sincronizar compatibilidades" button of a connection: it means "push
+// only this product's machine/vehicle compatibilities to its existing
+// publication on this connection" (no price, stock, attributes or images). It
+// lives next to the 'listing' rows — the unique key includes sync_type — and is
+// consumed by the same MarketplaceWorker.
+const ChannelSyncQueueCompatibilitiesSyncType = "compatibilities"
+
 type ChannelSyncQueueDTO struct {
 	ID           int64      `json:"id"`
 	ProductID    int64      `json:"productId"`
@@ -84,16 +92,26 @@ func (r *ChannelSyncQueueRepository) Create(ctx context.Context, input CreateCha
 // for the marketplace consumer to claim and process. Legacy non-'listing'
 // rows are never returned — nothing processes them anymore.
 func (r *ChannelSyncQueueRepository) FindPending(ctx context.Context, limit int) ([]ChannelSyncQueueDTO, error) {
+	return r.findPendingByType(ctx, ChannelSyncQueueListingSyncType, limit)
+}
+
+// FindPendingCompatibilities returns up to limit pending 'compatibilities'
+// entries, oldest id first.
+func (r *ChannelSyncQueueRepository) FindPendingCompatibilities(ctx context.Context, limit int) ([]ChannelSyncQueueDTO, error) {
+	return r.findPendingByType(ctx, ChannelSyncQueueCompatibilitiesSyncType, limit)
+}
+
+func (r *ChannelSyncQueueRepository) findPendingByType(ctx context.Context, syncType string, limit int) ([]ChannelSyncQueueDTO, error) {
 	query := `
 		SELECT id, product_id, connection_id, sync_type, status, attempts, last_error,
 		       requested_at, processed_at, updated_by, created_at, updated_at
 		FROM ecom_channel_sync_queue
-		WHERE status = 'pending' AND sync_type = '` + ChannelSyncQueueListingSyncType + `' AND deleted_at IS NULL
+		WHERE status = 'pending' AND sync_type = ? AND deleted_at IS NULL
 		ORDER BY id ASC
 		LIMIT ?
 	`
 
-	rows, err := r.db.QueryContext(ctx, query, limit)
+	rows, err := r.db.QueryContext(ctx, query, syncType, limit)
 	if err != nil {
 		return nil, err
 	}
@@ -210,6 +228,49 @@ func (r *ChannelSyncQueueRepository) ReactivateToPending(ctx context.Context, id
 		WHERE id = ?
 	`, updatedBy, id)
 	return err
+}
+
+// EnqueueCompatibilitiesForConnection queues a 'compatibilities' entry for every
+// product that has a live publication (non-closed, with an external id) on
+// connectionID, whether or not it has compatibilities yet: the sync sends the
+// product's complete list, so products without any also clear stale ones.
+// Entries already done/failed go back to pending with attempts reset; entries
+// pending/processing are left alone. It runs two statements — call it with a
+// tx-scoped repository (mysql.WithinTx). enqueued counts new rows, requeued the
+// reactivated ones.
+func (r *ChannelSyncQueueRepository) EnqueueCompatibilitiesForConnection(ctx context.Context, connectionID, updatedBy int64) (enqueued, requeued int64, err error) {
+	result, err := r.db.ExecContext(ctx, `
+		UPDATE ecom_channel_sync_queue
+		SET status = 'pending', attempts = 0, last_error = NULL, processed_at = NULL, updated_by = ?, updated_at = NOW()
+		WHERE connection_id = ? AND sync_type = ? AND status IN ('done', 'failed') AND deleted_at IS NULL
+	`, updatedBy, connectionID, ChannelSyncQueueCompatibilitiesSyncType)
+	if err != nil {
+		return 0, 0, err
+	}
+	if requeued, err = result.RowsAffected(); err != nil {
+		return 0, 0, err
+	}
+
+	result, err = r.db.ExecContext(ctx, `
+		INSERT INTO ecom_channel_sync_queue (product_id, connection_id, sync_type, updated_by)
+		SELECT DISTINCT m.product_id, m.connection_id, ?, ?
+		FROM ecom_channel_product_map m
+		WHERE m.connection_id = ? AND m.deleted_at IS NULL AND m.status <> 'closed'
+		  AND m.external_id IS NOT NULL AND m.external_id <> ''
+		  AND NOT EXISTS (
+			SELECT 1 FROM ecom_channel_sync_queue q
+			WHERE q.product_id = m.product_id AND q.connection_id = m.connection_id
+			  AND q.sync_type = ? AND q.deleted_at IS NULL
+		  )
+	`, ChannelSyncQueueCompatibilitiesSyncType, updatedBy, connectionID, ChannelSyncQueueCompatibilitiesSyncType)
+	if err != nil {
+		return 0, 0, err
+	}
+	if enqueued, err = result.RowsAffected(); err != nil {
+		return 0, 0, err
+	}
+
+	return enqueued, requeued, nil
 }
 
 func (r *ChannelSyncQueueRepository) FindByID(ctx context.Context, id int64) (*ChannelSyncQueueDTO, error) {

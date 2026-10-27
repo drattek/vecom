@@ -69,8 +69,8 @@ var (
 	ErrNoFullRefresherForChannel = errors.New("no full resync refresher registered for this connection's channel")
 
 	ErrNoCompatibilitiesSyncerForChannel = errors.New("this connection's channel does not support syncing vehicle compatibilities")
-	ErrNoCloserForChannel        = errors.New("no listing closer registered for this connection's channel")
-	ErrInvalidProductID          = errors.New("invalid productId")
+	ErrNoCloserForChannel                = errors.New("no listing closer registered for this connection's channel")
+	ErrInvalidProductID                  = errors.New("invalid productId")
 	// ErrChannelListingsNotReady is returned by PublishQueuedProduct, wrapped
 	// with reasonNoStock, when the product has lost its stock between being
 	// enqueued and being processed.
@@ -730,22 +730,9 @@ func (s *Service) SyncProductCompatibilities(ctx context.Context, input ResyncLi
 		return nil, ErrInvalidChannelConnection
 	}
 
-	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
+	syncer, err := s.resolveCompatibilitiesSyncer(ctx, input.ConnectionID)
 	if err != nil {
-		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
-			return nil, ErrInvalidChannelConnection
-		}
-		return nil, fmt.Errorf("error loading connection %d: %w", input.ConnectionID, err)
-	}
-
-	channel, err := s.channelRepository.FindByID(ctx, connection.ChannelID)
-	if err != nil {
-		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
-	}
-
-	syncer, ok := s.fullRefreshers[normalizeChannelCode(channel.Code)].(CompatibilitiesSyncer)
-	if !ok {
-		return nil, fmt.Errorf("%w: %s", ErrNoCompatibilitiesSyncerForChannel, channel.Code)
+		return nil, err
 	}
 
 	product, err := s.productRepository.FindByID(ctx, input.ProductID)

@@ -41,6 +41,14 @@ type QueuedListingPublisher interface {
 	PublishQueuedProduct(ctx context.Context, productID, connectionID int64) (*channelListingsApp.CreateListingsResult, error)
 }
 
+// QueuedCompatibilitiesSyncer is implemented by channel_listings.Service.
+// SyncProductCompatibilities pushes only the product's compatibilities to its
+// existing publications on the connection; a failure of one publication is
+// reported in its outcome's Error, not as a call error.
+type QueuedCompatibilitiesSyncer interface {
+	SyncProductCompatibilities(ctx context.Context, input channelListingsApp.ResyncListingsInput) (*channelListingsApp.RefreshListingsResult, error)
+}
+
 type MarketplaceWorkerConfig struct {
 	// PollInterval is how often the worker checks for pending queue entries.
 	PollInterval time.Duration
@@ -51,16 +59,20 @@ type MarketplaceWorkerConfig struct {
 // MarketplaceWorker polls ecom_channel_sync_queue for pending 'listing'
 // entries — the rows ListingDiscoveryScheduler produces — claims each one
 // atomically and publishes it through channel_listings. It is the only
-// consumer of the queue; ListingDiscoveryScheduler is the only producer.
+// consumer of the queue; ListingDiscoveryScheduler is the producer of the
+// 'listing' rows. It also drains the 'compatibilities' rows a connection's
+// "Sincronizar compatibilidades" button produces, through compatibilitiesSyncer.
 type MarketplaceWorker struct {
-	queueRepository *mysqlInfra.ChannelSyncQueueRepository
-	publisher       QueuedListingPublisher
-	config          MarketplaceWorkerConfig
+	queueRepository       *mysqlInfra.ChannelSyncQueueRepository
+	publisher             QueuedListingPublisher
+	compatibilitiesSyncer QueuedCompatibilitiesSyncer
+	config                MarketplaceWorkerConfig
 }
 
 func NewMarketplaceWorker(
 	queueRepository *mysqlInfra.ChannelSyncQueueRepository,
 	publisher QueuedListingPublisher,
+	compatibilitiesSyncer QueuedCompatibilitiesSyncer,
 	config MarketplaceWorkerConfig,
 ) *MarketplaceWorker {
 	if config.BatchSize <= 0 {
@@ -68,9 +80,10 @@ func NewMarketplaceWorker(
 	}
 
 	return &MarketplaceWorker{
-		queueRepository: queueRepository,
-		publisher:       publisher,
-		config:          config,
+		queueRepository:       queueRepository,
+		publisher:             publisher,
+		compatibilitiesSyncer: compatibilitiesSyncer,
+		config:                config,
 	}
 }
 
@@ -93,6 +106,85 @@ func (w *MarketplaceWorker) Start(ctx context.Context) {
 }
 
 func (w *MarketplaceWorker) runOnce(ctx context.Context) {
+	w.runListings(ctx)
+	w.drainCompatibilities(ctx)
+}
+
+// drainCompatibilities processes every pending 'compatibilities' entry, batch
+// after batch, instead of one batch per poll: the button enqueues a whole
+// connection at once and each entry is a single cheap call to the channel, so
+// waiting one poll interval per BatchSize products would take days. It stops
+// when nothing is pending, when ctx is cancelled, or when a batch makes no
+// progress (e.g. the database is failing), so it can't spin.
+func (w *MarketplaceWorker) drainCompatibilities(ctx context.Context) {
+	for ctx.Err() == nil {
+		entries, err := w.queueRepository.FindPendingCompatibilities(ctx, w.config.BatchSize)
+		if err != nil {
+			log.Printf("marketplace worker: error listing pending compatibilities entries: %v", err)
+			return
+		}
+		if len(entries) == 0 {
+			return
+		}
+
+		claimedAny := false
+		for _, entry := range entries {
+			entry := entry
+			safe.Do(fmt.Sprintf("marketplace worker: compatibilities entry %d", entry.ID), func() {
+				if w.processCompatibilitiesEntry(ctx, entry) {
+					claimedAny = true
+				}
+			})
+		}
+		if !claimedAny {
+			return
+		}
+	}
+}
+
+// processCompatibilitiesEntry claims entry and pushes the product's
+// compatibilities. It reports whether the entry was claimed (and so left
+// pending), as the progress signal drainCompatibilities needs. Any outcome
+// error marks the row failed with the joined messages; an entry whose product
+// has no publication left finishes as done with nothing to push.
+func (w *MarketplaceWorker) processCompatibilitiesEntry(ctx context.Context, entry mysqlInfra.ChannelSyncQueueDTO) bool {
+	claimed, err := w.queueRepository.Claim(ctx, entry.ID)
+	if err != nil {
+		log.Printf("marketplace worker: error claiming compatibilities entry %d: %v", entry.ID, err)
+		return false
+	}
+	if !claimed {
+		return false
+	}
+
+	result, err := w.compatibilitiesSyncer.SyncProductCompatibilities(ctx, channelListingsApp.ResyncListingsInput{
+		ProductID:    entry.ProductID,
+		ConnectionID: entry.ConnectionID,
+	})
+	if err != nil {
+		log.Printf("marketplace worker: error syncing compatibilities of entry %d (product %d, connection %d): %v", entry.ID, entry.ProductID, entry.ConnectionID, err)
+		w.fail(ctx, entry.ID, err.Error())
+		return true
+	}
+
+	messages := make([]string, 0, len(result.Results))
+	for _, outcome := range result.Results {
+		if outcome.Error != "" {
+			messages = append(messages, fmt.Sprintf("sku=%s: %s", outcome.SKU, outcome.Error))
+		}
+	}
+	if len(messages) > 0 {
+		w.fail(ctx, entry.ID, strings.Join(messages, "; "))
+		return true
+	}
+
+	if err := w.queueRepository.MarkDone(ctx, entry.ID, systemSyncWorkerActorID); err != nil {
+		log.Printf("marketplace worker: error marking compatibilities entry %d done: %v", entry.ID, err)
+	}
+	return true
+}
+
+func (w *MarketplaceWorker) runListings(ctx context.Context) {
 	entries, err := w.queueRepository.FindPending(ctx, w.config.BatchSize)
 	if err != nil {
 		log.Printf("marketplace worker: error listing pending queue entries: %v", err)

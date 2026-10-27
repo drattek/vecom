@@ -505,6 +505,7 @@ func NewRouter(
 		protected.Post("/api/channel-listings/refresh", channelListingsHandler.RefreshListings)
 		protected.Post("/api/channel-listings/resync", channelListingsHandler.ResyncListings)
 		protected.Post("/api/channel-listings/compatibilities", channelListingsHandler.SyncCompatibilities)
+		protected.Post("/api/channel-listings/compatibilities/enqueue", channelListingsHandler.EnqueueCompatibilities)
 		protected.Post("/api/channel-listings/close", channelListingsHandler.CloseListings)
 
 		// TEMPORARY debug endpoint — see MercadoLibreItemLookupHandler. Remove
