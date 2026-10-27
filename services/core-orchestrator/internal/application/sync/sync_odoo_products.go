@@ -1317,7 +1317,21 @@ func (s *OdooProductSyncService) pushProductFitments(
 		return nil, fmt.Errorf("error resolving fitments for product %d: %w", productID, err)
 	}
 
-	result, err := handler.SyncProductFitments(ctx, credentials, productTmplID, fitments)
+	// The product's own brand always goes to Odoo's machine.brand, with or
+	// without compatibilities.
+	productBrand, err := s.fitmentsRepository.FindProductBrand(ctx, productID)
+	if err != nil {
+		return nil, err
+	}
+	var brand *odooInfra.FitmentBrand
+	if productBrand != nil {
+		brand = &odooInfra.FitmentBrand{
+			EcomRef: odooBrandRefPrefix + strconv.FormatInt(productBrand.BrandID, 10),
+			Name:    productBrand.BrandName,
+		}
+	}
+
+	result, err := handler.SyncProductFitments(ctx, credentials, productTmplID, fitments, brand)
 	if err != nil {
 		return nil, fmt.Errorf("error syncing odoo fitments for product %d (odoo template %d): %w", productID, productTmplID, err)
 	}

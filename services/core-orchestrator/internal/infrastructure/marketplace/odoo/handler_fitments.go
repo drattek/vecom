@@ -58,8 +58,10 @@ type SyncFitmentsResult struct {
 
 // SyncProductFitments replaces the machine models core-orchestrator manages on
 // productTmplID with fitments (the product's complete list). Models loaded by
-// hand in Odoo are never removed — see ecom_sync_fitments.
-func (h *FitmentsHandler) SyncProductFitments(ctx context.Context, credentials Credentials, productTmplID int64, fitments []Fitment) (*SyncFitmentsResult, error) {
+// hand in Odoo are never removed — see ecom_sync_fitments. productBrand, when
+// not nil, is the brand assigned to the product itself: Odoo links it to the
+// template even when fitments is empty.
+func (h *FitmentsHandler) SyncProductFitments(ctx context.Context, credentials Credentials, productTmplID int64, fitments []Fitment, productBrand *FitmentBrand) (*SyncFitmentsResult, error) {
 	if fitments == nil {
 		fitments = []Fitment{}
 	}
@@ -67,6 +69,9 @@ func (h *FitmentsHandler) SyncProductFitments(ctx context.Context, credentials C
 	params := map[string]any{
 		"ids":      []int64{productTmplID},
 		"fitments": fitments,
+	}
+	if productBrand != nil {
+		params["product_brand"] = productBrand
 	}
 
 	var result SyncFitmentsResult

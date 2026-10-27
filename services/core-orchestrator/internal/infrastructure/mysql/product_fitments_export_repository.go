@@ -44,6 +44,33 @@ func NewProductFitmentsExportRepository(db Querier) *ProductFitmentsExportReposi
 	return &ProductFitmentsExportRepository{db: db}
 }
 
+// ProductBrandExportDTO is the brand assigned to the product itself
+// (ecom_products.brand_id), as opposed to the brands of its fitments.
+type ProductBrandExportDTO struct {
+	BrandID   int64
+	BrandName string
+}
+
+// FindProductBrand returns the brand assigned to productID, or nil (no error)
+// when the product has none or its brand is soft-deleted.
+func (r *ProductFitmentsExportRepository) FindProductBrand(ctx context.Context, productID int64) (*ProductBrandExportDTO, error) {
+	var brand ProductBrandExportDTO
+	err := r.db.QueryRowContext(ctx, `
+		SELECT b.id, b.name
+		FROM ecom_products p
+		JOIN ecom_brands b ON b.id = p.brand_id AND b.deleted_at IS NULL
+		WHERE p.id = ? AND p.deleted_at IS NULL
+	`, productID).Scan(&brand.BrandID, &brand.BrandName)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error querying brand of product %d: %w", productID, err)
+	}
+
+	return &brand, nil
+}
+
 // FindVehicleFitmentsByProductID returns the distinct, non-deleted vehicle
 // fitments linked to productID (several compatibility rows can point at the
 // same fitment with different motor/position/side).

@@ -58,6 +58,7 @@ const CLOSED_STATUS = "closed"
 // ecom_channels.code de MercadoLibre — único canal con cierre de publicaciones
 // (POST /api/channel-listings/close) para republicar tras un cambio de categoría.
 const MERCADOLIBRE_CHANNEL_CODE = "MERCADOLIBRE"
+const ODOO_CHANNEL_CODE = "ODOO"
 
 // Estados de una publicación que "Resincronizar" puede dar de baja y reemplazar
 // cuando cambió la categoría. Las activas (synced) y en cola nunca.
@@ -134,8 +135,9 @@ function ConnectionCard({
     const hasActiveRows = activeListings.length > 0 || connection.pending.length > 0
     const environmentLabel = connection.environment === "production" ? "Producción" : "Desarrollo"
     const connections = useChannelConnections()
-    const isMercadoLibre =
-        connections.data?.find((item) => item.id === connection.connectionId)?.channelCode === MERCADOLIBRE_CHANNEL_CODE
+    const channelCode = connections.data?.find((item) => item.id === connection.connectionId)?.channelCode
+    const isMercadoLibre = channelCode === MERCADOLIBRE_CHANNEL_CODE
+    const supportsCompatibilitiesSync = isMercadoLibre || channelCode === ODOO_CHANNEL_CODE
     // El estado del diálogo vive aquí y no en el botón: al terminar la importación
     // la sección se refresca y la tarjeta deja de mostrar el botón, pero el
     // resumen de pasos debe seguir visible hasta que el usuario lo cierre.
@@ -200,7 +202,7 @@ function ConnectionCard({
                             listings={activeListings}
                         />
                     ) : null}
-                    {isMercadoLibre && activeListings.length > 0 ? (
+                    {supportsCompatibilitiesSync && activeListings.length > 0 ? (
                         <SyncCompatibilitiesButton productId={productId} connectionId={connection.connectionId} />
                     ) : null}
                     {closedListings.length > 0 ? (
@@ -547,7 +549,7 @@ function ResyncButton({
 }
 
 /**
- * Botón que dispara POST /api/channel-listings/compatibilities: reporta solo
+ * Botón que dispara POST /api/channel-listings/compatibilities (MercadoLibre y Odoo): reporta solo
  * las compatibilidades de vehículos a las publicaciones existentes (también si
  * están pausadas), sin tocar precio, stock, atributos ni imágenes.
  */
