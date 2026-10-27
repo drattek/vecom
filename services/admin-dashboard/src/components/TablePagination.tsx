@@ -1,6 +1,7 @@
-import type { MouseEvent } from "react"
+import { useState, type MouseEvent } from "react"
 import { ChevronsLeftIcon, ChevronsRightIcon } from "lucide-react"
 import { Field, FieldLabel } from "@/components/ui/field"
+import { Input } from "@/components/ui/input"
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
@@ -11,6 +12,53 @@ type TablePaginationProps = {
     onOffsetChange: (offset: number) => void
     onPageSizeChange: (pageSize: number) => void
     pageSizeOptions?: number[]
+}
+
+type PageJumpProps = {
+    currentPage: number
+    totalPages: number
+    onGoToPage: (page: number) => void
+}
+
+// Salto directo a una página: solo navega al confirmar (Enter o perder el foco),
+// no en cada tecla, para disparar una única consulta.
+function PageJump({ currentPage, totalPages, onGoToPage }: PageJumpProps) {
+    const [draft, setDraft] = useState(String(currentPage))
+
+    const commit = () => {
+        const parsed = parseInt(draft, 10)
+        if (Number.isNaN(parsed)) {
+            setDraft(String(currentPage))
+            return
+        }
+
+        const target = Math.min(Math.max(1, parsed), totalPages)
+        setDraft(String(target))
+        if (target !== currentPage) {
+            onGoToPage(target)
+        }
+    }
+
+    return (
+        <div className="flex items-center gap-1.5 text-sm">
+            <Input
+                type="text"
+                inputMode="numeric"
+                aria-label="Ir a la página"
+                value={draft}
+                onChange={(event) => setDraft(event.target.value.replace(/\D/g, ""))}
+                onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                        event.currentTarget.blur()
+                    }
+                }}
+                onBlur={commit}
+                onFocus={(event) => event.currentTarget.select()}
+                className="w-16 text-center"
+            />
+            <span className="whitespace-nowrap text-muted-foreground">de {totalPages}</span>
+        </div>
+    )
 }
 
 export function TablePagination({
@@ -92,7 +140,13 @@ export function TablePagination({
                             </PaginationPrevious>
                         </PaginationItem>
                         <PaginationItem>
-                            <PaginationLink href="#" isActive>{currentPage}</PaginationLink>
+                            {/* key: al cambiar de página el borrador se reinicia con el valor actual */}
+                            <PageJump
+                                key={currentPage}
+                                currentPage={currentPage}
+                                totalPages={totalPages}
+                                onGoToPage={(page) => onOffsetChange((page - 1) * pageSize)}
+                            />
                         </PaginationItem>
                         <PaginationItem>
                             <PaginationNext
