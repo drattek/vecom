@@ -49,6 +49,14 @@ type QueuedCompatibilitiesSyncer interface {
 	SyncProductCompatibilities(ctx context.Context, input channelListingsApp.ResyncListingsInput) (*channelListingsApp.RefreshListingsResult, error)
 }
 
+// QueuedResyncer is implemented by channel_listings.Service. ResyncProductListings
+// runs the channel's full Resync (price and stock always pushed, never gated on
+// a change) on the product's existing publications on the connection; a failure
+// of one publication is reported in its outcome's Error, not as a call error.
+type QueuedResyncer interface {
+	ResyncProductListings(ctx context.Context, input channelListingsApp.ResyncListingsInput) (*channelListingsApp.RefreshListingsResult, error)
+}
+
 type MarketplaceWorkerConfig struct {
 	// PollInterval is how often the worker checks for pending queue entries.
 	PollInterval time.Duration
@@ -66,6 +74,7 @@ type MarketplaceWorker struct {
 	queueRepository       *mysqlInfra.ChannelSyncQueueRepository
 	publisher             QueuedListingPublisher
 	compatibilitiesSyncer QueuedCompatibilitiesSyncer
+	resyncer              QueuedResyncer
 	config                MarketplaceWorkerConfig
 }
 
@@ -73,6 +82,7 @@ func NewMarketplaceWorker(
 	queueRepository *mysqlInfra.ChannelSyncQueueRepository,
 	publisher QueuedListingPublisher,
 	compatibilitiesSyncer QueuedCompatibilitiesSyncer,
+	resyncer QueuedResyncer,
 	config MarketplaceWorkerConfig,
 ) *MarketplaceWorker {
 	if config.BatchSize <= 0 {
@@ -83,6 +93,7 @@ func NewMarketplaceWorker(
 		queueRepository:       queueRepository,
 		publisher:             publisher,
 		compatibilitiesSyncer: compatibilitiesSyncer,
+		resyncer:              resyncer,
 		config:                config,
 	}
 }
@@ -108,6 +119,7 @@ func (w *MarketplaceWorker) Start(ctx context.Context) {
 func (w *MarketplaceWorker) runOnce(ctx context.Context) {
 	w.runListings(ctx)
 	w.drainCompatibilities(ctx)
+	w.drainResync(ctx)
 }
 
 // drainCompatibilities processes every pending 'compatibilities' entry, batch
@@ -117,10 +129,26 @@ func (w *MarketplaceWorker) runOnce(ctx context.Context) {
 // when nothing is pending, when ctx is cancelled, or when a batch makes no
 // progress (e.g. the database is failing), so it can't spin.
 func (w *MarketplaceWorker) drainCompatibilities(ctx context.Context) {
+	w.drainQueue(ctx, "compatibilities", w.queueRepository.FindPendingCompatibilities, w.processCompatibilitiesEntry)
+}
+
+// drainResync processes every pending 'resync' entry the same way (see
+// drainCompatibilities): the global "Resincronizar" button enqueues a whole
+// connection at once.
+func (w *MarketplaceWorker) drainResync(ctx context.Context) {
+	w.drainQueue(ctx, "resync", w.queueRepository.FindPendingResync, w.processResyncEntry)
+}
+
+func (w *MarketplaceWorker) drainQueue(
+	ctx context.Context,
+	name string,
+	findPending func(ctx context.Context, limit int) ([]mysqlInfra.ChannelSyncQueueDTO, error),
+	process func(ctx context.Context, entry mysqlInfra.ChannelSyncQueueDTO) bool,
+) {
 	for ctx.Err() == nil {
-		entries, err := w.queueRepository.FindPendingCompatibilities(ctx, w.config.BatchSize)
+		entries, err := findPending(ctx, w.config.BatchSize)
 		if err != nil {
-			log.Printf("marketplace worker: error listing pending compatibilities entries: %v", err)
+			log.Printf("marketplace worker: error listing pending %s entries: %v", name, err)
 			return
 		}
 		if len(entries) == 0 {
@@ -130,8 +158,8 @@ func (w *MarketplaceWorker) drainCompatibilities(ctx context.Context) {
 		claimedAny := false
 		for _, entry := range entries {
 			entry := entry
-			safe.Do(fmt.Sprintf("marketplace worker: compatibilities entry %d", entry.ID), func() {
-				if w.processCompatibilitiesEntry(ctx, entry) {
+			safe.Do(fmt.Sprintf("marketplace worker: %s entry %d", name, entry.ID), func() {
+				if process(ctx, entry) {
 					claimedAny = true
 				}
 			})
@@ -180,6 +208,47 @@ func (w *MarketplaceWorker) processCompatibilitiesEntry(ctx context.Context, ent
 
 	if err := w.queueRepository.MarkDone(ctx, entry.ID, systemSyncWorkerActorID); err != nil {
 		log.Printf("marketplace worker: error marking compatibilities entry %d done: %v", entry.ID, err)
+	}
+	return true
+}
+
+// processResyncEntry claims entry and runs the full resync of the product's
+// publications. Same contract as processCompatibilitiesEntry: any outcome error
+// marks the row failed with the joined messages; a product with nothing left to
+// push (closed, paused without stock or price) finishes as done.
+func (w *MarketplaceWorker) processResyncEntry(ctx context.Context, entry mysqlInfra.ChannelSyncQueueDTO) bool {
+	claimed, err := w.queueRepository.Claim(ctx, entry.ID)
+	if err != nil {
+		log.Printf("marketplace worker: error claiming resync entry %d: %v", entry.ID, err)
+		return false
+	}
+	if !claimed {
+		return false
+	}
+
+	result, err := w.resyncer.ResyncProductListings(ctx, channelListingsApp.ResyncListingsInput{
+		ProductID:    entry.ProductID,
+		ConnectionID: entry.ConnectionID,
+	})
+	if err != nil {
+		log.Printf("marketplace worker: error resyncing entry %d (product %d, connection %d): %v", entry.ID, entry.ProductID, entry.ConnectionID, err)
+		w.fail(ctx, entry.ID, err.Error())
+		return true
+	}
+
+	messages := make([]string, 0, len(result.Results))
+	for _, outcome := range result.Results {
+		if outcome.Error != "" {
+			messages = append(messages, fmt.Sprintf("sku=%s: %s", outcome.SKU, outcome.Error))
+		}
+	}
+	if len(messages) > 0 {
+		w.fail(ctx, entry.ID, strings.Join(messages, "; "))
+		return true
+	}
+
+	if err := w.queueRepository.MarkDone(ctx, entry.ID, systemSyncWorkerActorID); err != nil {
+		log.Printf("marketplace worker: error marking resync entry %d done: %v", entry.ID, err)
 	}
 	return true
 }

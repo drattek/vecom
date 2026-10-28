@@ -27,6 +27,13 @@ const ChannelSyncQueueListingSyncType = "listing"
 // consumed by the same MarketplaceWorker.
 const ChannelSyncQueueCompatibilitiesSyncType = "compatibilities"
 
+// ChannelSyncQueueResyncSyncType is the sync_type of the rows produced by the
+// "Resincronizar" button of a connection: it means "run the full Resync (price,
+// stock and every other mutable field, never gated on a change) on this
+// product's existing publications on this connection". Consumed by the same
+// MarketplaceWorker, next to the 'listing' and 'compatibilities' rows.
+const ChannelSyncQueueResyncSyncType = "resync"
+
 type ChannelSyncQueueDTO struct {
 	ID           int64      `json:"id"`
 	ProductID    int64      `json:"productId"`
@@ -99,6 +106,11 @@ func (r *ChannelSyncQueueRepository) FindPending(ctx context.Context, limit int)
 // entries, oldest id first.
 func (r *ChannelSyncQueueRepository) FindPendingCompatibilities(ctx context.Context, limit int) ([]ChannelSyncQueueDTO, error) {
 	return r.findPendingByType(ctx, ChannelSyncQueueCompatibilitiesSyncType, limit)
+}
+
+// FindPendingResync returns up to limit pending 'resync' entries, oldest id first.
+func (r *ChannelSyncQueueRepository) FindPendingResync(ctx context.Context, limit int) ([]ChannelSyncQueueDTO, error) {
+	return r.findPendingByType(ctx, ChannelSyncQueueResyncSyncType, limit)
 }
 
 func (r *ChannelSyncQueueRepository) findPendingByType(ctx context.Context, syncType string, limit int) ([]ChannelSyncQueueDTO, error) {
@@ -239,11 +251,22 @@ func (r *ChannelSyncQueueRepository) ReactivateToPending(ctx context.Context, id
 // tx-scoped repository (mysql.WithinTx). enqueued counts new rows, requeued the
 // reactivated ones.
 func (r *ChannelSyncQueueRepository) EnqueueCompatibilitiesForConnection(ctx context.Context, connectionID, updatedBy int64) (enqueued, requeued int64, err error) {
+	return r.enqueueForConnection(ctx, ChannelSyncQueueCompatibilitiesSyncType, connectionID, updatedBy)
+}
+
+// EnqueueResyncForConnection queues a 'resync' entry for every product that has
+// a live publication on connectionID, with the same requeue/skip rules and the
+// same tx-scoped-repository requirement as EnqueueCompatibilitiesForConnection.
+func (r *ChannelSyncQueueRepository) EnqueueResyncForConnection(ctx context.Context, connectionID, updatedBy int64) (enqueued, requeued int64, err error) {
+	return r.enqueueForConnection(ctx, ChannelSyncQueueResyncSyncType, connectionID, updatedBy)
+}
+
+func (r *ChannelSyncQueueRepository) enqueueForConnection(ctx context.Context, syncType string, connectionID, updatedBy int64) (enqueued, requeued int64, err error) {
 	result, err := r.db.ExecContext(ctx, `
 		UPDATE ecom_channel_sync_queue
 		SET status = 'pending', attempts = 0, last_error = NULL, processed_at = NULL, updated_by = ?, updated_at = NOW()
 		WHERE connection_id = ? AND sync_type = ? AND status IN ('done', 'failed') AND deleted_at IS NULL
-	`, updatedBy, connectionID, ChannelSyncQueueCompatibilitiesSyncType)
+	`, updatedBy, connectionID, syncType)
 	if err != nil {
 		return 0, 0, err
 	}
@@ -262,7 +285,7 @@ func (r *ChannelSyncQueueRepository) EnqueueCompatibilitiesForConnection(ctx con
 			WHERE q.product_id = m.product_id AND q.connection_id = m.connection_id
 			  AND q.sync_type = ? AND q.deleted_at IS NULL
 		  )
-	`, ChannelSyncQueueCompatibilitiesSyncType, updatedBy, connectionID, ChannelSyncQueueCompatibilitiesSyncType)
+	`, syncType, updatedBy, connectionID, syncType)
 	if err != nil {
 		return 0, 0, err
 	}

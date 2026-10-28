@@ -642,7 +642,7 @@ create table ecom_channel_sync_queue (
     id bigint unsigned primary key auto_increment,
     product_id bigint unsigned not null ,
     connection_id bigint unsigned not null ,
-    sync_type enum('price', 'stock', 'full', 'listing', 'compatibilities') not null  default 'full',
+    sync_type enum('price', 'stock', 'full', 'listing', 'compatibilities', 'resync') not null  default 'full',
     status enum('pending', 'processing', 'done', 'failed') not null default 'pending',
     attempts int unsigned not null default 0,
     last_error text default null,

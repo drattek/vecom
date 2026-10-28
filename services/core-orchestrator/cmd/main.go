@@ -575,6 +575,7 @@ func main() {
 		mysqlRepos.ChannelSyncQueueRepository,
 		channelListingsService,
 		channelListingsService,
+		channelListingsService,
 		workers.MarketplaceWorkerConfig{
 			PollInterval: cfg.SyncQueuePollInterval,
 			BatchSize:    cfg.SyncQueueBatchSize,

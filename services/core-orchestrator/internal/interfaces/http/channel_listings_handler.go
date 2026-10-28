@@ -283,6 +283,44 @@ func (h *ChannelListingsHandler) EnqueueCompatibilities(w http.ResponseWriter, r
 	json.NewEncoder(w).Encode(result)
 }
 
+// EnqueueResync accepts a connectionId and queues every product published on it
+// so MarketplaceWorker runs the full resync (price and stock always pushed, even
+// when unchanged) in the background. Driven by the connection view's global
+// "Resincronizar" button (MercadoLibre and Odoo); responds 202 with how many
+// products were queued.
+func (h *ChannelListingsHandler) EnqueueResync(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req enqueueCompatibilitiesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	result, err := h.service.EnqueueConnectionResync(r.Context(), req.ConnectionID, user.ID)
+	if err != nil {
+		if errors.Is(err, channelListingsApp.ErrInvalidChannelConnection) {
+			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
+			return
+		}
+		if errors.Is(err, channelListingsApp.ErrNoFullRefresherForChannel) {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		log.Printf("channel listings enqueue resync: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusAccepted)
+	json.NewEncoder(w).Encode(result)
+}
+
 type closeChannelListingsRequest struct {
 	ProductID    int64   `json:"productId"`
 	ConnectionID int64   `json:"connectionId"`
