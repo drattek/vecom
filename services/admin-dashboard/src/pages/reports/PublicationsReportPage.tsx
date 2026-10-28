@@ -19,9 +19,7 @@ import type { ListingState } from "@/lib/schemas/channel-listings-view"
 import { paginatedChannelConnectionsResponseSchema } from "@/lib/schemas/channel-connections"
 import {
     paginatedPublicationsReportSchema,
-    publicationAttributesResponseSchema,
     sourcesResponseSchema,
-    type PublicationReportAttributeStatus,
     type PublicationReportConnection,
 } from "@/lib/schemas/publications-report"
 
@@ -97,42 +95,6 @@ function SummaryCard({ label, value, hint, children }: { label: string; value?: 
     )
 }
 
-function AttributeStatuses({ statuses, loading }: { statuses: PublicationReportAttributeStatus[]; loading: boolean }) {
-    if (statuses.length === 0 && loading) return <span className="text-xs text-muted-foreground">Calculando...</span>
-    if (statuses.length === 0) return <span className="text-xs text-muted-foreground">—</span>
-    return (
-        <div className="flex flex-col items-start gap-1">
-            {statuses.map((a) => {
-                let label = "Completos"
-                let tone = "bg-emerald-500/10 text-emerald-700 dark:text-emerald-400"
-                let title = `${a.connectionName}: sin atributos requeridos pendientes`
-                if (a.state === "needs_category") {
-                    label = "Sin categoría"
-                    tone = "bg-muted text-muted-foreground"
-                    title = `${a.connectionName}: no hay categoría de MercadoLibre resuelta`
-                } else if (a.state === "error") {
-                    label = "Error"
-                    tone = "bg-destructive/10 text-destructive"
-                    title = `${a.connectionName}: no se pudo calcular`
-                } else if (a.requiredMissing > 0) {
-                    label = `Faltan ${a.requiredMissing}`
-                    tone = "bg-destructive/10 text-destructive"
-                    title = `${a.connectionName}: ${a.missingNames.join(", ")}`
-                }
-                return (
-                    <span
-                        key={a.connectionId}
-                        title={title}
-                        className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-medium whitespace-nowrap ${tone}`}
-                    >
-                        {label}
-                    </span>
-                )
-            })}
-        </div>
-    )
-}
-
 function ConnectionStates({ connections }: { connections: PublicationReportConnection[] }) {
     if (connections.length === 0) return <span className="text-xs text-muted-foreground">—</span>
     return (
@@ -204,32 +166,7 @@ export function PublicationsReportPage() {
         },
     })
 
-    // Pares producto:conexión viva de MercadoLibre de la página actual. Los
-    // atributos se piden aparte porque cada checklist es costoso.
     const rows = report.data?.rows ?? []
-    const attributePairs = rows.flatMap((row) =>
-        row.mercadoLibre.filter((c) => c.state !== "closed").map((c) => `${row.productId}:${c.connectionId}`),
-    )
-    const attributePairsKey = attributePairs.join(",")
-    const attributes = useQuery({
-        queryKey: ["publications-report-attributes", attributePairsKey],
-        enabled: attributePairs.length > 0 && !report.isPlaceholderData,
-        retry: false,
-        staleTime: 30_000,
-        queryFn: async () => {
-            const response = await apiClient.get("/api/reports/publications/attributes", {
-                params: { pairs: attributePairsKey },
-                timeout: REPORT_TIMEOUT_MS,
-            })
-            return publicationAttributesResponseSchema.parse(response.data).statuses
-        },
-    })
-    const attributesByProduct = new Map<number, PublicationReportAttributeStatus[]>()
-    for (const status of attributes.data ?? []) {
-        const list = attributesByProduct.get(status.productId) ?? []
-        list.push(status)
-        attributesByProduct.set(status.productId, list)
-    }
 
     const sourceItems = [
         { value: ALL, label: "Todos los sources" },
@@ -429,7 +366,6 @@ export function PublicationsReportPage() {
                         <TableHead>MercadoLibre</TableHead>
                         <TableHead>Estado Odoo</TableHead>
                         <TableHead>Estado MercadoLibre</TableHead>
-                        <TableHead>Atributos MercadoLibre</TableHead>
                         <TableHead className="text-right">Imágenes</TableHead>
                         <TableHead>Imágenes Marketing</TableHead>
                         <TableHead className="text-right">Stock</TableHead>
@@ -439,14 +375,14 @@ export function PublicationsReportPage() {
                 <TableBody>
                     {report.isLoading && rows.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={14} className="text-center text-muted-foreground">
+                            <TableCell colSpan={13} className="text-center text-muted-foreground">
                                 Cargando reporte...
                             </TableCell>
                         </TableRow>
                     ) : null}
                     {!report.isLoading && rows.length === 0 ? (
                         <TableRow>
-                            <TableCell colSpan={14} className="text-center text-muted-foreground">
+                            <TableCell colSpan={13} className="text-center text-muted-foreground">
                                 No hay productos publicados con estos filtros.
                             </TableCell>
                         </TableRow>
@@ -477,12 +413,6 @@ export function PublicationsReportPage() {
                             </TableCell>
                             <TableCell className="align-top">
                                 <ConnectionStates connections={row.mercadoLibre} />
-                            </TableCell>
-                            <TableCell className="align-top">
-                                <AttributeStatuses
-                                    statuses={attributesByProduct.get(row.productId) ?? []}
-                                    loading={attributes.isFetching && liveConnections(row.mercadoLibre).length > 0}
-                                />
                             </TableCell>
                             <TableCell className="text-right tabular-nums">{row.imageCount}</TableCell>
                             <TableCell>

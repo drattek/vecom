@@ -9,14 +9,6 @@ export const publicationReportConnectionSchema = z.object({
   listings: z.number(),
 })
 
-export const publicationReportAttributeStatusSchema = z.object({
-  connectionId: z.number(),
-  connectionName: z.string(),
-  state: z.enum(['ok', 'needs_category', 'error']),
-  requiredMissing: z.number(),
-  missingNames: z.array(z.string()),
-})
-
 export const publicationsReportSummarySchema = z.object({
   total: z.number(),
   inOdoo: z.number(),
@@ -47,10 +39,6 @@ export const publicationReportRowSchema = z.object({
   mercadoLibre: z.array(publicationReportConnectionSchema),
 })
 
-export const publicationAttributesResponseSchema = z.object({
-  statuses: z.array(publicationReportAttributeStatusSchema.extend({ productId: z.number() })),
-})
-
 export const paginatedPublicationsReportSchema = z.object({
   total: z.number(),
   offset: z.number(),
@@ -64,5 +52,4 @@ export const sourcesResponseSchema = z.object({
 })
 
 export type PublicationReportConnection = z.infer<typeof publicationReportConnectionSchema>
-export type PublicationReportAttributeStatus = z.infer<typeof publicationReportAttributeStatusSchema>
 export type PublicationReportRow = z.infer<typeof publicationReportRowSchema>
