@@ -1,3 +1,4 @@
+import { ConnectionQueuePanel } from "@/components/products/ConnectionQueuePanel";
 import { EnqueueCompatibilitiesButton } from "@/components/products/EnqueueCompatibilitiesButton";
 import { EnqueueResyncButton } from "@/components/products/EnqueueResyncButton";
 import { ProductsFilteredTable } from "@/components/products/ProductsFilteredTable";
@@ -24,9 +25,12 @@ export function ProductsChannelConnectionPage() {
             emptyMessage="No se han sincronizado productos en esta conexión."
             toolbar={
                 connection && supportsResync ? (
-                    <div className="flex flex-wrap items-center gap-4">
-                        <EnqueueResyncButton connectionId={connection.id} />
-                        {isOdoo ? <EnqueueCompatibilitiesButton connectionId={connection.id} /> : null}
+                    <div className="flex flex-col items-start gap-3">
+                        <div className="flex flex-wrap items-center gap-4">
+                            <EnqueueResyncButton connectionId={connection.id} />
+                            {isOdoo ? <EnqueueCompatibilitiesButton connectionId={connection.id} /> : null}
+                        </div>
+                        <ConnectionQueuePanel connectionId={connection.id} />
                     </div>
                 ) : undefined
             }

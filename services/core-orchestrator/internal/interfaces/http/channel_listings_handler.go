@@ -321,6 +321,37 @@ func (h *ChannelListingsHandler) EnqueueResync(w http.ResponseWriter, r *http.Re
 	json.NewEncoder(w).Encode(result)
 }
 
+// QueueView returns the progress of the background syncs queued for a
+// connection: per-sync_type counts by status plus, when syncType is given, the
+// matching rows (optionally filtered by status) paginated. Read-only; driven by
+// the connection view's queue panel, which polls it.
+func (h *ChannelListingsHandler) QueueView(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	connectionID, _ := strconv.ParseInt(q.Get("connectionId"), 10, 64)
+	offset, _ := strconv.Atoi(q.Get("offset"))
+	pageSize, _ := strconv.Atoi(q.Get("pageSize"))
+
+	result, err := h.service.QueueView(r.Context(), channelListingsApp.QueueViewInput{
+		ConnectionID: connectionID,
+		SyncType:     strings.TrimSpace(q.Get("syncType")),
+		Status:       strings.TrimSpace(q.Get("status")),
+		Offset:       offset,
+		PageSize:     pageSize,
+	})
+	if err != nil {
+		if errors.Is(err, channelListingsApp.ErrInvalidChannelConnection) {
+			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
+			return
+		}
+		log.Printf("channel listings queue view: %v", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(result)
+}
+
 type closeChannelListingsRequest struct {
 	ProductID    int64   `json:"productId"`
 	ConnectionID int64   `json:"connectionId"`
