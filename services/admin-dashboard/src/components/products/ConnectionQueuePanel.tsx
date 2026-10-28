@@ -2,7 +2,7 @@ import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useConnectionQueue, type QueueSummary } from "@/lib/channel-listings"
-import { ListTodoIcon, Loader2Icon } from "lucide-react"
+import { Loader2Icon } from "lucide-react"
 import { useState } from "react"
 
 const PAGE_SIZE = 25
@@ -30,33 +30,20 @@ function formatDate(value?: string | null) {
     return value ? new Date(value).toLocaleString() : "—"
 }
 
-function ProgressRow({ summary }: { summary: QueueSummary }) {
+function ProgressSegment({ summary }: { summary: QueueSummary }) {
     const total = summary.pending + summary.processing + summary.done + summary.failed
     const finished = summary.done + summary.failed
     const percent = total === 0 ? 0 : Math.round((finished / total) * 100)
     const running = summary.pending + summary.processing > 0
 
     return (
-        <div className="flex flex-col gap-1">
-            <div className="flex items-center justify-between gap-4 text-sm">
-                <span className="flex items-center gap-2 font-medium">
-                    {running ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
-                    {syncTypeLabel(summary.syncType)}
-                </span>
-                <span className="text-muted-foreground">
-                    {finished} de {total} ({percent}%)
-                </span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                <div className="h-full bg-primary transition-all" style={{ width: `${percent}%` }} />
-            </div>
-            <div className="flex flex-wrap gap-x-4 text-xs text-muted-foreground">
-                <span>Pendientes: {summary.pending}</span>
-                <span>Procesando: {summary.processing}</span>
-                <span>Listos: {summary.done}</span>
-                <span className={summary.failed > 0 ? "text-destructive" : undefined}>Con error: {summary.failed}</span>
-            </div>
-        </div>
+        <span className="flex items-center gap-1.5">
+            {running ? <Loader2Icon className="size-3.5 animate-spin" /> : null}
+            {syncTypeLabel(summary.syncType)}
+            <span className="text-muted-foreground">
+                {finished} de {total} ({percent}%)
+            </span>
+        </span>
     )
 }
 
@@ -185,10 +172,10 @@ function QueueDetailDialog({
 }
 
 /**
- * Panel de la vista de una conexión: muestra el avance de las colas en segundo
- * plano (resincronización, compatibilidades, publicación) como barras de
- * progreso y abre un detalle con cada producto, su estado y el error si falló.
- * No muestra nada mientras la conexión no tenga filas en la cola.
+ * Botón de la vista de una conexión que muestra el avance de las colas en
+ * segundo plano (resincronización, compatibilidades, publicación) como
+ * "spinner + tipo + x de xxx (%)" y abre el detalle de cada producto. No se
+ * muestra mientras la conexión no tenga filas en la cola.
  */
 export function ConnectionQueuePanel({ connectionId }: { connectionId: number }) {
     const queue = useConnectionQueue(connectionId)
@@ -200,23 +187,18 @@ export function ConnectionQueuePanel({ connectionId }: { connectionId: number })
     }
 
     return (
-        <div className="flex w-full max-w-xl flex-col gap-3 rounded-lg border p-3">
-            <div className="flex items-center justify-between">
-                <span className="text-sm font-semibold">Colas de sincronización</span>
-                <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
-                    <ListTodoIcon />
-                    Ver detalle
-                </Button>
-            </div>
-            {summary.map((item) => (
-                <ProgressRow key={item.syncType} summary={item} />
-            ))}
+        <>
+            <Button size="sm" variant="outline" onClick={() => setOpen(true)}>
+                {summary.map((item) => (
+                    <ProgressSegment key={item.syncType} summary={item} />
+                ))}
+            </Button>
             <QueueDetailDialog
                 connectionId={connectionId}
                 syncTypes={summary.map((item) => item.syncType)}
                 open={open}
                 onOpenChange={setOpen}
             />
-        </div>
+        </>
     )
 }
