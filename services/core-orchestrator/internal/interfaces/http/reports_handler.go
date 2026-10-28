@@ -50,3 +50,38 @@ func (h *ReportsHandler) PublicationsReport(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(result)
 }
+
+// maxAttributePairs acota cuántos pares producto:conexión acepta un request.
+const maxAttributePairs = 400
+
+// PublicationsAttributes backs la columna "Atributos MercadoLibre" del reporte.
+// Query: pairs=productId:connectionId,productId:connectionId,...
+func (h *ReportsHandler) PublicationsAttributes(w http.ResponseWriter, r *http.Request) {
+	raw := strings.Split(r.URL.Query().Get("pairs"), ",")
+	pairs := make([]reportsApp.AttributePair, 0, len(raw))
+	for _, item := range raw {
+		item = strings.TrimSpace(item)
+		if item == "" {
+			continue
+		}
+		parts := strings.SplitN(item, ":", 2)
+		if len(parts) != 2 {
+			writeJSONError(w, http.StatusBadRequest, "invalid pairs")
+			return
+		}
+		productID, err1 := strconv.ParseInt(parts[0], 10, 64)
+		connectionID, err2 := strconv.ParseInt(parts[1], 10, 64)
+		if err1 != nil || err2 != nil || productID <= 0 || connectionID <= 0 {
+			writeJSONError(w, http.StatusBadRequest, "invalid pairs")
+			return
+		}
+		pairs = append(pairs, reportsApp.AttributePair{ProductID: productID, ConnectionID: connectionID})
+	}
+	if len(pairs) > maxAttributePairs {
+		writeJSONError(w, http.StatusBadRequest, "too many pairs")
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"statuses": h.service.AttributeStatuses(r.Context(), pairs)})
+}

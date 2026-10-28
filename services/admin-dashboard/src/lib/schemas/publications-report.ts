@@ -45,7 +45,10 @@ export const publicationReportRowSchema = z.object({
     .nullish(),
   odoo: z.array(publicationReportConnectionSchema),
   mercadoLibre: z.array(publicationReportConnectionSchema),
-  meliAttributes: z.array(publicationReportAttributeStatusSchema),
+})
+
+export const publicationAttributesResponseSchema = z.object({
+  statuses: z.array(publicationReportAttributeStatusSchema.extend({ productId: z.number() })),
 })
 
 export const paginatedPublicationsReportSchema = z.object({

@@ -19,10 +19,15 @@ import type { ListingState } from "@/lib/schemas/channel-listings-view"
 import { paginatedChannelConnectionsResponseSchema } from "@/lib/schemas/channel-connections"
 import {
     paginatedPublicationsReportSchema,
+    publicationAttributesResponseSchema,
     sourcesResponseSchema,
     type PublicationReportAttributeStatus,
     type PublicationReportConnection,
 } from "@/lib/schemas/publications-report"
+
+// El reporte recorre todo el catálogo publicado; el timeout global de 12 s del
+// cliente se queda corto.
+const REPORT_TIMEOUT_MS = 60_000
 
 const ALL = "all"
 const CHANNEL_ODOO = "ODOO"
@@ -92,7 +97,8 @@ function SummaryCard({ label, value, hint, children }: { label: string; value?: 
     )
 }
 
-function AttributeStatuses({ statuses }: { statuses: PublicationReportAttributeStatus[] }) {
+function AttributeStatuses({ statuses, loading }: { statuses: PublicationReportAttributeStatus[]; loading: boolean }) {
+    if (statuses.length === 0 && loading) return <span className="text-xs text-muted-foreground">Calculando...</span>
     if (statuses.length === 0) return <span className="text-xs text-muted-foreground">—</span>
     return (
         <div className="flex flex-col items-start gap-1">
@@ -178,6 +184,7 @@ export function PublicationsReportPage() {
     const report = useQuery({
         queryKey: ["publications-report", sourceId, channelCode, connectionId, missingIn, withStockAndPrice, search, offset, pageSize],
         placeholderData: keepPreviousData,
+        retry: false,
         queryFn: async () => {
             const response = await apiClient.get("/api/reports/publications", {
                 params: {
@@ -191,10 +198,38 @@ export function PublicationsReportPage() {
                     offset,
                     pageSize,
                 },
+                timeout: REPORT_TIMEOUT_MS,
             })
             return paginatedPublicationsReportSchema.parse(response.data)
         },
     })
+
+    // Pares producto:conexión viva de MercadoLibre de la página actual. Los
+    // atributos se piden aparte porque cada checklist es costoso.
+    const rows = report.data?.rows ?? []
+    const attributePairs = rows.flatMap((row) =>
+        row.mercadoLibre.filter((c) => c.state !== "closed").map((c) => `${row.productId}:${c.connectionId}`),
+    )
+    const attributePairsKey = attributePairs.join(",")
+    const attributes = useQuery({
+        queryKey: ["publications-report-attributes", attributePairsKey],
+        enabled: attributePairs.length > 0 && !report.isPlaceholderData,
+        retry: false,
+        staleTime: 30_000,
+        queryFn: async () => {
+            const response = await apiClient.get("/api/reports/publications/attributes", {
+                params: { pairs: attributePairsKey },
+                timeout: REPORT_TIMEOUT_MS,
+            })
+            return publicationAttributesResponseSchema.parse(response.data).statuses
+        },
+    })
+    const attributesByProduct = new Map<number, PublicationReportAttributeStatus[]>()
+    for (const status of attributes.data ?? []) {
+        const list = attributesByProduct.get(status.productId) ?? []
+        list.push(status)
+        attributesByProduct.set(status.productId, list)
+    }
 
     const sourceItems = [
         { value: ALL, label: "Todos los sources" },
@@ -228,7 +263,6 @@ export function PublicationsReportPage() {
         })),
     ]
 
-    const rows = report.data?.rows ?? []
     const summary = report.data?.summary
 
     return (
@@ -445,7 +479,10 @@ export function PublicationsReportPage() {
                                 <ConnectionStates connections={row.mercadoLibre} />
                             </TableCell>
                             <TableCell className="align-top">
-                                <AttributeStatuses statuses={row.meliAttributes} />
+                                <AttributeStatuses
+                                    statuses={attributesByProduct.get(row.productId) ?? []}
+                                    loading={attributes.isFetching && liveConnections(row.mercadoLibre).length > 0}
+                                />
                             </TableCell>
                             <TableCell className="text-right tabular-nums">{row.imageCount}</TableCell>
                             <TableCell>

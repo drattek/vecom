@@ -36,8 +36,9 @@ type PublicationsReportResult struct {
 }
 
 // PublicationsReport lista los productos publicados en algún canal con su
-// resumen de imágenes, stock, precio, conexiones de Odoo/MercadoLibre y si les
-// faltan atributos requeridos de la categoría de MercadoLibre.
+// resumen de imágenes, stock, precio y conexiones de Odoo/MercadoLibre. Los
+// atributos requeridos de MercadoLibre se piden aparte (AttributeStatuses): son
+// caros y no deben retrasar la tabla ni las cards.
 func (s *Service) PublicationsReport(ctx context.Context, f mysqlInfra.PublicationsReportFilter) (*PublicationsReportResult, error) {
 	page, err := s.publications.FindPublicationsReport(ctx, f)
 	if err != nil {
@@ -48,62 +49,60 @@ func (s *Service) PublicationsReport(ctx context.Context, f mysqlInfra.Publicati
 		return nil, err
 	}
 
-	s.attachMeliAttributes(ctx, page.Rows)
-
 	return &PublicationsReportResult{PaginatedPublicationsReport: *page, Summary: summary}, nil
 }
 
-// attachMeliAttributes calcula, por cada conexión viva de MercadoLibre de cada
-// fila, si faltan atributos requeridos. Un fallo puntual se marca como "error"
-// en esa conexión en vez de tumbar todo el reporte.
-func (s *Service) attachMeliAttributes(ctx context.Context, rows []mysqlInfra.PublicationReportRow) {
-	// Solo conexiones vivas: una publicación cerrada ya no se completa.
-	type job struct{ row, slot int }
-	jobs := make([]job, 0)
-	live := make([][]mysqlInfra.PublicationReportConnection, len(rows))
-	for i := range rows {
-		for _, c := range rows[i].MercadoLibre {
-			if c.State != mysqlInfra.ListingStateClosed {
-				live[i] = append(live[i], c)
-			}
-		}
-		rows[i].MeliAttributes = make([]mysqlInfra.PublicationReportAttributeStatus, len(live[i]))
-		for j := range live[i] {
-			jobs = append(jobs, job{i, j})
-		}
-	}
+// AttributePair identifica un producto y la conexión de MercadoLibre cuyo
+// checklist de atributos se quiere evaluar.
+type AttributePair struct {
+	ProductID    int64
+	ConnectionID int64
+}
+
+// AttributeStatusResult es el estado de atributos de un producto en una conexión.
+type AttributeStatusResult struct {
+	ProductID int64 `json:"productId"`
+	mysqlInfra.PublicationReportAttributeStatus
+}
+
+// AttributeStatuses calcula, por cada par producto/conexión, si faltan
+// atributos requeridos. Un fallo puntual se marca como "error" en ese par en
+// vez de tumbar todo el lote.
+func (s *Service) AttributeStatuses(ctx context.Context, pairs []AttributePair) []AttributeStatusResult {
+	results := make([]AttributeStatusResult, len(pairs))
 
 	var wg sync.WaitGroup
 	sem := make(chan struct{}, checklistConcurrency)
-	for _, j := range jobs {
+	for i, pair := range pairs {
 		wg.Add(1)
 		sem <- struct{}{}
-		go func(j job) {
+		go func(i int, pair AttributePair) {
 			defer wg.Done()
 			defer func() { <-sem }()
 			defer func() {
 				if rec := recover(); rec != nil {
 					log.Printf("publications report: checklist panic: %v", rec)
-					rows[j.row].MeliAttributes[j.slot] = attrError(live[j.row][j.slot])
+					results[i] = AttributeStatusResult{ProductID: pair.ProductID, PublicationReportAttributeStatus: attrError(pair.ConnectionID, "")}
 				}
 			}()
 
-			rows[j.row].MeliAttributes[j.slot] = s.statusFor(ctx, rows[j.row].ProductID, live[j.row][j.slot])
-		}(j)
+			results[i] = AttributeStatusResult{ProductID: pair.ProductID, PublicationReportAttributeStatus: s.statusFor(ctx, pair)}
+		}(i, pair)
 	}
 	wg.Wait()
+	return results
 }
 
-func (s *Service) statusFor(ctx context.Context, productID int64, conn mysqlInfra.PublicationReportConnection) mysqlInfra.PublicationReportAttributeStatus {
-	checklist, err := s.checklist.GetChecklist(ctx, productID, conn.ConnectionID)
+func (s *Service) statusFor(ctx context.Context, pair AttributePair) mysqlInfra.PublicationReportAttributeStatus {
+	checklist, err := s.checklist.GetChecklist(ctx, pair.ProductID, pair.ConnectionID)
 	if err != nil {
-		log.Printf("publications report: checklist product=%d connection=%d: %v", productID, conn.ConnectionID, err)
-		return attrError(conn)
+		log.Printf("publications report: checklist product=%d connection=%d: %v", pair.ProductID, pair.ConnectionID, err)
+		return attrError(pair.ConnectionID, "")
 	}
 
 	out := mysqlInfra.PublicationReportAttributeStatus{
-		ConnectionID:   conn.ConnectionID,
-		ConnectionName: conn.ConnectionName,
+		ConnectionID:   pair.ConnectionID,
+		ConnectionName: checklist.ConnectionName,
 		State:          attrStateOK,
 		MissingNames:   []string{},
 	}
@@ -124,10 +123,10 @@ func (s *Service) statusFor(ctx context.Context, productID int64, conn mysqlInfr
 	return out
 }
 
-func attrError(conn mysqlInfra.PublicationReportConnection) mysqlInfra.PublicationReportAttributeStatus {
+func attrError(connectionID int64, connectionName string) mysqlInfra.PublicationReportAttributeStatus {
 	return mysqlInfra.PublicationReportAttributeStatus{
-		ConnectionID:   conn.ConnectionID,
-		ConnectionName: conn.ConnectionName,
+		ConnectionID:   connectionID,
+		ConnectionName: connectionName,
 		State:          attrStateError,
 		MissingNames:   []string{},
 	}

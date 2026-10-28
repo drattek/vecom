@@ -57,7 +57,7 @@ type PublicationReportPrice struct {
 // PublicationReportAttributeStatus indica si a un producto le faltan atributos
 // requeridos de la categoría de MercadoLibre en una conexión. State es "ok",
 // "needs_category" (sin categoría externa resuelta) o "error" (no se pudo
-// calcular). Lo llena la capa de aplicación con el checklist de atributos.
+// calcular). Lo calcula la capa de aplicación con el checklist de atributos.
 type PublicationReportAttributeStatus struct {
 	ConnectionID    int64    `json:"connectionId"`
 	ConnectionName  string   `json:"connectionName"`
@@ -80,8 +80,6 @@ type PublicationReportRow struct {
 	Price        *PublicationReportPrice       `json:"price,omitempty"`
 	Odoo         []PublicationReportConnection `json:"odoo"`
 	MercadoLibre []PublicationReportConnection `json:"mercadoLibre"`
-	// MeliAttributes: una entrada por conexión viva de MercadoLibre.
-	MeliAttributes []PublicationReportAttributeStatus `json:"meliAttributes"`
 }
 
 type PaginatedPublicationsReport struct {
@@ -298,7 +296,6 @@ func (r *PublicationsReportRepository) FindPublicationsReport(ctx context.Contex
 		}
 		row.Odoo = []PublicationReportConnection{}
 		row.MercadoLibre = []PublicationReportConnection{}
-		row.MeliAttributes = []PublicationReportAttributeStatus{}
 		index[row.ProductID] = len(out)
 		ids = append(ids, row.ProductID)
 		out = append(out, row)
