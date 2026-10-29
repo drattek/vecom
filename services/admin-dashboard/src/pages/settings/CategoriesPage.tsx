@@ -213,6 +213,13 @@ function TreeNode({
                     {highlight(node.name, filter)}
                 </Link>
 
+                <span
+                    className="shrink-0 rounded-md bg-muted px-1.5 py-0.5 text-xs text-muted-foreground tabular-nums"
+                    title="Productos en esta categoría y sus subcategorías"
+                >
+                    {node.productCount} {node.productCount === 1 ? "producto" : "productos"}
+                </span>
+
                 {node.children.length > 0 ? (
                     <span className="shrink-0 text-xs text-muted-foreground tabular-nums">
                         {node.children.length}

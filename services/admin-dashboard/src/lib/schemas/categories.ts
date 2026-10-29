@@ -6,6 +6,7 @@ export type CategoryTree = {
   parentId?: number | null
   createdAt: string
   updatedAt: string
+  productCount: number
   children: CategoryTree[]
 }
 
@@ -16,6 +17,7 @@ export const categoryTreeSchema: z.ZodType<CategoryTree> = z.lazy(() =>
     parentId: z.number().nullish(),
     createdAt: z.string(),
     updatedAt: z.string(),
+    productCount: z.number().default(0),
     children: z.array(categoryTreeSchema).default([]),
   })
 )

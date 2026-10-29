@@ -44,15 +44,18 @@ func NewCategoriesRepository(db Querier) *CategoriesRepository {
 // CategoryTreeDTO is a CategoryDTO with its descendants nested under
 // Children, so the hierarchy can be rendered directly as a tree.
 type CategoryTreeDTO struct {
-	ID        int64             `json:"id"`
-	Name      string            `json:"name"`
-	ParentID  *int64            `json:"parentId,omitempty"`
-	CreatedBy int64             `json:"createdBy"`
-	UpdatedBy *int64            `json:"updatedBy,omitempty"`
-	CreatedAt time.Time         `json:"createdAt"`
-	UpdatedAt time.Time         `json:"updatedAt"`
-	DeletedAt *time.Time        `json:"deletedAt,omitempty"`
-	Children  []CategoryTreeDTO `json:"children"`
+	ID        int64      `json:"id"`
+	Name      string     `json:"name"`
+	ParentID  *int64     `json:"parentId,omitempty"`
+	CreatedBy int64      `json:"createdBy"`
+	UpdatedBy *int64     `json:"updatedBy,omitempty"`
+	CreatedAt time.Time  `json:"createdAt"`
+	UpdatedAt time.Time  `json:"updatedAt"`
+	DeletedAt *time.Time `json:"deletedAt,omitempty"`
+	// ProductCount is the number of non-deleted products under this category,
+	// counting those assigned to it directly plus those of all its descendants.
+	ProductCount int               `json:"productCount"`
+	Children     []CategoryTreeDTO `json:"children"`
 }
 
 // FindTree returns every non-deleted category as a nested tree built from
@@ -85,13 +88,47 @@ func (r *CategoriesRepository) FindTree(ctx context.Context) ([]CategoryTreeDTO,
 		return nil, fmt.Errorf("error iterating categories: %w", err)
 	}
 
-	return buildCategoryTree(categories), nil
+	counts, err := r.productCountsByCategory(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return buildCategoryTree(categories, counts), nil
+}
+
+// productCountsByCategory counts non-deleted products per category_id.
+func (r *CategoriesRepository) productCountsByCategory(ctx context.Context) (map[int64]int, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT category_id, COUNT(*)
+		FROM ecom_products
+		WHERE deleted_at IS NULL AND category_id IS NOT NULL
+		GROUP BY category_id
+	`)
+	if err != nil {
+		return nil, fmt.Errorf("error counting products per category: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[int64]int)
+	for rows.Next() {
+		var categoryID int64
+		var count int
+		if err := rows.Scan(&categoryID, &count); err != nil {
+			return nil, fmt.Errorf("error scanning product count: %w", err)
+		}
+		counts[categoryID] = count
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating product counts: %w", err)
+	}
+
+	return counts, nil
 }
 
 // buildCategoryTree nests a flat, id-ordered category slice into a tree
 // using parent_id. A category whose parent_id points at a row that's
 // missing or soft-deleted is treated as a root instead of being dropped.
-func buildCategoryTree(categories []CategoryDTO) []CategoryTreeDTO {
+func buildCategoryTree(categories []CategoryDTO, productCounts map[int64]int) []CategoryTreeDTO {
 	exists := make(map[int64]bool, len(categories))
 	for _, cat := range categories {
 		exists[cat.ID] = true
@@ -111,18 +148,21 @@ func buildCategoryTree(categories []CategoryDTO) []CategoryTreeDTO {
 	build = func(cat CategoryDTO) CategoryTreeDTO {
 		children := childrenByParent[cat.ID]
 		node := CategoryTreeDTO{
-			ID:        cat.ID,
-			Name:      cat.Name,
-			ParentID:  cat.ParentID,
-			CreatedBy: cat.CreatedBy,
-			UpdatedBy: cat.UpdatedBy,
-			CreatedAt: cat.CreatedAt,
-			UpdatedAt: cat.UpdatedAt,
-			DeletedAt: cat.DeletedAt,
-			Children:  make([]CategoryTreeDTO, 0, len(children)),
+			ID:           cat.ID,
+			Name:         cat.Name,
+			ParentID:     cat.ParentID,
+			CreatedBy:    cat.CreatedBy,
+			UpdatedBy:    cat.UpdatedBy,
+			CreatedAt:    cat.CreatedAt,
+			UpdatedAt:    cat.UpdatedAt,
+			DeletedAt:    cat.DeletedAt,
+			ProductCount: productCounts[cat.ID],
+			Children:     make([]CategoryTreeDTO, 0, len(children)),
 		}
 		for _, child := range children {
-			node.Children = append(node.Children, build(child))
+			builtChild := build(child)
+			node.ProductCount += builtChild.ProductCount
+			node.Children = append(node.Children, builtChild)
 		}
 		return node
 	}
