@@ -28,6 +28,39 @@ type selectProductCategoryRequest struct {
 	ExternalCategoryID string `json:"externalCategoryId"`
 }
 
+// Suggestions serves GET /api/products/{productId}/details/sync/{connectionId}/category-suggestions:
+// the external categories on a connection that are already linked to a local
+// category the product has (Settings → Categorías), shown as "recomendada".
+func (h *ProductCategorySelectionHandler) Suggestions(w http.ResponseWriter, r *http.Request) {
+	productID, ok := parseDetailProductID(w, r)
+	if !ok {
+		return
+	}
+
+	connectionID, err := strconv.ParseInt(chi.URLParam(r, "connectionId"), 10, 64)
+	if err != nil || connectionID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "invalid connection id")
+		return
+	}
+
+	suggestions, err := h.service.Suggestions(r.Context(), productID, connectionID)
+	if err != nil {
+		switch {
+		case errors.Is(err, productCategorySelectionApp.ErrInvalidInput):
+			writeJSONError(w, http.StatusBadRequest, "invalid product or connection id")
+		case errors.Is(err, productCategorySelectionApp.ErrProductNotFound):
+			writeJSONError(w, http.StatusNotFound, "product not found")
+		case errors.Is(err, productCategorySelectionApp.ErrConnectionNotFound):
+			writeJSONError(w, http.StatusNotFound, "channel connection not found")
+		default:
+			writeJSONError(w, http.StatusInternalServerError, "internal error")
+		}
+		return
+	}
+
+	writeJSONResponse(w, map[string]any{"suggestions": suggestions})
+}
+
 func (h *ProductCategorySelectionHandler) Select(w http.ResponseWriter, r *http.Request) {
 	user, ok := UserFromContext(r.Context())
 	if !ok {

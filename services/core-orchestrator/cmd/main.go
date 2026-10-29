@@ -309,6 +309,8 @@ func main() {
 		mysqlRepos.ChannelRepository,
 		mysqlRepos.ChannelConnectionRepository,
 		mysqlRepos.ChannelProductCategorySelectionRepository,
+		mysqlRepos.CategoriesRepository,
+		mysqlRepos.ChannelCategoryMapRepository,
 		categoryImportService,
 		channelAttributeValuesService,
 	)

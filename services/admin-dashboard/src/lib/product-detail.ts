@@ -10,6 +10,7 @@ import {
     channelProductCategorySelectionSchema,
     createListingsResultSchema,
     importListingJobSchema,
+    linkedCategorySuggestionsResponseSchema,
     productAttributesSectionSchema,
     productGeneralSchema,
     productAttachmentImportResponseSchema,
@@ -22,6 +23,7 @@ import {
     resyncListingsResultSchema,
     type BrandOption,
     type CategoryPrediction,
+    type LinkedCategorySuggestion,
     type ProductDimensionsPatch,
     type ProductGeneralPatch,
     type ProductSeoPatch,
@@ -275,6 +277,24 @@ export function useCategoryPrediction(connectionId: number | null, title: string
                 params: { connectionId, title, limit: CATEGORY_PREDICTION_LIMIT },
             })
             return categoryPredictionsResponseSchema.parse(response.data).predictions
+        },
+    })
+}
+
+/**
+ * useLinkedCategorySuggestions trae las categorías externas recomendadas de una
+ * conexión: las que Settings → Categorías ya vinculó con una categoría local del
+ * producto (p. ej. la creada automáticamente al publicar en MercadoLibre).
+ */
+export function useLinkedCategorySuggestions(productId: string | undefined, connectionId: number | null) {
+    return useQuery({
+        queryKey: ["product-details", productId, "category-suggestions", connectionId],
+        enabled: Boolean(productId) && connectionId != null,
+        queryFn: async (): Promise<LinkedCategorySuggestion[]> => {
+            const response = await apiClient.get(
+                `/api/products/${productId}/details/sync/${connectionId}/category-suggestions`,
+            )
+            return linkedCategorySuggestionsResponseSchema.parse(response.data).suggestions
         },
     })
 }

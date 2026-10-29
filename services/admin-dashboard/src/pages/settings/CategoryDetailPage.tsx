@@ -69,7 +69,7 @@ export function CategoryDetailPage() {
                     <header className="border-b border-border px-4 py-3">
                         <h3 className="text-sm font-semibold text-foreground">Mapeos por conexión</h3>
                         <p className="mt-0.5 text-xs text-muted-foreground">
-                            Categoría externa a la que corresponde en cada conexión de canal (solo lectura).
+                            Categoría externa a la que corresponde en cada conexión de canal. Vincula aquí la categoría de Odoo para que se recomiende al elegir categoría en Atributos.
                         </p>
                     </header>
                     <div className="flex flex-col gap-3 p-4">

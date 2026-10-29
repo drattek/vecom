@@ -466,6 +466,22 @@ export const categoryPredictionsResponseSchema = z.object({
 
 export type CategoryPrediction = z.infer<typeof categoryPredictionSchema>
 
+// Categoría externa recomendada para (producto, conexión) a partir de la
+// categoría local ya vinculada en Settings → Categorías —
+// GET .../details/sync/{connectionId}/category-suggestions.
+export const linkedCategorySuggestionSchema = z.object({
+  categoryId: z.number(),
+  categoryPath: z.array(z.string()).default([]),
+  externalCategoryId: z.string(),
+  externalCategoryName: z.string().default(""),
+})
+
+export const linkedCategorySuggestionsResponseSchema = z.object({
+  suggestions: z.array(linkedCategorySuggestionSchema),
+})
+
+export type LinkedCategorySuggestion = z.infer<typeof linkedCategorySuggestionSchema>
+
 // Selección manual de categoría externa por conexión, antes de publicar (ver
 // ADR 0005) — POST .../details/sync/{connectionId}/category con
 // { externalCategoryId }.

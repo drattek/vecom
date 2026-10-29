@@ -40,6 +40,8 @@ type Service struct {
 	channelRepository             *mysqlInfra.ChannelRepository
 	channelConnectionRepository   *mysqlInfra.ChannelConnectionRepository
 	selectionRepository           *mysqlInfra.ChannelProductCategorySelectionRepository
+	categoriesRepository          *mysqlInfra.CategoriesRepository
+	channelCategoryMapRepository  *mysqlInfra.ChannelCategoryMapRepository
 	categoryImportService         *categoryImportApp.Service
 	channelAttributeValuesService *channelAttributeValuesApp.Service
 }
@@ -49,6 +51,8 @@ func NewService(
 	channelRepository *mysqlInfra.ChannelRepository,
 	channelConnectionRepository *mysqlInfra.ChannelConnectionRepository,
 	selectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository,
+	categoriesRepository *mysqlInfra.CategoriesRepository,
+	channelCategoryMapRepository *mysqlInfra.ChannelCategoryMapRepository,
 	categoryImportService *categoryImportApp.Service,
 	channelAttributeValuesService *channelAttributeValuesApp.Service,
 ) *Service {
@@ -57,9 +61,113 @@ func NewService(
 		channelRepository:             channelRepository,
 		channelConnectionRepository:   channelConnectionRepository,
 		selectionRepository:           selectionRepository,
+		categoriesRepository:          categoriesRepository,
+		channelCategoryMapRepository:  channelCategoryMapRepository,
 		categoryImportService:         categoryImportService,
 		channelAttributeValuesService: channelAttributeValuesService,
 	}
+}
+
+// SuggestionDTO is a recommended external category for a (product, connection):
+// the one the connection's ecom_channel_category_map already links to a local
+// category the product is known under.
+type SuggestionDTO struct {
+	CategoryID           int64    `json:"categoryId"`
+	CategoryPath         []string `json:"categoryPath"`
+	ExternalCategoryID   string   `json:"externalCategoryId"`
+	ExternalCategoryName string   `json:"externalCategoryName"`
+}
+
+// Suggestions recommends external categories on connectionID for a product by
+// reusing the local categories it already has — the one on ecom_products and
+// the ones picked (or auto-created, e.g. from a MercadoLibre listing) on other
+// connections — and looking up where each is mapped on connectionID (linked
+// from Settings → Categorías). Always a slice, empty when nothing is mapped.
+func (s *Service) Suggestions(ctx context.Context, productID, connectionID int64) ([]SuggestionDTO, error) {
+	if productID <= 0 || connectionID <= 0 {
+		return nil, ErrInvalidInput
+	}
+
+	product, err := s.productRepository.FindByID(ctx, productID)
+	if err != nil {
+		return nil, err
+	}
+
+	if _, err := s.channelConnectionRepository.FindByID(ctx, connectionID); err != nil {
+		return nil, err
+	}
+
+	selections, err := s.selectionRepository.FindByProduct(ctx, productID)
+	if err != nil {
+		return nil, err
+	}
+
+	candidates := make([]int64, 0, len(selections)+1)
+	seen := make(map[int64]bool)
+	add := func(id int64) {
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			candidates = append(candidates, id)
+		}
+	}
+	for _, selection := range selections {
+		if selection.ConnectionID != connectionID {
+			add(selection.CategoryID)
+		}
+	}
+	if product.CategoryID != nil {
+		add(*product.CategoryID)
+	}
+
+	suggestions := make([]SuggestionDTO, 0, len(candidates))
+	seenExternal := make(map[string]bool)
+	for _, categoryID := range candidates {
+		mapping, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, categoryID, connectionID)
+		if err != nil {
+			if errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
+				continue
+			}
+			return nil, fmt.Errorf("error loading category mapping for category %d: %w", categoryID, err)
+		}
+		if seenExternal[mapping.ExternalCategoryID] {
+			continue
+		}
+		seenExternal[mapping.ExternalCategoryID] = true
+
+		path, err := s.localCategoryPath(ctx, categoryID)
+		if err != nil {
+			return nil, err
+		}
+
+		name := ""
+		if mapping.ExternalCategoryName != nil {
+			name = strings.TrimSpace(*mapping.ExternalCategoryName)
+		}
+		suggestions = append(suggestions, SuggestionDTO{
+			CategoryID:           categoryID,
+			CategoryPath:         path,
+			ExternalCategoryID:   mapping.ExternalCategoryID,
+			ExternalCategoryName: name,
+		})
+	}
+
+	return suggestions, nil
+}
+
+// localCategoryPath returns the root→category names of a local category.
+func (s *Service) localCategoryPath(ctx context.Context, categoryID int64) ([]string, error) {
+	path := make([]string, 0, 4)
+	visited := make(map[int64]bool)
+	for cursor := &categoryID; cursor != nil && !visited[*cursor]; {
+		visited[*cursor] = true
+		category, err := s.categoriesRepository.FindByID(ctx, *cursor)
+		if err != nil {
+			return nil, fmt.Errorf("error loading local category %d: %w", *cursor, err)
+		}
+		path = append([]string{category.Name}, path...)
+		cursor = category.ParentID
+	}
+	return path, nil
 }
 
 // SelectionDTO reports the outcome of Select: the local leaf category

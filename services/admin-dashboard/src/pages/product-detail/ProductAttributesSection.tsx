@@ -27,6 +27,7 @@ import {
     useCategoryPrediction,
     useChannelConnections,
     useProductSection,
+    useLinkedCategorySuggestions,
     useSelectChannelCategory,
     useUpdateProductDimensions,
     useUpdateProductSeo,
@@ -36,6 +37,7 @@ import {
     productDimensionsPatchSchema,
     productGeneralSchema,
     productSeoPatchSchema,
+    type LinkedCategorySuggestion,
     type ProductAttributeValue,
     type ProductDimensions,
     type ProductDimensionsPatch,
@@ -333,6 +335,7 @@ function CategorySelector({
     const isMercadoLibre = channelCode === MERCADOLIBRE_CHANNEL_CODE
     const [showTree, setShowTree] = useState(!isMercadoLibre)
     const prediction = useCategoryPrediction(isMercadoLibre ? connectionId : null, isMercadoLibre ? productName : undefined)
+    const linked = useLinkedCategorySuggestions(productId, connectionId)
     const mutation = useSelectChannelCategory(productId)
     const [pickingExternalId, setPickingExternalId] = useState<string | null>(null)
     const [errorMessage, setErrorMessage] = useState<string | null>(null)
@@ -355,9 +358,19 @@ function CategorySelector({
         )
     }
 
+    const recommended = (
+        <RecommendedCategories
+            suggestions={linked.data ?? []}
+            pendingId={mutation.isPending ? pickingExternalId : null}
+            busy={mutation.isPending}
+            onPick={pick}
+        />
+    )
+
     if (isMercadoLibre && !showTree) {
         return (
             <div className="flex flex-col gap-2">
+                {recommended}
                 {prediction.isLoading ? (
                     <p className="text-sm text-muted-foreground">Buscando categoría sugerida…</p>
                 ) : prediction.data && prediction.data.length > 0 ? (
@@ -413,6 +426,7 @@ function CategorySelector({
 
     return (
         <div className="flex flex-col gap-2">
+            {recommended}
             <ExternalCategoryTree
                 connectionId={connectionId}
                 pickLabel="Seleccionar"
@@ -422,6 +436,58 @@ function CategorySelector({
                 onPick={(node) => pick(node.externalId)}
             />
             <FieldError message={errorMessage} />
+        </div>
+    )
+}
+
+/**
+ * Categorías externas recomendadas: las que Settings → Categorías ya vinculó, en
+ * esta conexión, con una categoría local del producto. Se puede usar una o
+ * elegir otra con el resto del selector.
+ */
+function RecommendedCategories({
+    suggestions,
+    pendingId,
+    busy,
+    onPick,
+}: {
+    suggestions: LinkedCategorySuggestion[]
+    pendingId: string | null
+    busy: boolean
+    onPick: (externalCategoryId: string) => void
+}) {
+    if (suggestions.length === 0) {
+        return null
+    }
+
+    return (
+        <div className="flex flex-col gap-2">
+            <p className="text-sm text-muted-foreground">Categoría recomendada</p>
+            <ul className="flex flex-col gap-2">
+                {suggestions.map((suggestion) => (
+                    <li
+                        key={suggestion.externalCategoryId}
+                        className="flex items-center gap-3 rounded-lg border border-primary/40 bg-primary/5 p-3"
+                    >
+                        <div className="min-w-0 flex-1">
+                            <p className="text-sm">
+                                <span className="font-medium">
+                                    {suggestion.externalCategoryName || suggestion.externalCategoryId}
+                                </span>{" "}
+                                <span className="text-xs text-muted-foreground">({suggestion.externalCategoryId})</span>
+                            </p>
+                            {suggestion.categoryPath.length > 0 ? (
+                                <p className="mt-0.5 text-xs text-muted-foreground">
+                                    Vinculada a: {suggestion.categoryPath.join(" › ")}
+                                </p>
+                            ) : null}
+                        </div>
+                        <Button size="sm" disabled={busy} onClick={() => onPick(suggestion.externalCategoryId)}>
+                            {busy && pendingId === suggestion.externalCategoryId ? "Guardando…" : "Usar"}
+                        </Button>
+                    </li>
+                ))}
+            </ul>
         </div>
     )
 }

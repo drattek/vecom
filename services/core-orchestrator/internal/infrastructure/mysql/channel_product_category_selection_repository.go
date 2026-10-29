@@ -65,6 +65,53 @@ func (r *ChannelProductCategorySelectionRepository) FindByProductAndConnection(c
 	return scanChannelProductCategorySelectionRow(r.db.QueryRowContext(ctx, query, productID, connectionID))
 }
 
+// FindByProduct returns every non-deleted selection of a product across all
+// connections — used to reuse the local category chosen on one connection
+// (e.g. the one MercadoLibre created automatically) as a suggestion on
+// another. Ordered by id; always a slice, empty when nothing was selected.
+func (r *ChannelProductCategorySelectionRepository) FindByProduct(ctx context.Context, productID int64) ([]ChannelProductCategorySelectionDTO, error) {
+	query := `
+		SELECT id, product_id, connection_id, category_id, external_category_id, external_category_name,
+		       created_by, updated_by, created_at, updated_at, deleted_at
+		FROM ecom_channel_product_category_selection
+		WHERE product_id = ? AND deleted_at IS NULL
+		ORDER BY id ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, productID)
+	if err != nil {
+		return nil, fmt.Errorf("error querying category selections for product %d: %w", productID, err)
+	}
+	defer rows.Close()
+
+	selections := make([]ChannelProductCategorySelectionDTO, 0)
+	for rows.Next() {
+		var s ChannelProductCategorySelectionDTO
+		if err := rows.Scan(
+			&s.ID,
+			&s.ProductID,
+			&s.ConnectionID,
+			&s.CategoryID,
+			&s.ExternalCategoryID,
+			&s.ExternalCategoryName,
+			&s.CreatedBy,
+			&s.UpdatedBy,
+			&s.CreatedAt,
+			&s.UpdatedAt,
+			&s.DeletedAt,
+		); err != nil {
+			return nil, fmt.Errorf("error scanning category selection for product %d: %w", productID, err)
+		}
+		selections = append(selections, s)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating category selections for product %d: %w", productID, err)
+	}
+
+	return selections, nil
+}
+
 func (r *ChannelProductCategorySelectionRepository) findByID(ctx context.Context, id int64) (*ChannelProductCategorySelectionDTO, error) {
 	query := `
 		SELECT id, product_id, connection_id, category_id, external_category_id, external_category_name,

@@ -449,6 +449,26 @@ func (s *Service) importOdoo(ctx context.Context, connectionID int64, externalCa
 
 	alreadyLinked := s.mappingExists(ctx, externalCategoryID, connectionID)
 
+	// An external category already linked to a local one (from Settings →
+	// Categorías or an earlier import) reuses that local category instead of
+	// recreating its path by name, which would fork a duplicate.
+	if linked, err := s.channelCategoryMapRepo.FindByExternalCategoryAndConnection(ctx, externalCategoryID, connectionID); err == nil {
+		leafName := strings.TrimSpace(path[len(path)-1].Name)
+		mapped, err := s.upsertMappings(ctx, linked.CategoryID, externalCategoryID, leafName, actorID, targets)
+		if err != nil {
+			return nil, err
+		}
+		return &ImportResultDTO{
+			CategoryID:          linked.CategoryID,
+			Name:                leafName,
+			CreatedCount:        0,
+			AlreadyLinked:       true,
+			MappedConnectionIDs: mapped,
+		}, nil
+	} else if !errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
+		return nil, fmt.Errorf("error looking up existing mapping for %q: %w", externalCategoryID, err)
+	}
+
 	var parentLocalID *int64
 	var leafLocalID int64
 	created := 0

@@ -296,6 +296,7 @@ func NewRouter(
 		// paso previo al botón "Publicar" en Sincronización cuando la conexión
 		// todavía no tiene ninguna publicación. Ver ADR 0005.
 		protected.Post("/api/products/{productId}/details/sync/{connectionId}/category", productCategorySelectionHandler.Select)
+		protected.Get("/api/products/{productId}/details/sync/{connectionId}/category-suggestions", productCategorySelectionHandler.Suggestions)
 		protected.Post("/api/products/{productId}/details/sync/{connectionId}/import-listing", meliListingImportHandler.Import)
 		protected.Get("/api/products/{productId}/import-listing-jobs/{jobId}", meliListingImportHandler.GetImportJob)
 
