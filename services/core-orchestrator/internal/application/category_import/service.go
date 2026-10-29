@@ -533,6 +533,16 @@ type SetMappingResultDTO struct {
 // it never creates local categories — the local side is the category the user
 // is looking at; it only writes the ecom_channel_category_map row.
 func (s *Service) SetMapping(ctx context.Context, categoryID, connectionID int64, externalCategoryID string, actorID int64) (*SetMappingResultDTO, error) {
+	return s.setMapping(ctx, categoryID, connectionID, externalCategoryID, actorID, false)
+}
+
+// SetMappingAllowingParents is SetMapping without the leaf-only rule for Odoo
+// (see ImportAllowingParents). MercadoLibre still requires a leaf.
+func (s *Service) SetMappingAllowingParents(ctx context.Context, categoryID, connectionID int64, externalCategoryID string, actorID int64) (*SetMappingResultDTO, error) {
+	return s.setMapping(ctx, categoryID, connectionID, externalCategoryID, actorID, true)
+}
+
+func (s *Service) setMapping(ctx context.Context, categoryID, connectionID int64, externalCategoryID string, actorID int64, allowParents bool) (*SetMappingResultDTO, error) {
 	externalCategoryID = strings.TrimSpace(externalCategoryID)
 	if categoryID <= 0 || connectionID <= 0 || externalCategoryID == "" || actorID <= 0 {
 		return nil, ErrInvalidInput
@@ -550,7 +560,7 @@ func (s *Service) SetMapping(ctx context.Context, categoryID, connectionID int64
 		return nil, err
 	}
 
-	name, err := s.externalLeafName(ctx, normalized, connectionID, externalCategoryID)
+	name, err := s.externalLeafName(ctx, normalized, connectionID, externalCategoryID, allowParents)
 	if err != nil {
 		return nil, err
 	}
@@ -586,7 +596,7 @@ func (s *Service) SetMapping(ctx context.Context, categoryID, connectionID int64
 // externalLeafName returns the external category's own name, or ErrNotLeaf if
 // it still has children (and ErrExternalCategoryNotFound / ErrChannelNotSupported
 // as applicable).
-func (s *Service) externalLeafName(ctx context.Context, normalizedCode string, connectionID int64, externalCategoryID string) (string, error) {
+func (s *Service) externalLeafName(ctx context.Context, normalizedCode string, connectionID int64, externalCategoryID string, allowParents bool) (string, error) {
 	switch normalizedCode {
 	case channelCodeMercadoLibre:
 		category, err := s.mercadoLibreCategory(ctx, connectionID, externalCategoryID)
@@ -616,7 +626,7 @@ func (s *Service) externalLeafName(ctx context.Context, normalizedCode string, c
 		if node == nil {
 			return "", ErrExternalCategoryNotFound
 		}
-		if _, hasChildren := indexOdooCategories(categories); hasChildren[odooID] {
+		if _, hasChildren := indexOdooCategories(categories); hasChildren[odooID] && !allowParents {
 			return "", ErrNotLeaf
 		}
 		return strings.TrimSpace(node.Name), nil

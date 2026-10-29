@@ -68,6 +68,36 @@ func NewService(
 	}
 }
 
+// resolveLocalCategory returns the local category externalCategoryID belongs to.
+// For channels without MercadoLibre's per-category attribute slots (Odoo), when
+// the product already has a local category it is re-pointed at the chosen
+// external category — replacing its previous mapping on this connection — rather
+// than forking a new local category named after the external one. Otherwise
+// (MercadoLibre, or a product with no local category yet) the external category
+// is imported, which creates/reuses the local one.
+func (s *Service) resolveLocalCategory(ctx context.Context, product *mysqlInfra.ProductDTO, channelCode string, connectionID int64, externalCategoryID string, actorID int64) (*categoryImportApp.ImportResultDTO, error) {
+	if !strings.EqualFold(strings.TrimSpace(channelCode), mercadoLibreChannelCode) {
+		selections, err := s.selectionRepository.FindByProduct(ctx, product.ID)
+		if err != nil {
+			return nil, err
+		}
+		if candidates := s.candidateCategoryIDs(product, selections, connectionID); len(candidates) > 0 {
+			mapped, err := s.categoryImportService.SetMappingAllowingParents(ctx, candidates[0], connectionID, externalCategoryID, actorID)
+			if err != nil {
+				return nil, err
+			}
+			return &categoryImportApp.ImportResultDTO{
+				CategoryID:          mapped.CategoryID,
+				Name:                mapped.ExternalCategoryName,
+				AlreadyLinked:       mapped.Replaced,
+				MappedConnectionIDs: []int64{connectionID},
+			}, nil
+		}
+	}
+
+	return s.categoryImportService.ImportAllowingParents(ctx, connectionID, externalCategoryID, actorID, true)
+}
+
 // SuggestionDTO is a recommended external category for a (product, connection):
 // the one the connection's ecom_channel_category_map already links to a local
 // category the product is known under.
@@ -102,25 +132,9 @@ func (s *Service) Suggestions(ctx context.Context, productID, connectionID int64
 		return nil, err
 	}
 
-	candidates := make([]int64, 0, len(selections)+1)
-	seen := make(map[int64]bool)
-	add := func(id int64) {
-		if id > 0 && !seen[id] {
-			seen[id] = true
-			candidates = append(candidates, id)
-		}
-	}
-	for _, selection := range selections {
-		if selection.ConnectionID != connectionID {
-			add(selection.CategoryID)
-		}
-	}
-	if product.CategoryID != nil {
-		add(*product.CategoryID)
-	}
+	candidates := s.candidateCategoryIDs(product, selections, connectionID)
 
 	suggestions := make([]SuggestionDTO, 0, len(candidates))
-	seenExternal := make(map[string]bool)
 	for _, categoryID := range candidates {
 		mapping, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, categoryID, connectionID)
 		if err != nil {
@@ -129,11 +143,6 @@ func (s *Service) Suggestions(ctx context.Context, productID, connectionID int64
 			}
 			return nil, fmt.Errorf("error loading category mapping for category %d: %w", categoryID, err)
 		}
-		if seenExternal[mapping.ExternalCategoryID] {
-			continue
-		}
-		seenExternal[mapping.ExternalCategoryID] = true
-
 		path, err := s.localCategoryPath(ctx, categoryID)
 		if err != nil {
 			return nil, err
@@ -149,9 +158,35 @@ func (s *Service) Suggestions(ctx context.Context, productID, connectionID int64
 			ExternalCategoryID:   mapping.ExternalCategoryID,
 			ExternalCategoryName: name,
 		})
+		// One recommendation per connection: the first local category in
+		// priority order that is mapped here.
+		break
 	}
 
 	return suggestions, nil
+}
+
+// candidateCategoryIDs lists, in priority order, the local categories a product
+// is known under for connectionID: the one on ecom_products first, then the ones
+// picked (or auto-created, e.g. from a MercadoLibre listing) on other connections.
+func (s *Service) candidateCategoryIDs(product *mysqlInfra.ProductDTO, selections []mysqlInfra.ChannelProductCategorySelectionDTO, connectionID int64) []int64 {
+	candidates := make([]int64, 0, len(selections)+1)
+	seen := make(map[int64]bool)
+	add := func(id int64) {
+		if id > 0 && !seen[id] {
+			seen[id] = true
+			candidates = append(candidates, id)
+		}
+	}
+	if product.CategoryID != nil {
+		add(*product.CategoryID)
+	}
+	for _, selection := range selections {
+		if selection.ConnectionID != connectionID {
+			add(selection.CategoryID)
+		}
+	}
+	return candidates
 }
 
 // localCategoryPath returns the root→category names of a local category.
@@ -209,7 +244,7 @@ func (s *Service) Select(ctx context.Context, productID, connectionID int64, ext
 		return nil, fmt.Errorf("error loading channel %d: %w", connection.ChannelID, err)
 	}
 
-	imported, err := s.categoryImportService.ImportAllowingParents(ctx, connectionID, externalCategoryID, actorID, true)
+	imported, err := s.resolveLocalCategory(ctx, product, channel.Code, connectionID, externalCategoryID, actorID)
 	if err != nil {
 		return nil, fmt.Errorf("error resolving local category for external category %q: %w", externalCategoryID, err)
 	}
