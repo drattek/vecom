@@ -592,6 +592,7 @@ function AddCustomAttributeForm({
             </Select>
         ) : (
             <Input
+                autoComplete="off"
                 type={dataType === "number" ? "number" : dataType === "date" ? "date" : "text"}
                 value={value}
                 onChange={(event) => setValue(event.target.value)}
@@ -614,6 +615,7 @@ function AddCustomAttributeForm({
                 <label className="flex flex-col gap-1 text-xs text-muted-foreground">
                     Clave
                     <Input
+                        autoComplete="off"
                         value={key}
                         onChange={(event) => setKey(event.target.value)}
                         disabled={mutation.isPending}
@@ -710,6 +712,7 @@ function DimensionsCard({
                                 label={`${field.label} (${field.unit})`}
                                 value={
                                     <Input
+                                        autoComplete="off"
                                         type="number"
                                         min="0"
                                         step="0.01"
@@ -800,6 +803,7 @@ function SeoCard({ productId, seo }: { productId?: string; seo: ProductSeo | nul
                             label="Meta título"
                             value={
                                 <Input
+                                    autoComplete="off"
                                     value={editor.draft.metaTitle}
                                     onChange={(event) =>
                                         editor.setDraft({ ...editor.draft, metaTitle: event.target.value })

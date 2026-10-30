@@ -181,6 +181,7 @@ function ChecklistRow({ productId, item }: { productId?: string; item: Attribute
         </Select>
     ) : (
         <Input
+            autoComplete="off"
             type={dataTypeInputType[item.dataType] ?? "text"}
             value={draft}
             onChange={(event) => setDraft(event.target.value)}
