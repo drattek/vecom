@@ -23,6 +23,7 @@ type MeliNotificationDTO struct {
 	IngestedAt       time.Time  `json:"ingestedAt"`
 	ConnectionID     *int64     `json:"connectionId,omitempty"`
 	RawPayload       string     `json:"rawPayload"`
+	ProcessedPayload *string    `json:"processedPayload,omitempty"`
 	Status           string     `json:"status"`
 	LastError        *string    `json:"lastError,omitempty"`
 	ProcessedAt      *time.Time `json:"processedAt,omitempty"`
@@ -54,8 +55,8 @@ func NewMeliNotificationRepository(db Querier) *MeliNotificationRepository {
 
 const meliNotificationColumns = `
 	id, notification_id, resource, topic, meli_user_id, application_id, delivery_attempts,
-	meli_sent_at, meli_received_at, ingested_at, connection_id, raw_payload, status, last_error,
-	processed_at, updated_by, created_at, updated_at, deleted_at
+	meli_sent_at, meli_received_at, ingested_at, connection_id, raw_payload, processed_payload,
+	status, last_error, processed_at, updated_by, created_at, updated_at, deleted_at
 `
 
 // FindByNotificationID looks up a previously stored notification by
@@ -137,6 +138,7 @@ func scanMeliNotification(scanner interface{ Scan(dest ...any) error }) (MeliNot
 	var meliSentAt sql.NullTime
 	var meliReceivedAt sql.NullTime
 	var connectionID sql.NullInt64
+	var processedPayload sql.NullString
 	var lastError sql.NullString
 	var processedAt sql.NullTime
 	var updatedBy sql.NullInt64
@@ -155,6 +157,7 @@ func scanMeliNotification(scanner interface{ Scan(dest ...any) error }) (MeliNot
 		&n.IngestedAt,
 		&connectionID,
 		&n.RawPayload,
+		&processedPayload,
 		&n.Status,
 		&lastError,
 		&processedAt,
@@ -176,6 +179,9 @@ func scanMeliNotification(scanner interface{ Scan(dest ...any) error }) (MeliNot
 	if connectionID.Valid {
 		n.ConnectionID = &connectionID.Int64
 	}
+	if processedPayload.Valid {
+		n.ProcessedPayload = &processedPayload.String
+	}
 	if lastError.Valid {
 		n.LastError = &lastError.String
 	}
@@ -190,4 +196,133 @@ func scanMeliNotification(scanner interface{ Scan(dest ...any) error }) (MeliNot
 	}
 
 	return n, nil
+}
+
+// FindPending returns up to `limit` notifications with status='pending',
+// oldest first. The processor loops on this to drain the backlog without
+// starving brand-new webhooks.
+func (r *MeliNotificationRepository) FindPending(ctx context.Context, limit int) ([]MeliNotificationDTO, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+
+	query := `
+		SELECT ` + meliNotificationColumns + `
+		FROM ecom_meli_notifications
+		WHERE status = 'pending' AND deleted_at IS NULL
+		ORDER BY created_at ASC
+		LIMIT ?
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, limit)
+	if err != nil {
+		return nil, fmt.Errorf("error querying pending meli notifications: %w", err)
+	}
+	defer rows.Close()
+
+	var out []MeliNotificationDTO
+	for rows.Next() {
+		n, err := scanMeliNotification(rows)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, n)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("error iterating pending meli notifications: %w", err)
+	}
+	return out, nil
+}
+
+// UpdateConnectionID stamps the connection the processor resolved from
+// meli_user_id. Called separately from MarkDone so the connection stays
+// stamped even if later topic handling fails.
+func (r *MeliNotificationRepository) UpdateConnectionID(ctx context.Context, id, connectionID int64) error {
+	if _, err := r.db.ExecContext(ctx,
+		`UPDATE ecom_meli_notifications SET connection_id = ? WHERE id = ?`,
+		connectionID, id,
+	); err != nil {
+		return fmt.Errorf("error stamping connection_id on meli notification %d: %w", id, err)
+	}
+	return nil
+}
+
+// MarkDone transitions a notification to status='done' and persists the
+// JSON MELI returned when we GET'd the resource. processedPayload may be
+// empty for topics the shadow processor hasn't learned to resolve yet;
+// those still go to 'done' with an explanatory last_error so they don't
+// get retried forever.
+func (r *MeliNotificationRepository) MarkDone(ctx context.Context, id int64, processedPayload, note string) error {
+	var payloadArg interface{}
+	if processedPayload != "" {
+		payloadArg = processedPayload
+	}
+	var noteArg interface{}
+	if note != "" {
+		noteArg = note
+	}
+
+	if _, err := r.db.ExecContext(ctx,
+		`UPDATE ecom_meli_notifications
+		 SET status = 'done',
+		     processed_payload = ?,
+		     last_error = ?,
+		     processed_at = CURRENT_TIMESTAMP
+		 WHERE id = ?`,
+		payloadArg, noteArg, id,
+	); err != nil {
+		return fmt.Errorf("error marking meli notification %d done: %w", id, err)
+	}
+	return nil
+}
+
+// MarkFailed stamps the error and bumps attempts counter semantics by
+// re-using delivery_attempts (local, not what MELI reports). Keeps the
+// row at status='pending' so the next poll retries it; the processor's
+// outer loop is responsible for backoff.
+//
+// If maxAttempts is reached, flips status to 'failed' so it stops cycling.
+func (r *MeliNotificationRepository) MarkFailed(ctx context.Context, id int64, errMsg string, maxAttempts int) error {
+	// Pull current attempts; use delivery_attempts as the local retry counter
+	// too — MercadoLibre delivered the row once (its own retries happen
+	// before it hits us), and the shadow processor's own retries are added on
+	// top.
+	//
+	// A dedicated local_attempts column would be cleaner but keeps the
+	// schema stable; delivery_attempts is already monotonic per row.
+	query := `
+		UPDATE ecom_meli_notifications
+		SET delivery_attempts = delivery_attempts + 1,
+		    last_error = ?,
+		    status = CASE WHEN delivery_attempts + 1 >= ? THEN 'failed' ELSE 'pending' END
+		WHERE id = ?
+	`
+	if _, err := r.db.ExecContext(ctx, query, errMsg, maxAttempts, id); err != nil {
+		return fmt.Errorf("error marking meli notification %d failed: %w", id, err)
+	}
+	return nil
+}
+
+// CountByStatus is used by health checks / dashboard summaries. Not
+// production-critical; returns a map of status → count ignoring soft-
+// deleted rows.
+func (r *MeliNotificationRepository) CountByStatus(ctx context.Context) (map[string]int64, error) {
+	rows, err := r.db.QueryContext(ctx,
+		`SELECT status, COUNT(*) FROM ecom_meli_notifications WHERE deleted_at IS NULL GROUP BY status`,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("error counting meli notifications by status: %w", err)
+	}
+	defer rows.Close()
+
+	out := map[string]int64{}
+	for rows.Next() {
+		var status string
+		var n int64
+		if err := rows.Scan(&status, &n); err != nil {
+			return nil, err
+		}
+		out[status] = n
+	}
+	return out, rows.Err()
 }

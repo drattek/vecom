@@ -200,6 +200,22 @@ func main() {
 	// same pool), not reset per connection or per call site.
 	mercadoLibreRateLimiter := mercadoLibreInfra.NewRateLimiter(syncApp.MercadoLibreRateLimit, syncApp.MercadoLibreRateLimitWindow)
 	mercadoLibreTokenService := syncApp.NewMercadoLibreTokenService(mysqlRepos.ConnectionSettingsRepository, mysqlRepos.ConnectionStatusRepository, mercadoLibreRateLimiter)
+	// MELI ↓ handlers reused by the shadow notifications processor: they
+	// read /orders/{id}, /shipments/{id} and /users/me under the token of
+	// each active MERCADOLIBRE connection to enrich pending webhook rows.
+	mercadoLibreOrdersHandler := mercadoLibreInfra.NewOrdersHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter))
+	mercadoLibreShipmentsHandler := mercadoLibreInfra.NewShipmentsHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter))
+	mercadoLibreUsersHandlerForNotifs := mercadoLibreInfra.NewUsersHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter))
+	meliNotificationsProcessor := meliNotificationsApp.NewProcessor(
+		mysqlRepos.MeliNotificationRepository,
+		mysqlRepos.MeliOrderRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mercadoLibreOrdersHandler,
+		mercadoLibreShipmentsHandler,
+		mercadoLibreUsersHandlerForNotifs,
+		mercadoLibreTokenService,
+		meliNotificationsApp.ProcessorConfig{BatchSize: cfg.MeliNotificationsProcessorBatchSize},
+	)
 	mercadoLibreCategoryPredictorService := syncApp.NewMercadoLibreCategoryPredictorService(
 		mercadoLibreTokenService,
 		mysqlRepos.ConnectionSettingsRepository,
@@ -600,6 +616,20 @@ func main() {
 	)
 	tokenRefreshScheduler.Register("MERCADOLIBRE", mercadoLibreTokenService)
 	go safe.Supervise(bgCtx, "token refresh scheduler", tokenRefreshScheduler.Start)
+
+	// Shadow processor for ecom_meli_notifications: drains pending webhook
+	// rows (topic orders_v2/shipments) into ecom_meli_orders /
+	// ecom_meli_shipments. Toggled by MELI_NOTIFICATIONS_PROCESSOR_ENABLED
+	// — defaults to OFF so a fresh deploy does nothing visible until the
+	// webhook URL in the MercadoLibre dev console is verified.
+	meliNotificationsScheduler := schedulers.NewMeliNotificationsScheduler(
+		meliNotificationsProcessor,
+		schedulers.MeliNotificationsSchedulerConfig{
+			Enabled:      cfg.MeliNotificationsProcessorEnabled,
+			PollInterval: cfg.MeliNotificationsProcessorPollInterval,
+		},
+	)
+	go safe.Supervise(bgCtx, "meli notifications processor", meliNotificationsScheduler.Start)
 
 	// Compatibilities fix scheduler: once a day calls
 	// mercadoLibreCompatibilityService.FixUnderReviewListings for every

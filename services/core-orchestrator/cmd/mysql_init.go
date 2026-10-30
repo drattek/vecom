@@ -56,6 +56,7 @@ type MySQLRepositories struct {
 	ChannelAttributesRepository               *mysqlInfra.ChannelAttributesRepository
 	ChannelAttributeMapRepository             *mysqlInfra.ChannelAttributeMapRepository
 	MeliNotificationRepository                *mysqlInfra.MeliNotificationRepository
+	MeliOrderRepository                       *mysqlInfra.MeliOrderRepository
 	ProductDetailsRepository                  *mysqlInfra.ProductDetailsRepository
 	ChannelProductCategorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository
 	UsersRepository                           *mysqlInfra.UsersRepository
@@ -113,6 +114,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 	channelAttributesRepository := mysqlInfra.NewChannelAttributesRepository(db)
 	channelAttributeMapRepository := mysqlInfra.NewChannelAttributeMapRepository(db)
 	meliNotificationRepository := mysqlInfra.NewMeliNotificationRepository(db)
+	meliOrderRepository := mysqlInfra.NewMeliOrderRepository(db)
 	productDetailsRepository := mysqlInfra.NewProductDetailsRepository(db)
 	channelProductCategorySelectionRepository := mysqlInfra.NewChannelProductCategorySelectionRepository(db)
 	usersRepository := mysqlInfra.NewUsersRepository(db)
@@ -167,6 +169,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 		ChannelAttributesRepository:               channelAttributesRepository,
 		ChannelAttributeMapRepository:             channelAttributeMapRepository,
 		MeliNotificationRepository:                meliNotificationRepository,
+		MeliOrderRepository:                       meliOrderRepository,
 		ProductDetailsRepository:                  productDetailsRepository,
 		ChannelProductCategorySelectionRepository: channelProductCategorySelectionRepository,
 		UsersRepository:                           usersRepository,

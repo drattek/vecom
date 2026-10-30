@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -115,6 +116,18 @@ type Config struct {
 	// MercadoLibreImageDownloadHandler saves downloaded listing images under
 	// (one subfolder per sku). See MERCADOLIBRE_IMAGE_DOWNLOAD_DIR.
 	MercadoLibreImageDownloadDir string
+
+	// MeliNotificationsProcessorEnabled toggles the shadow processor that
+	// consumes ecom_meli_notifications (topic orders_v2/shipments) and
+	// mirrors the resources into ecom_meli_orders / ecom_meli_shipments.
+	// Keep false until the receive side is confirmed receiving webhooks
+	// again — see MELI_NOTIFICATIONS_PROCESSOR_ENABLED.
+	MeliNotificationsProcessorEnabled bool
+	// MeliNotificationsProcessorPollInterval governs how often the shadow
+	// processor polls ecom_meli_notifications for pending rows.
+	MeliNotificationsProcessorPollInterval time.Duration
+	// MeliNotificationsProcessorBatchSize caps rows processed per tick.
+	MeliNotificationsProcessorBatchSize int
 }
 
 func Load() Config {
@@ -330,6 +343,22 @@ func Load() Config {
 		}
 	}
 
+	meliNotificationsProcessorEnabled := strings.EqualFold(os.Getenv("MELI_NOTIFICATIONS_PROCESSOR_ENABLED"), "true")
+
+	meliNotificationsProcessorPollSeconds := 30
+	if raw := os.Getenv("MELI_NOTIFICATIONS_PROCESSOR_POLL_SECONDS"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			meliNotificationsProcessorPollSeconds = parsed
+		}
+	}
+
+	meliNotificationsProcessorBatchSize := 50
+	if raw := os.Getenv("MELI_NOTIFICATIONS_PROCESSOR_BATCH_SIZE"); raw != "" {
+		if parsed, err := strconv.Atoi(raw); err == nil && parsed > 0 {
+			meliNotificationsProcessorBatchSize = parsed
+		}
+	}
+
 	return Config{
 		Port:                port,
 		ShutdownTimeout:     time.Duration(shutdownTimeoutSeconds) * time.Second,
@@ -376,5 +405,9 @@ func Load() Config {
 		ExchangeRateRunAtMinute: exchangeRateRunAtMinute,
 
 		MercadoLibreImageDownloadDir: mercadoLibreImageDownloadDir,
+
+		MeliNotificationsProcessorEnabled:      meliNotificationsProcessorEnabled,
+		MeliNotificationsProcessorPollInterval: time.Duration(meliNotificationsProcessorPollSeconds) * time.Second,
+		MeliNotificationsProcessorBatchSize:    meliNotificationsProcessorBatchSize,
 	}
 }
