@@ -239,6 +239,7 @@ func main() {
 		productAttributeService,
 		mercadoLibreInfra.NewCategoriesHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter)),
 		mercadoLibreCategoryPredictorService,
+		mysqlRepos.ChannelProductCategorySelectionRepository,
 	)
 	mercadoLibreCompatibilityService := syncApp.NewMercadoLibreCompatibilityService(
 		mysqlRepos.ChannelProductMapRepository,

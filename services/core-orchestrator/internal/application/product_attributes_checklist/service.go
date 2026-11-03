@@ -239,6 +239,15 @@ func (s *Service) GetChecklist(ctx context.Context, productID, connectionID int6
 	autoCoveredSeen := make(map[string]bool)
 
 	for _, slot := range slots {
+		// Canal por categoría (MercadoLibre): FindApplicable también trae las filas
+		// channel-wide (category_id NULL), pero ahí quedan slots huérfanos creados
+		// cuando el producto aún no tenía categoría — y se verían en todas las
+		// categorías. El checklist solo muestra los de la categoría resuelta; los
+		// canales por producto (Odoo) sí usan filas sin categoría a propósito.
+		if !productScope && slot.CategoryID == nil {
+			continue
+		}
+
 		m, mapErr := s.channelAttributeMap.FindByChannelAttributeAndConnection(ctx, slot.ID, connectionID)
 		if mapErr != nil {
 			if errors.Is(mapErr, mysqlInfra.ErrChannelAttributeMapNotFound) {

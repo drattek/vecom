@@ -167,6 +167,7 @@ type Service struct {
 	productAttributeService       *attributesApp.ProductAttributeService
 	categoriesHandler             *mercadoLibreInfra.CategoriesHandler
 	categoryPredictorService      LocalCategoryResolver
+	categorySelectionRepository   *mysqlInfra.ChannelProductCategorySelectionRepository
 }
 
 func NewService(
@@ -181,6 +182,7 @@ func NewService(
 	productAttributeService *attributesApp.ProductAttributeService,
 	categoriesHandler *mercadoLibreInfra.CategoriesHandler,
 	categoryPredictorService LocalCategoryResolver,
+	categorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository,
 ) *Service {
 	return &Service{
 		db:                            db,
@@ -194,18 +196,46 @@ func NewService(
 		productAttributeService:       productAttributeService,
 		categoriesHandler:             categoriesHandler,
 		categoryPredictorService:      categoryPredictorService,
+		categorySelectionRepository:   categorySelectionRepository,
 	}
+}
+
+// selectedLocalCategory devuelve la categoría local que el usuario eligió para
+// (producto, conexión) en Atributos/Sincronización (ADR 0005), o nil si no hay
+// selección o si apunta a otra categoría externa que externalCategoryID (cuando
+// se indica). Es la categoría a la que deben pertenecer los slots de atributos
+// de esa conexión: la categoría propia del producto (ecom_products.category_id)
+// es compartida por todos los canales y por todos los productos de ese nodo, y
+// usarla contamina el checklist de los demás.
+func (s *Service) selectedLocalCategory(ctx context.Context, productID int64, connectionID *int64, externalCategoryID string) (*int64, error) {
+	if connectionID == nil {
+		return nil, nil
+	}
+
+	selection, err := s.categorySelectionRepository.FindByProductAndConnection(ctx, productID, *connectionID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrChannelProductCategorySelectionNotFound) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("error loading category selection for product %d: %w", productID, err)
+	}
+	if externalCategoryID != "" && selection.ExternalCategoryID != externalCategoryID {
+		return nil, nil
+	}
+
+	categoryID := selection.CategoryID
+	return &categoryID, nil
 }
 
 // SetValue resolves product by input.SKU, then walks/creates the chain a
 // MercadoLibre custom attribute needs:
 //
 //  1. ecom_channel_attributes — the "MATERIAL slot" on the MercadoLibre
-//     channel. Reused if one already applies to product's own category (or a
-//     channel-wide one with category_id NULL — see resolveOrCreateChannelAttribute),
-//     scoped to product's category on first creation (NULL if product has no
-//     category yet), since MercadoLibre often requires different attributes
-//     per category.
+//     channel. Reused if one already exists with the same category scope (see
+//     resolveOrCreateChannelAttribute), scoped on first creation to the category
+//     selected for input.ConnectionID (ADR 0005) or, without one, to product's
+//     own category (NULL if it has none), since MercadoLibre often requires
+//     different attributes per category.
 //  2. ecom_attributes — the generic attribute catalog entry, found/created by
 //     code = input.ExternalKey (MercadoLibre's own keys already double as a
 //     stable, human-legible code).
@@ -247,6 +277,16 @@ func (s *Service) SetValue(ctx context.Context, input SetValueInput) (*SetValueR
 		targetStrategy = channelAttributeDynamicTargetStrategy
 		field := odooProductInfoTargetField
 		targetField = &field
+	} else {
+		// Canal por categoría con conexión: los slots van en la categoría elegida
+		// para esa conexión, no en la propia del producto.
+		selected, err := s.selectedLocalCategory(ctx, product.ID, input.ConnectionID, "")
+		if err != nil {
+			return nil, err
+		}
+		if selected != nil {
+			slotCategoryID = selected
+		}
 	}
 
 	// isRequired/valueMode are always false/value_name here: SetValue has no
@@ -446,16 +486,35 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		return nil, fmt.Errorf("error loading %s channel: %w", mercadoLibreChannelCode, err)
 	}
 
+	// Categoría local a la que se atan los slots: override explícito → selección
+	// guardada para (producto, conexión) → con conexión, la categoría local
+	// equivalente a la categoría de MercadoLibre → sin conexión, la propia del
+	// producto. Nunca se usa la categoría propia del producto cuando hay conexión:
+	// puede ser otra distinta y los slots de esta categoría de ML quedarían
+	// colgados de ella, mezclándose en los demás productos que la comparten.
 	localCategoryID := product.CategoryID
-	if input.LocalCategoryIDOverride != nil {
+	switch {
+	case input.LocalCategoryIDOverride != nil:
 		localCategoryID = input.LocalCategoryIDOverride
-	} else if localCategoryID == nil && input.ConnectionID != nil {
+	case input.ConnectionID != nil:
+		selected, err := s.selectedLocalCategory(ctx, product.ID, input.ConnectionID, categoryID)
+		if err != nil {
+			return nil, err
+		}
+		if selected != nil {
+			localCategoryID = selected
+			break
+		}
+
 		leafCategoryID, err := s.categoryPredictorService.EnsureLocalCategory(ctx, *input.ConnectionID, categoryID, input.ActorID)
 		if err != nil {
 			return nil, fmt.Errorf("error resolving local category for mercadolibre category %s: %w", categoryID, err)
 		}
-		if err := s.productRepository.UpdateCategoryID(ctx, product.ID, leafCategoryID, input.ActorID); err != nil {
-			return nil, fmt.Errorf("error assigning category %d to product %d: %w", leafCategoryID, product.ID, err)
+		// La categoría del producto solo se completa si no tiene ninguna.
+		if product.CategoryID == nil {
+			if err := s.productRepository.UpdateCategoryID(ctx, product.ID, leafCategoryID, input.ActorID); err != nil {
+				return nil, fmt.Errorf("error assigning category %d to product %d: %w", leafCategoryID, product.ID, err)
+			}
 		}
 		localCategoryID = &leafCategoryID
 	}
@@ -643,9 +702,9 @@ func (s *Service) resolveChannel(ctx context.Context, connectionID *int64) (*mys
 }
 
 // resolveOrCreateChannelAttribute finds the ecom_channel_attributes row for
-// (channelID, externalKey) that applies to productCategoryID — a row scoped
-// to that exact category taking precedence over a channel-wide one (see
-// ChannelAttributesRepository.FindApplicable) — creating one scoped to
+// (channelID, externalKey) with exactly productCategoryID's scope — that
+// category's own row, or the channel-wide one when productCategoryID is nil; a
+// channel-wide row is never reused for a product that has a category — creating one scoped to
 // productCategoryID (NULL if the product has no category yet, or always for a
 // product-scope channel) if neither exists, as targetStrategy/targetField with
 // is_required/value_mode set to isRequired/valueMode. An existing row's
@@ -659,7 +718,17 @@ func (s *Service) resolveOrCreateChannelAttribute(ctx context.Context, channelID
 		return nil, fmt.Errorf("error loading channel attributes for external key %s: %w", externalKey, err)
 	}
 	for i := range applicable {
-		if applicable[i].ExternalKey != nil && *applicable[i].ExternalKey == externalKey {
+		if applicable[i].ExternalKey == nil || *applicable[i].ExternalKey != externalKey {
+			continue
+		}
+		// Solo se reutiliza una fila del mismo alcance: con categoría, la de esa
+		// categoría exacta; sin categoría, la channel-wide. Reutilizar una
+		// channel-wide para un producto con categoría impedía crear la fila de la
+		// categoría y dejaba el slot genérico colándose en todas las demás.
+		rowCategoryID := applicable[i].CategoryID
+		sameScope := (productCategoryID == nil && rowCategoryID == nil) ||
+			(productCategoryID != nil && rowCategoryID != nil && *rowCategoryID == *productCategoryID)
+		if sameScope {
 			return &applicable[i], nil
 		}
 	}
