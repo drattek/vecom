@@ -142,6 +142,48 @@ func (h *ProductDetailsHandler) GetStockMovements(w http.ResponseWriter, r *http
 	writeJSONResponse(w, page)
 }
 
+// CreateStockMovement registra un movimiento manual de inventario (entrada,
+// salida o ajuste) sobre una sucursal/almacén del producto y actualiza su
+// existencia actual en la misma transacción.
+func (h *ProductDetailsHandler) CreateStockMovement(w http.ResponseWriter, r *http.Request) {
+	productID, ok := parseDetailProductID(w, r)
+	if !ok {
+		return
+	}
+
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+
+	var req struct {
+		BranchID     int64  `json:"branchId"`
+		WarehouseID  int64  `json:"warehouseId"`
+		MovementType string `json:"movementType"`
+		Quantity     int    `json:"quantity"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeJSONError(w, http.StatusBadRequest, "invalid request body")
+		return
+	}
+
+	movement, err := h.service.AdjustStock(r.Context(), productID, user.ID, productDetailsApp.AdjustStockInput{
+		BranchID:     req.BranchID,
+		WarehouseID:  req.WarehouseID,
+		MovementType: req.MovementType,
+		Quantity:     req.Quantity,
+	})
+	if err != nil {
+		writeProductDetailsError(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusCreated)
+	json.NewEncoder(w).Encode(movement)
+}
+
 func (h *ProductDetailsHandler) GetPriceHistory(w http.ResponseWriter, r *http.Request) {
 	productID, ok := parseDetailProductID(w, r)
 	if !ok {
@@ -315,6 +357,10 @@ func writeProductDetailsError(w http.ResponseWriter, err error) {
 		writeJSONError(w, http.StatusBadRequest, "invalid dimensions patch")
 	case errors.Is(err, productDetailsApp.ErrInvalidSEOPatch):
 		writeJSONError(w, http.StatusBadRequest, "invalid seo patch")
+	case errors.Is(err, productDetailsApp.ErrInvalidStockAdjustment):
+		// Es un error de validación con el motivo concreto ("insufficient stock
+		// (available 3)", etc.); se expone tal cual para que la UI lo muestre.
+		writeJSONError(w, http.StatusBadRequest, err.Error())
 	case errors.Is(err, productDetailsApp.ErrProductNotFound):
 		writeJSONError(w, http.StatusNotFound, "product not found")
 	default:

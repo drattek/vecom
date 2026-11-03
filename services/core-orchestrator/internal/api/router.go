@@ -275,6 +275,7 @@ func NewRouter(
 		protected.Get("/api/products/{productId}/details/pricing/history", productDetailsHandler.GetPriceHistory)
 		protected.Get("/api/products/{productId}/details/inventory", productDetailsHandler.GetInventory)
 		protected.Get("/api/products/{productId}/details/inventory/movements", productDetailsHandler.GetStockMovements)
+		protected.Post("/api/products/{productId}/details/inventory/movements", productDetailsHandler.CreateStockMovement)
 		protected.Get("/api/products/{productId}/details/part-numbers", productDetailsHandler.GetPartNumbers)
 		protected.Get("/api/products/{productId}/details/attributes", productDetailsHandler.GetAttributes)
 		// Vista de Compatibilidades: las compatibilidades de vehículo del

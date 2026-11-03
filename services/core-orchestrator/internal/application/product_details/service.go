@@ -18,7 +18,14 @@ var (
 	ErrInvalidGeneralPatch    = errors.New("invalid general patch")
 	ErrInvalidDimensionsPatch = errors.New("invalid dimensions patch")
 	ErrInvalidSEOPatch        = errors.New("invalid seo patch")
+	// ErrInvalidStockAdjustment envuelve (con %w) el motivo concreto; el handler
+	// lo expone al usuario porque son errores de validación, no internos.
+	ErrInvalidStockAdjustment = errors.New("invalid stock adjustment")
 )
+
+// maxStockAdjustmentQty protege la columna int de available_qty y evita
+// typos absurdos en un movimiento manual.
+const maxStockAdjustmentQty = 10_000_000
 
 // maxNameLen / maxShortDescriptionLen espejan varchar(255) de ecom_products.
 const (
@@ -219,6 +226,125 @@ func (s *Service) GetStockMovements(ctx context.Context, productID int64, offset
 
 	offset, pageSize = normalizeDetailPage(offset, pageSize)
 	return s.repository.FindStockMovements(ctx, productID, offset, pageSize)
+}
+
+// AdjustStockInput describe un movimiento manual de inventario sobre una
+// ubicación (sucursal + almacén) del producto.
+//
+// Quantity significa según MovementType:
+//   - "in":         piezas que entran (> 0), suma al stock.
+//   - "out":        piezas que salen (> 0), resta; no puede dejar el stock < 0.
+//   - "adjustment": cantidad final deseada (>= 0); el cambio es final - actual.
+type AdjustStockInput struct {
+	BranchID     int64
+	WarehouseID  int64
+	MovementType string
+	Quantity     int
+}
+
+// AdjustStock aplica un movimiento manual: bloquea la fila de stock, actualiza
+// ecom_product_stock e inserta el movimiento en ecom_stock_movements, todo-o-nada
+// (ver ADR 0001). Si la ubicación aún no tiene fila de stock la crea.
+func (s *Service) AdjustStock(ctx context.Context, productID, userID int64, input AdjustStockInput) (*mysqlInfra.StockMovementDTO, error) {
+	if productID <= 0 {
+		return nil, ErrInvalidProductID
+	}
+	if input.BranchID <= 0 || input.WarehouseID <= 0 {
+		return nil, fmt.Errorf("%w: branchId and warehouseId are required", ErrInvalidStockAdjustment)
+	}
+	if input.Quantity > maxStockAdjustmentQty {
+		return nil, fmt.Errorf("%w: quantity exceeds %d", ErrInvalidStockAdjustment, maxStockAdjustmentQty)
+	}
+
+	switch input.MovementType {
+	case "in", "out":
+		if input.Quantity <= 0 {
+			return nil, fmt.Errorf("%w: quantity must be greater than 0", ErrInvalidStockAdjustment)
+		}
+	case "adjustment":
+		if input.Quantity < 0 {
+			return nil, fmt.Errorf("%w: quantity cannot be negative", ErrInvalidStockAdjustment)
+		}
+	default:
+		return nil, fmt.Errorf("%w: movementType must be in, out or adjustment", ErrInvalidStockAdjustment)
+	}
+
+	var movement *mysqlInfra.StockMovementDTO
+	err := mysqlInfra.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
+		stockRepo := mysqlInfra.NewProductStockRepository(tx)
+		movementsRepo := mysqlInfra.NewStockMovementsRepository(tx)
+
+		exists, err := stockRepo.ProductExists(ctx, productID)
+		if err != nil {
+			return err
+		}
+		if !exists {
+			return ErrProductNotFound
+		}
+
+		belongs, err := stockRepo.WarehouseBelongsToBranch(ctx, input.WarehouseID, input.BranchID)
+		if err != nil {
+			return err
+		}
+		if !belongs {
+			return fmt.Errorf("%w: warehouse does not belong to the branch", ErrInvalidStockAdjustment)
+		}
+
+		current, err := stockRepo.FindByProductBranchWarehouseForUpdate(ctx, productID, input.BranchID, input.WarehouseID)
+		if errors.Is(err, mysqlInfra.ErrProductStockNotFound) {
+			current, err = stockRepo.Create(ctx, mysqlInfra.CreateProductStockInput{
+				ProductID:    productID,
+				BranchID:     input.BranchID,
+				WarehouseID:  input.WarehouseID,
+				AvailableQty: 0,
+			})
+		}
+		if err != nil {
+			return err
+		}
+
+		before := current.AvailableQty
+		var after int
+		switch input.MovementType {
+		case "in":
+			after = before + input.Quantity
+		case "out":
+			after = before - input.Quantity
+		default:
+			after = input.Quantity
+		}
+
+		if after < 0 {
+			return fmt.Errorf("%w: insufficient stock (available %d)", ErrInvalidStockAdjustment, before)
+		}
+		if after > maxStockAdjustmentQty {
+			return fmt.Errorf("%w: resulting stock exceeds %d", ErrInvalidStockAdjustment, maxStockAdjustmentQty)
+		}
+		if after == before {
+			return fmt.Errorf("%w: the movement does not change the stock", ErrInvalidStockAdjustment)
+		}
+
+		if err := stockRepo.SetManualQty(ctx, current.ID, after, userID); err != nil {
+			return err
+		}
+
+		movement, err = movementsRepo.Create(ctx, mysqlInfra.CreateStockMovementInput{
+			ProductID:      productID,
+			BranchID:       input.BranchID,
+			WarehouseID:    input.WarehouseID,
+			MovementType:   input.MovementType,
+			QuantityBefore: before,
+			QuantityChange: after - before,
+			QuantityAfter:  after,
+			UpdatedBy:      userID,
+		})
+		return err
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return movement, nil
 }
 
 func (s *Service) GetPriceHistory(ctx context.Context, productID int64, offset, pageSize int) (*mysqlInfra.PaginatedProductPriceHistory, error) {

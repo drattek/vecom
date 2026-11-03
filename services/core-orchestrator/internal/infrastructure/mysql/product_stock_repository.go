@@ -223,6 +223,72 @@ func (r *ProductStockRepository) Update(ctx context.Context, id int64, input Upd
 	return r.FindByID(ctx, id)
 }
 
+// FindByProductBranchWarehouseForUpdate es FindByProductBranchWarehouse con
+// SELECT ... FOR UPDATE: bloquea la fila hasta el fin de la transacción para que
+// un ajuste manual lea la cantidad "antes" sin que un sync la cambie a la mitad.
+// Solo tiene sentido sobre un repo construido con una *sql.Tx.
+func (r *ProductStockRepository) FindByProductBranchWarehouseForUpdate(ctx context.Context, productID, branchID, warehouseID int64) (*ProductStockDTO, error) {
+	query := `
+		SELECT id, product_id, branch_id, warehouse_id, available_qty, last_sync_at, updated_by
+		FROM ecom_product_stock
+		WHERE product_id = ? AND branch_id = ? AND warehouse_id = ?
+		LIMIT 1
+		FOR UPDATE
+	`
+
+	row := r.db.QueryRowContext(ctx, query, productID, branchID, warehouseID)
+	return scanProductStockRow(row)
+}
+
+// SetManualQty fija la cantidad de una fila de stock por una edición manual.
+// A diferencia de Update no toca last_sync_at: esa columna es "última
+// sincronización con la fuente" y un ajuste hecho a mano no es un sync.
+func (r *ProductStockRepository) SetManualQty(ctx context.Context, id int64, qty int, updatedBy int64) error {
+	result, err := r.db.ExecContext(ctx,
+		"UPDATE ecom_product_stock SET available_qty = ?, updated_by = ? WHERE id = ?",
+		qty, updatedBy, id,
+	)
+	if err != nil {
+		return fmt.Errorf("error setting manual product stock: %w", err)
+	}
+
+	affected, err := result.RowsAffected()
+	if err != nil {
+		return fmt.Errorf("error getting rows affected: %w", err)
+	}
+	if affected == 0 {
+		return ErrProductStockNotFound
+	}
+
+	return nil
+}
+
+// ProductExists indica si el producto existe y no está soft-deleted.
+func (r *ProductStockRepository) ProductExists(ctx context.Context, productID int64) (bool, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM ecom_products WHERE id = ? AND deleted_at IS NULL", productID,
+	).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("error checking product existence: %w", err)
+	}
+	return n > 0, nil
+}
+
+// WarehouseBelongsToBranch indica si el almacén existe, está activo y pertenece
+// a la sucursal indicada (ecom_warehouses.branch_id).
+func (r *ProductStockRepository) WarehouseBelongsToBranch(ctx context.Context, warehouseID, branchID int64) (bool, error) {
+	var n int
+	err := r.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM ecom_warehouses WHERE id = ? AND branch_id = ? AND deleted_at IS NULL",
+		warehouseID, branchID,
+	).Scan(&n)
+	if err != nil {
+		return false, fmt.Errorf("error checking warehouse/branch: %w", err)
+	}
+	return n > 0, nil
+}
+
 func scanProductStock(rows *sql.Rows) (ProductStockDTO, error) {
 	var ps ProductStockDTO
 	err := rows.Scan(

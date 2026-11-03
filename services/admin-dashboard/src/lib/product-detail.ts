@@ -28,6 +28,8 @@ import {
     type ProductGeneralPatch,
     type ProductSeoPatch,
 } from "@/lib/schemas/product-details"
+import { paginatedBranchesResponseSchema } from "@/lib/schemas/branches"
+import { paginatedWarehousesResponseSchema } from "@/lib/schemas/warehouses"
 import {
     paginatedStorageDisksResponseSchema,
     type StorageDisk,
@@ -633,6 +635,70 @@ export function useDeleteProductVideo(productId: string | undefined) {
             await apiClient.delete(`/api/product-videos/${videoId}`)
         },
         onSuccess: () => invalidateProductMedia(queryClient, productId),
+    })
+}
+
+// --- Inventario: movimientos manuales -------------------------------------
+
+export type StockWarehouseOption = { id: number; name: string; branchId: number; branchName: string }
+
+/**
+ * useStockWarehouseOptions alimenta el selector de ubicación del formulario de
+ * movimiento manual: cada almacén con el nombre de su sucursal. Se cachea aparte
+ * (no depende del producto) y solo corre cuando el formulario está abierto.
+ */
+export function useStockWarehouseOptions(enabled = true) {
+    return useQuery({
+        queryKey: ["stock-warehouse-options"],
+        enabled,
+        staleTime: 5 * 60_000,
+        queryFn: async (): Promise<StockWarehouseOption[]> => {
+            const [warehousesResponse, branchesResponse] = await Promise.all([
+                apiClient.get("/api/warehouses", { params: { pageSize: 100 } }),
+                apiClient.get("/api/branches", { params: { pageSize: 100 } }),
+            ])
+            const warehouses = paginatedWarehousesResponseSchema.parse(warehousesResponse.data).warehouses
+            const branches = paginatedBranchesResponseSchema.parse(branchesResponse.data).branches
+            const branchNames = new Map(branches.map((branch) => [branch.id, branch.name]))
+
+            return warehouses
+                .map((warehouse) => ({
+                    id: warehouse.id,
+                    name: warehouse.name,
+                    branchId: warehouse.branchId,
+                    branchName: branchNames.get(warehouse.branchId) ?? `Sucursal ${warehouse.branchId}`,
+                }))
+                .sort((a, b) => a.branchName.localeCompare(b.branchName) || a.name.localeCompare(b.name))
+        },
+    })
+}
+
+export type ManualStockMovementType = "in" | "out" | "adjustment"
+
+type CreateStockMovementInput = {
+    branchId: number
+    warehouseId: number
+    movementType: ManualStockMovementType
+    /** in/out: piezas que entran/salen. adjustment: cantidad final. */
+    quantity: number
+}
+
+/**
+ * useCreateStockMovement registra un movimiento manual de inventario
+ * (POST /api/products/{id}/details/inventory/movements): el core actualiza la
+ * existencia de la ubicación y deja el movimiento en el historial en una sola
+ * transacción. Refresca la sección Inventario y su historial paginado.
+ */
+export function useCreateStockMovement(productId: string | undefined) {
+    const queryClient = useQueryClient()
+    return useMutation({
+        mutationFn: async (input: CreateStockMovementInput) => {
+            await apiClient.post(`/api/products/${productId}/details/inventory/movements`, input)
+        },
+        onSuccess: () => {
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId, "inventory"] })
+            queryClient.invalidateQueries({ queryKey: ["product-details", productId, "inventory/movements"] })
+        },
     })
 }
 
