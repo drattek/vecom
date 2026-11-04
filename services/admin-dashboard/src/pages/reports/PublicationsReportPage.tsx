@@ -122,6 +122,7 @@ export function PublicationsReportPage() {
     const [search, setSearch] = useState("")
     const [missingIn, setMissingIn] = useState<string>(ALL)
     const [withStockAndPrice, setWithStockAndPrice] = useState(false)
+    const [withImages, setWithImages] = useState(false)
     const [offset, setOffset] = useState(0)
     const [pageSize, setPageSize] = useState(50)
 
@@ -144,7 +145,7 @@ export function PublicationsReportPage() {
     })
 
     const report = useQuery({
-        queryKey: ["publications-report", sourceId, channelCode, connectionId, missingIn, withStockAndPrice, search, offset, pageSize],
+        queryKey: ["publications-report", sourceId, channelCode, connectionId, missingIn, withStockAndPrice, withImages, search, offset, pageSize],
         placeholderData: keepPreviousData,
         retry: false,
         queryFn: async () => {
@@ -156,6 +157,7 @@ export function PublicationsReportPage() {
                     missingChannelCode: missingIn.startsWith(MISSING_CHANNEL) ? missingIn.slice(MISSING_CHANNEL.length) : undefined,
                     missingConnectionId: missingIn.startsWith(MISSING_CONNECTION) ? missingIn.slice(MISSING_CONNECTION.length) : undefined,
                     withStockAndPrice: withStockAndPrice || undefined,
+                    withImages: withImages || undefined,
                     search: search.trim() || undefined,
                     offset,
                     pageSize,
@@ -342,6 +344,18 @@ export function PublicationsReportPage() {
                         }}
                     />
                     Solo con stock y precio
+                </label>
+                <label className="flex items-center gap-2 text-sm">
+                    <input
+                        type="checkbox"
+                        className="size-4"
+                        checked={withImages}
+                        onChange={(e) => {
+                            setWithImages(e.target.checked)
+                            setOffset(0)
+                        }}
+                    />
+                    Solo con imágenes
                 </label>
             </div>
             <p className="mt-1 text-xs text-muted-foreground">

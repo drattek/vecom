@@ -36,6 +36,9 @@ type PublicationsReportFilter struct {
 	// WithStockAndPrice deja solo productos con stock total > 0 y un precio
 	// vigente > 0 (misma lista de precios que muestra la columna Precio).
 	WithStockAndPrice bool
+	// WithImages deja solo productos con al menos una imagen activa (mismo
+	// criterio que la columna Imágenes).
+	WithImages bool
 }
 
 // PublicationReportConnection es la publicación de un producto en una
@@ -155,6 +158,11 @@ func buildPublicationsWhere(f PublicationsReportFilter) (string, []any) {
 			WHERE pp.product_id = p.id
 			  AND pl.status = 'active' AND CURDATE() BETWEEN pl.valid_from AND pl.valid_to
 			ORDER BY pl.priority DESC, pp.updated_at DESC LIMIT 1), 0) > 0`)
+	}
+	if f.WithImages {
+		where = append(where, `EXISTS (SELECT 1 FROM ecom_product_images pi
+			JOIN ecom_files f ON f.id = pi.file_id AND f.deleted_at IS NULL
+			WHERE pi.product_id = p.id AND pi.deleted_at IS NULL)`)
 	}
 	if f.SourceID > 0 {
 		where = append(where, "p.source_id = ?")

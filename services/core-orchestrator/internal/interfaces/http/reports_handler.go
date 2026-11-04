@@ -38,6 +38,7 @@ func (h *ReportsHandler) PublicationsReport(w http.ResponseWriter, r *http.Reque
 		MissingChannelCode:  strings.TrimSpace(q.Get("missingChannelCode")),
 		MissingConnectionID: missingConnectionID,
 		WithStockAndPrice:   q.Get("withStockAndPrice") == "true" || q.Get("withStockAndPrice") == "1",
+		WithImages:          q.Get("withImages") == "true" || q.Get("withImages") == "1",
 		Offset:              offset,
 		PageSize:            pageSize,
 	})
