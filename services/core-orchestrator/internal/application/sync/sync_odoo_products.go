@@ -456,7 +456,11 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 		if err := s.updatePriceAndStock(ctx, productsHandler, credentials, connectionID, listing, listPrice, qtyAvailable, saleOK, nextMapStatus, nextPausedReason); err != nil {
 			return false, err
 		}
-		return true, nil
+		// Stock came back (reactivation): sale_ok is already restored, so fall
+		// through to the full-field push below instead of stopping at price/stock.
+		if shouldPause || qtyAvailable <= 0 {
+			return true, nil
+		}
 	}
 
 	title := resolveOdooRefreshTitle(listing, product)
@@ -676,6 +680,14 @@ func (s *OdooProductSyncService) update(
 			return fmt.Errorf("error downloading cover image for product %d: %w", productID, err)
 		}
 		vals.Image1920 = coverImageBase64
+	}
+
+	// Publish on the storefront only when the product is actually ready: cover
+	// image, stock and a positive price. Otherwise is_published is left as is
+	// (nil → omitted), so a resync never hides an already-visible product.
+	if coverImage != nil && qtyAvailable > 0 && listPrice > 0 {
+		published := true
+		vals.IsPublished = &published
 	}
 
 	if err := productsHandler.UpdateProduct(ctx, odooInfra.UpdateProductRequest{

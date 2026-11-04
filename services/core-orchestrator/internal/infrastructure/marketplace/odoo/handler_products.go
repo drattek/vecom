@@ -217,6 +217,11 @@ type UpdateProductVals struct {
 	PublicCategIDs       [][]any `json:"public_categ_ids,omitempty"`
 	Image1920            string  `json:"image_1920,omitempty"`
 	DescriptionEcommerce string  `json:"description_ecommerce"`
+	// IsPublished (website.published.mixin's is_published) makes the product
+	// visible on the Odoo storefront. A pointer + omitempty: nil leaves the
+	// current state untouched; a full resync sets it to true only when the
+	// product is ready (cover image, stock and price) — it never unpublishes.
+	IsPublished *bool `json:"is_published,omitempty"`
 }
 
 type UpdateProductRequest struct {
