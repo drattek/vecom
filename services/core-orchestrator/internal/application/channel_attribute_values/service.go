@@ -588,13 +588,16 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		}
 
 		dataType := mapMercadoLibreDataType(attr)
-		if attr.Synthetic {
-			// No real value_type from MercadoLibre: adopt the type of the local
-			// attribute if one exists (e.g. SIZE already filled in as an enum),
-			// otherwise the text/enum placeholder would clash with it
-			// (ErrAttributeDataTypeConflict) and the attribute would be reported
-			// as missing even though it has a value.
-			if existing, findErr := s.attributesRepository.FindByCode(ctx, attr.ID); findErr == nil && existing != nil {
+		// Local attribute already modelled as a closed enum while MercadoLibre
+		// reports the same key as free text (or, for a synthetic entry, gave no
+		// real value_type at all — e.g. SIZE filled in from a size chart): keep the
+		// local enum instead of failing with ErrAttributeDataTypeConflict, which
+		// would report the attribute as missing even though it has a value. Its
+		// options without an external value id are sent by name, which
+		// MercadoLibre matches against its own list.
+		if attr.Synthetic || dataType == "text" {
+			if existing, findErr := s.attributesRepository.FindByCode(ctx, attr.ID); findErr == nil && existing != nil &&
+				(attr.Synthetic || existing.DataType == "enum") {
 				dataType = existing.DataType
 			}
 		}
