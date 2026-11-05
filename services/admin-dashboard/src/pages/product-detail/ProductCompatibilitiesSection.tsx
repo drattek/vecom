@@ -19,7 +19,7 @@ import { PlusIcon, Trash2Icon } from "lucide-react"
 import { useState } from "react"
 import { useParams } from "react-router-dom"
 
-/** Compatibilidad pendiente de confirmar su baja. */
+/** Compatibilidad pendiente de confirmar su baja */
 type PendingRemoval =
     | { kind: "vehicle"; item: ProductVehicleCompatibility }
     | { kind: "equipment"; item: ProductEquipmentCompatibility }
