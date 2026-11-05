@@ -10,6 +10,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strings"
 )
 
@@ -139,7 +140,11 @@ func (h *ItemsHandler) CreateItem(ctx context.Context, req CreateItemRequest) (*
 	}
 
 	if response.StatusCode != http.StatusOK && response.StatusCode != http.StatusCreated {
-		return nil, fmt.Errorf("mercadolibre items create failed: %w", parseItemAPIError(response.StatusCode, responsePayload))
+		apiErr := parseItemAPIError(response.StatusCode, responsePayload)
+		if missing := missingAttributeIDsFromBody(responsePayload); len(missing) > 0 {
+			apiErr = &MissingAttributesError{AttributeIDs: missing, Err: apiErr}
+		}
+		return nil, fmt.Errorf("mercadolibre items create failed: %w", apiErr)
 	}
 
 	var created CreateItemResponse
@@ -402,6 +407,68 @@ func (h *ItemsHandler) putItem(ctx context.Context, accessToken, externalID stri
 	log.Printf("mercadolibre items: update response for %s (status %d): %s", externalID, response.StatusCode, responsePayload)
 
 	return nil
+}
+
+// MissingAttributesError wraps a rejected POST /items whose "cause" array says
+// one or more attributes are required/missing. AttributeIDs are the ids
+// MercadoLibre named — including conditional ones (e.g. AGE_GROUP on fashion
+// categories) that GET /categories/{id}/attributes doesn't report as required —
+// so the caller can provision them and ask for a value instead of looping on
+// the same opaque 400.
+type MissingAttributesError struct {
+	AttributeIDs []string
+	Err          error
+}
+
+func (e *MissingAttributesError) Error() string { return e.Err.Error() }
+func (e *MissingAttributesError) Unwrap() error { return e.Err }
+
+var (
+	// attributeIDPattern matches a MercadoLibre attribute id (AGE_GROUP, GENDER…).
+	attributeIDPattern = regexp.MustCompile(`^[A-Z][A-Z0-9_]+$`)
+	// bracketedIDsPattern captures the "[A, B]" list MercadoLibre embeds in
+	// messages like "The attributes [AGE_GROUP] are required for category …".
+	bracketedIDsPattern = regexp.MustCompile(`\[([A-Z0-9_,\s]+)\]`)
+	// attributeSizeGridIDs are never provisioned as plain custom attributes:
+	// the size chart is chosen per product, not a free-form slot.
+	attributeSizeGridIDs = map[string]bool{"SIZE_GRID_ID": true, "SIZE_GRID_ROW_ID": true}
+)
+
+// missingAttributeIDsFromBody extracts the attribute ids a rejected POST /items
+// reports as required/missing, from each cause's `attribute` field and from the
+// bracketed list in its message. Only causes whose code or message talks about
+// a missing/mandatory/required attribute are considered.
+func missingAttributeIDsFromBody(body []byte) []string {
+	var errPayload itemAPIError
+	if json.Unmarshal(body, &errPayload) != nil {
+		return nil
+	}
+
+	seen := map[string]bool{}
+	var ids []string
+	add := func(id string) {
+		id = strings.TrimSpace(id)
+		if id == "" || seen[id] || attributeSizeGridIDs[id] || !attributeIDPattern.MatchString(id) {
+			return
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+
+	for _, cause := range errPayload.Cause {
+		haystack := strings.ToLower(cause.Code + " " + cause.Message)
+		if !strings.Contains(haystack, "missing") && !strings.Contains(haystack, "mandatory") && !strings.Contains(haystack, "required") {
+			continue
+		}
+		add(cause.Attribute)
+		for _, match := range bracketedIDsPattern.FindAllStringSubmatch(cause.Message, -1) {
+			for _, id := range strings.Split(match[1], ",") {
+				add(id)
+			}
+		}
+	}
+
+	return ids
 }
 
 // parseItemAPIError builds a detailed error from a non-2xx /items response:

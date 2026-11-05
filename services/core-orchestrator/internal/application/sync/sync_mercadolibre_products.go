@@ -1438,6 +1438,23 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		Vals:        vals,
 	})
 	if err != nil {
+		// MercadoLibre named attributes it requires but that the category's
+		// attribute listing doesn't flag as required (conditional ones such as
+		// AGE_GROUP on fashion categories, driven by SIZE_GRID_ID). Provision them
+		// as required slots now so they appear in the product's attributes
+		// checklist and are enforced up front on every later publish.
+		var missingErr *mercadoLibreInfra.MissingAttributesError
+		if errors.As(err, &missingErr) {
+			learned, learnErr := s.registerLearnedRequiredAttributes(ctx, product, connectionID, externalCategoryID, missingErr.AttributeIDs, attributes)
+			if learnErr != nil {
+				log.Printf("mercadolibre upload: product %d — could not provision attributes %v demanded by mercadolibre: %v", product.ID, missingErr.AttributeIDs, learnErr)
+			}
+			if len(learned) > 0 {
+				return "", learned, missingOptionalAttributes,
+					fmt.Errorf("%w for category %s: %s (mercadolibre exige estos atributos aunque la categoría no los marque como requeridos; cárgalos en el checklist de Atributos del producto)",
+						errMissingRequiredMercadoLibreAttributes, externalCategoryID, strings.Join(learned, ", "))
+			}
+		}
 		return "", nil, nil, fmt.Errorf("error creating mercadolibre item for product %d: %w", product.ID, err)
 	}
 	log.Printf("mercadolibre upload: product %d — item created, externalId=%s, categoryId=%s", product.ID, created.ID, created.CategoryID)
@@ -1573,6 +1590,41 @@ func (s *MercadoLibreProductSyncService) resolveCustomAttributes(ctx context.Con
 	}
 
 	return attributes, missingRequiredAttributes, missingOptionalAttributes, nil
+}
+
+// registerLearnedRequiredAttributes provisions, as required slots scoped to the
+// product's category, the attribute ids MercadoLibre rejected a POST /items
+// for (see mercadoLibreInfra.MissingAttributesError) and returns the ones that
+// still need a value — i.e. those not already present in sent. Provisioning
+// persists is_required, so later publishes enforce them before the POST (see
+// channel_attribute_values.Service.withExtraRequiredAttributes).
+func (s *MercadoLibreProductSyncService) registerLearnedRequiredAttributes(ctx context.Context, product *mysqlInfra.ProductDTO, connectionID int64, externalCategoryID string, ids []string, sent []mercadoLibreInfra.ItemAttribute) ([]string, error) {
+	alreadySent := make(map[string]bool, len(sent))
+	for _, attr := range sent {
+		alreadySent[attr.ID] = true
+	}
+
+	var pending []string
+	for _, id := range ids {
+		if !alreadySent[id] {
+			pending = append(pending, id)
+		}
+	}
+	if len(pending) == 0 {
+		return nil, nil
+	}
+
+	if _, err := s.channelAttributeValuesService.ProvisionCategoryAttributes(ctx, channelAttributeValuesApp.ProvisionCategoryAttributesInput{
+		SKU:                       product.SKU,
+		CategoryID:                externalCategoryID,
+		ConnectionID:              &connectionID,
+		ActorID:                   systemMercadoLibreSyncActorID,
+		ExtraRequiredAttributeIDs: pending,
+	}); err != nil {
+		return nil, err
+	}
+
+	return pending, nil
 }
 
 // formatProductAttributeValue renders whichever typed column value has set

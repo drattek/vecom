@@ -375,6 +375,15 @@ type ProvisionCategoryAttributesInput struct {
 	// for that category would get scoped to the product's unrelated
 	// category, contaminating it for every other product that shares it.
 	LocalCategoryIDOverride *int64
+	// ExtraRequiredAttributeIDs are attribute ids MercadoLibre demanded for this
+	// category (typically from a POST /items rejection, e.g. AGE_GROUP on
+	// fashion categories) even though GET /categories/{id}/attributes doesn't
+	// list them as required — or doesn't list them at all (they are conditional
+	// on the item's other attributes, such as SIZE_GRID_ID). Each one is
+	// provisioned as a required slot scoped to the local category, so it shows
+	// up in the product's attributes checklist and every later call picks it up
+	// again through the persisted is_required slot (see withExtraRequiredAttributes).
+	ExtraRequiredAttributeIDs []string
 }
 
 // ProvisionedAttributeOutcome reports what happened for one required
@@ -524,6 +533,11 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		return nil, fmt.Errorf("error loading mercadolibre category %s attributes: %w", categoryID, err)
 	}
 
+	categoryAttributes, err = s.withExtraRequiredAttributes(ctx, channel.ID, localCategoryID, categoryAttributes, input.ExtraRequiredAttributeIDs)
+	if err != nil {
+		return nil, err
+	}
+
 	results := make([]ProvisionedAttributeOutcome, 0, len(categoryAttributes))
 	for _, attr := range categoryAttributes {
 		outcome := ProvisionedAttributeOutcome{ExternalKey: attr.ID, Name: attr.Name, IsRequired: attr.Tags.Required, IsListType: attr.IsListType()}
@@ -607,6 +621,75 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 	}
 
 	return &ProvisionCategoryAttributesResult{CategoryID: categoryID, LocalCategoryID: localCategoryID, Results: results}, nil
+}
+
+// withExtraRequiredAttributes completes MercadoLibre's category-attributes
+// listing with attributes it demands at publish time but doesn't report as
+// required there (conditional ones such as AGE_GROUP on fashion categories, or
+// ones absent from the listing altogether):
+//
+//   - every id in extraIDs (learned from a POST /items rejection) is forced to
+//     required — added as a synthetic free-text attribute when the listing
+//     doesn't have it, flipped to required in memory when it only had it as
+//     optional;
+//   - every already-persisted required slot scoped to localCategoryID whose
+//     key the listing lacks (i.e. one added by an earlier call) is re-added, so
+//     the requirement survives across publishes.
+//
+// The returned slice never mutates the caller's.
+func (s *Service) withExtraRequiredAttributes(ctx context.Context, channelID int64, localCategoryID *int64, listed []mercadoLibreInfra.CategoryRequiredAttribute, extraIDs []string) ([]mercadoLibreInfra.CategoryRequiredAttribute, error) {
+	result := make([]mercadoLibreInfra.CategoryRequiredAttribute, len(listed))
+	copy(result, listed)
+	indexByID := make(map[string]int, len(result))
+	for i, attr := range result {
+		indexByID[attr.ID] = i
+	}
+
+	forceRequired := func(id, name string) {
+		if id == "" || skippedExternalKeys[id] {
+			return
+		}
+		if i, ok := indexByID[id]; ok {
+			result[i].Tags.Required = true
+			return
+		}
+		if name == "" {
+			name = id
+		}
+		indexByID[id] = len(result)
+		result = append(result, mercadoLibreInfra.CategoryRequiredAttribute{
+			ID:        id,
+			Name:      name,
+			ValueType: "string",
+			Tags:      mercadoLibreInfra.CategoryAttributeTags{Required: true},
+		})
+	}
+
+	if localCategoryID != nil {
+		applicable, err := s.channelAttributesRepository.FindApplicable(ctx, channelID, localCategoryID)
+		if err != nil {
+			return nil, fmt.Errorf("error loading persisted required attributes for category %d: %w", *localCategoryID, err)
+		}
+		for _, slot := range applicable {
+			// Only slots scoped to this exact category: a channel-wide or other
+			// category's slot must not leak a requirement into this one.
+			if !slot.IsRequired || slot.ExternalKey == nil || slot.TargetStrategy != channelAttributeDefaultTargetStrategy ||
+				slot.CategoryID == nil || *slot.CategoryID != *localCategoryID {
+				continue
+			}
+			name := ""
+			if slot.ExternalLabel != nil {
+				name = *slot.ExternalLabel
+			}
+			forceRequired(*slot.ExternalKey, name)
+		}
+	}
+
+	for _, id := range extraIDs {
+		forceRequired(strings.TrimSpace(id), "")
+	}
+
+	return result, nil
 }
 
 // mapMercadoLibreDataType maps a MercadoLibre category attribute to one of
