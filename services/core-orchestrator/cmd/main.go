@@ -142,19 +142,6 @@ func main() {
 		mysqlRepos.ProductDimensionsRepository,
 		mysqlRepos.ProductSEORepository,
 	)
-	productAttributeChecklistService := productAttributeChecklistApp.NewService(
-		mysqlRepos.ProductDetailsRepository,
-		mysqlRepos.ChannelRepository,
-		mysqlRepos.ChannelConnectionRepository,
-		mysqlRepos.ChannelCategoryMapRepository,
-		mysqlRepos.ChannelProductMapRepository,
-		mysqlRepos.ChannelAttributesRepository,
-		mysqlRepos.ChannelAttributeMapRepository,
-		mysqlRepos.AttributesRepository,
-		mysqlRepos.AttributeOptionsRepository,
-		mysqlRepos.ProductAttributesRepository,
-		mysqlRepos.ChannelProductCategorySelectionRepository,
-	)
 	productSyncService := productSyncApp.NewService(
 		mysqlRepos.ProductRepository,
 		mysqlRepos.ChannelConnectionRepository,
@@ -227,6 +214,7 @@ func main() {
 	// custom attribute value from just {sku, externalKey, value}, or to
 	// provision a whole category's required attributes from just
 	// {sku, categoryId} — see channel_attribute_values.Service.
+	mercadoLibreCategoriesHandler := mercadoLibreInfra.NewCategoriesHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter))
 	channelAttributeValuesService := channelAttributeValuesApp.NewService(
 		db,
 		mysqlRepos.ProductRepository,
@@ -237,9 +225,25 @@ func main() {
 		mysqlRepos.ChannelAttributesRepository,
 		mysqlRepos.ChannelAttributeMapRepository,
 		productAttributeService,
-		mercadoLibreInfra.NewCategoriesHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter)),
+		mercadoLibreCategoriesHandler,
 		mercadoLibreCategoryPredictorService,
 		mysqlRepos.ChannelProductCategorySelectionRepository,
+	)
+	// Attributes checklist of a product per connection; restricts each enum to
+	// the values MercadoLibre allows for the connection's external category.
+	productAttributeChecklistService := productAttributeChecklistApp.NewService(
+		mysqlRepos.ProductDetailsRepository,
+		mysqlRepos.ChannelRepository,
+		mysqlRepos.ChannelConnectionRepository,
+		mysqlRepos.ChannelCategoryMapRepository,
+		mysqlRepos.ChannelProductMapRepository,
+		mysqlRepos.ChannelAttributesRepository,
+		mysqlRepos.ChannelAttributeMapRepository,
+		mysqlRepos.AttributesRepository,
+		mysqlRepos.AttributeOptionsRepository,
+		mysqlRepos.ProductAttributesRepository,
+		mysqlRepos.ChannelProductCategorySelectionRepository,
+		mercadoLibreCategoriesHandler,
 	)
 	mercadoLibreCompatibilityService := syncApp.NewMercadoLibreCompatibilityService(
 		mysqlRepos.ChannelProductMapRepository,

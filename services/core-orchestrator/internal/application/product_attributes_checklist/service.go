@@ -30,12 +30,24 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"sort"
 	"strconv"
 	"strings"
 
+	mercadoLibreInfra "core-orchestrator/internal/infrastructure/marketplace/mercadolibre"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
+
+// mercadoLibreChannelCode is ecom_channels.code for MercadoLibre.
+const mercadoLibreChannelCode = "MERCADOLIBRE"
+
+// CategoryAttributesLoader reads the attributes (and their closed value lists)
+// MercadoLibre defines for an external category. Satisfied by
+// *mercadolibre.CategoriesHandler (public endpoint, no token needed).
+type CategoryAttributesLoader interface {
+	GetCategoryAttributes(ctx context.Context, categoryID string) ([]mercadoLibreInfra.CategoryRequiredAttribute, error)
+}
 
 var (
 	ErrInvalidInput       = errors.New("invalid checklist input")
@@ -65,6 +77,7 @@ type Service struct {
 	attributeOptions    *mysqlInfra.AttributeOptionsRepository
 	productAttributes   *mysqlInfra.ProductAttributesRepository
 	categorySelection   *mysqlInfra.ChannelProductCategorySelectionRepository
+	categoryAttributes  CategoryAttributesLoader
 }
 
 func NewService(
@@ -79,6 +92,7 @@ func NewService(
 	attributeOptions *mysqlInfra.AttributeOptionsRepository,
 	productAttributes *mysqlInfra.ProductAttributesRepository,
 	categorySelection *mysqlInfra.ChannelProductCategorySelectionRepository,
+	categoryAttributes CategoryAttributesLoader,
 ) *Service {
 	return &Service{
 		productDetails:      productDetails,
@@ -92,12 +106,17 @@ func NewService(
 		attributeOptions:    attributeOptions,
 		productAttributes:   productAttributes,
 		categorySelection:   categorySelection,
+		categoryAttributes:  categoryAttributes,
 	}
 }
 
 type OptionDTO struct {
 	ID    int64  `json:"id"`
 	Value string `json:"value"`
+	// externalValueID is the channel's own id for this option (empty for
+	// options created by hand). Not serialized; used to restrict a category's
+	// attribute to the values that category actually allows.
+	externalValueID string
 }
 
 type ItemDTO struct {
@@ -321,7 +340,11 @@ func (s *Service) GetChecklist(ctx context.Context, productID, connectionID int6
 			}
 			item.Options = make([]OptionDTO, 0, len(options))
 			for _, opt := range options {
-				item.Options = append(item.Options, OptionDTO{ID: opt.ID, Value: opt.Value})
+				externalValueID := ""
+				if opt.ExternalValueID != nil {
+					externalValueID = strings.TrimSpace(*opt.ExternalValueID)
+				}
+				item.Options = append(item.Options, OptionDTO{ID: opt.ID, Value: opt.Value, externalValueID: externalValueID})
 				optionValueByID[opt.ID] = opt.Value
 			}
 		}
@@ -341,6 +364,10 @@ func (s *Service) GetChecklist(ctx context.Context, productID, connectionID int6
 		out.Items = append(out.Items, *itemsByAttr[attrID])
 	}
 
+	if !productScope && channel.Code == mercadoLibreChannelCode && out.ExternalCategoryID != nil {
+		s.restrictOptionsToCategory(ctx, out)
+	}
+
 	// Orden final: requeridos sin valor → requeridos → opcionales; alfabético dentro.
 	sort.SliceStable(out.Items, func(i, j int) bool {
 		a, b := out.Items[i], out.Items[j]
@@ -358,6 +385,74 @@ func (s *Service) GetChecklist(ctx context.Context, productID, connectionID int6
 	}
 
 	return out, nil
+}
+
+// restrictOptionsToCategory narrows every enum item to the values MercadoLibre
+// allows for the checklist's external category. ecom_attribute_options is keyed
+// by attribute code, so an attribute shared by several categories (GARMENT_TYPE,
+// SIZE…) accumulates the options of all of them, and picking one that belongs
+// to another category makes MercadoLibre reject the item with
+// invalid.item.attribute.values. A stored value that is no longer allowed is
+// shown as missing (Value/OptionID cleared, ProductAttributeID kept so the UI
+// updates the existing row instead of creating a second one).
+//
+// Best effort: if the category can't be loaded the lists are left untouched.
+func (s *Service) restrictOptionsToCategory(ctx context.Context, out *ChecklistDTO) {
+	if s.categoryAttributes == nil || out.ExternalCategoryID == nil {
+		return
+	}
+
+	hasEnum := false
+	for _, item := range out.Items {
+		if item.DataType == "enum" {
+			hasEnum = true
+			break
+		}
+	}
+	if !hasEnum {
+		return
+	}
+
+	categoryAttributes, err := s.categoryAttributes.GetCategoryAttributes(ctx, *out.ExternalCategoryID)
+	if err != nil {
+		log.Printf("product_attributes_checklist: could not load category %s attributes to restrict options: %v", *out.ExternalCategoryID, err)
+		return
+	}
+
+	allowedByCode := make(map[string]map[string]bool, len(categoryAttributes))
+	for _, attr := range categoryAttributes {
+		if len(attr.Values) == 0 {
+			continue
+		}
+		allowed := make(map[string]bool, len(attr.Values))
+		for _, value := range attr.Values {
+			allowed[strings.TrimSpace(value.ID)] = true
+		}
+		allowedByCode[attr.ID] = allowed
+	}
+
+	for i := range out.Items {
+		item := &out.Items[i]
+		allowed, ok := allowedByCode[item.Code]
+		if item.DataType != "enum" || !ok {
+			continue
+		}
+
+		kept := make([]OptionDTO, 0, len(item.Options))
+		keptIDs := make(map[int64]bool, len(item.Options))
+		for _, option := range item.Options {
+			if option.externalValueID == "" || allowed[option.externalValueID] {
+				kept = append(kept, option)
+				keptIDs[option.ID] = true
+			}
+		}
+		item.Options = kept
+
+		if item.OptionID != nil && !keptIDs[*item.OptionID] {
+			item.OptionID = nil
+			item.Value = ""
+		}
+	}
 }
 
 // resolvePublishedCategory is the fallback used when (productID, connectionID)

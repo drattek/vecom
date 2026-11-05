@@ -1380,6 +1380,7 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		return "", nil, nil, err
 	}
 	attributes = append(attributes, customAttributes...)
+	attributes = s.alignSizeWithSizeChart(ctx, accessToken, product.ID, attributes)
 
 	// Stop before the POST when a required custom attribute has no value (or
 	// couldn't be provisioned): MercadoLibre rejects the item with
@@ -1591,6 +1592,52 @@ func (s *MercadoLibreProductSyncService) resolveCustomAttributes(ctx context.Con
 	}
 
 	return attributes, missingRequiredAttributes, missingOptionalAttributes, nil
+}
+
+// alignSizeWithSizeChart makes the item's SIZE agree with the size chart row it
+// points to. When attributes carry SIZE_GRID_ID and SIZE_GRID_ROW_ID, the chart
+// (GET /catalog/charts/{id}) is read and SIZE is sent by name with the row's own
+// SIZE value, replacing whatever the product had stored: MercadoLibre rejects
+// the item with invalid.fashion_grid.size.values when the two differ, and the
+// stored enum option (a category-wide list, e.g. "G") need not be the one the
+// seller's chart uses for that row. Best effort — if the chart can't be read or
+// the row isn't found, attributes are returned unchanged and MercadoLibre's own
+// validation reports the problem.
+func (s *MercadoLibreProductSyncService) alignSizeWithSizeChart(ctx context.Context, accessToken string, productID int64, attributes []mercadoLibreInfra.ItemAttribute) []mercadoLibreInfra.ItemAttribute {
+	var chartID, rowID string
+	sizeIndex := -1
+	for i, attr := range attributes {
+		switch attr.ID {
+		case "SIZE_GRID_ID":
+			chartID = strings.TrimSpace(attr.ValueName)
+		case "SIZE_GRID_ROW_ID":
+			rowID = strings.TrimSpace(attr.ValueName)
+		case "SIZE":
+			sizeIndex = i
+		}
+	}
+	if chartID == "" || rowID == "" {
+		return attributes
+	}
+
+	size, found, err := s.itemsHandler.GetSizeChartRowSize(ctx, accessToken, chartID, rowID)
+	if err != nil {
+		log.Printf("mercadolibre upload: product %d — could not read size chart %s: %v", productID, chartID, err)
+		return attributes
+	}
+	if !found {
+		log.Printf("mercadolibre upload: product %d — size chart %s has no row %s with a SIZE value; leaving SIZE as stored", productID, chartID, rowID)
+		return attributes
+	}
+
+	aligned := mercadoLibreInfra.ItemAttribute{ID: "SIZE", ValueName: size}
+	if sizeIndex >= 0 {
+		log.Printf("mercadolibre upload: product %d — SIZE taken from size chart row %s: %q (was %+v)", productID, rowID, size, attributes[sizeIndex])
+		attributes[sizeIndex] = aligned
+		return attributes
+	}
+	log.Printf("mercadolibre upload: product %d — SIZE added from size chart row %s: %q", productID, rowID, size)
+	return append(attributes, aligned)
 }
 
 // registerLearnedRequiredAttributes provisions, as required slots scoped to the
