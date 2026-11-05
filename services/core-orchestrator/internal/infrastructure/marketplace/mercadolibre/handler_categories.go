@@ -156,6 +156,11 @@ type CategoryRequiredAttribute struct {
 	ValueType string                   `json:"value_type"`
 	Tags      CategoryAttributeTags    `json:"tags"`
 	Values    []CategoryAttributeValue `json:"values,omitempty"`
+	// Synthetic marks an entry built locally (not returned by MercadoLibre's
+	// listing) for an attribute MercadoLibre demanded at publish time — its
+	// ValueType is a placeholder, so the data type of an already-existing local
+	// attribute with the same code must win over it.
+	Synthetic bool `json:"-"`
 }
 
 // IsListType reports whether attr's value must be sent as one of a fixed,

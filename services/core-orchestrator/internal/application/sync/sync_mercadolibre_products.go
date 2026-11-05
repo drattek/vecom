@@ -1551,6 +1551,7 @@ func (s *MercadoLibreProductSyncService) resolveCustomAttributes(ctx context.Con
 		// publish is blocked with a message that names it, instead of surfacing
 		// MercadoLibre's opaque 400.
 		if outcome.SourceType != "custom_attribute" || outcome.AttributeID == nil {
+			log.Printf("mercadolibre upload: product %d — attribute %s could not be provisioned (category %s): %s", product.ID, outcome.ExternalKey, externalCategoryID, outcome.Error)
 			if outcome.IsRequired {
 				missingRequiredAttributes = append(missingRequiredAttributes, outcome.ExternalKey)
 			}

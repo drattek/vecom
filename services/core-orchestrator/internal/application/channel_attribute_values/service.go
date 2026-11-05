@@ -588,6 +588,16 @@ func (s *Service) ProvisionCategoryAttributes(ctx context.Context, input Provisi
 		}
 
 		dataType := mapMercadoLibreDataType(attr)
+		if attr.Synthetic {
+			// No real value_type from MercadoLibre: adopt the type of the local
+			// attribute if one exists (e.g. SIZE already filled in as an enum),
+			// otherwise the text/enum placeholder would clash with it
+			// (ErrAttributeDataTypeConflict) and the attribute would be reported
+			// as missing even though it has a value.
+			if existing, findErr := s.attributesRepository.FindByCode(ctx, attr.ID); findErr == nil && existing != nil {
+				dataType = existing.DataType
+			}
+		}
 		// reconcileToEnum: MercadoLibre is the source of truth for whether this
 		// attribute is a closed list. If an earlier provision (before "string
 		// with values" counted as a list) or a SetValue call created the local
@@ -662,6 +672,7 @@ func (s *Service) withExtraRequiredAttributes(ctx context.Context, channelID int
 			Name:      name,
 			ValueType: "string",
 			Tags:      mercadoLibreInfra.CategoryAttributeTags{Required: true},
+			Synthetic: true,
 		})
 	}
 
