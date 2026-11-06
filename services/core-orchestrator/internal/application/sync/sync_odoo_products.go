@@ -1523,5 +1523,5 @@ func (s *OdooProductSyncService) downloadImageAsBase64(ctx context.Context, file
 		return "", fmt.Errorf("error reading image %q: %w", file.Path, err)
 	}
 
-	return base64.StdEncoding.EncodeToString(data), nil
+	return base64.StdEncoding.EncodeToString(optimizeImageForOdoo(data)), nil
 }
