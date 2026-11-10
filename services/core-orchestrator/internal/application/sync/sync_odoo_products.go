@@ -1261,21 +1261,28 @@ func (s *OdooProductSyncService) resolveProductFitments(ctx context.Context, pro
 	fitments := make([]odooInfra.Fitment, 0, len(vehicleFitments)+len(equipmentFitments))
 
 	for _, vehicle := range vehicleFitments {
-		yearEnd := 0
-		if vehicle.YearEnd != nil {
-			yearEnd = *vehicle.YearEnd
+		// One machine.model per individual year, with year_start == year_end, so
+		// Odoo names it "Versa Nissan 2016" instead of "2016+" (year_end 0 means
+		// open-ended there) or "2016-2018". A single-year fitment keeps the plain
+		// ref; a range gets a per-year suffix so each model has its own ecom_ref.
+		years := yearsInRange(vehicle.YearStart, vehicle.YearEnd)
+		for _, year := range years {
+			ref := odooVehicleFitmentRefPrefix + strconv.FormatInt(vehicle.FitmentID, 10)
+			if len(years) > 1 {
+				ref += ":" + strconv.Itoa(year)
+			}
+			fitments = append(fitments, odooInfra.Fitment{
+				EcomRef:   ref,
+				Name:      vehicle.Model,
+				YearStart: year,
+				YearEnd:   year,
+				Brand: odooInfra.FitmentBrand{
+					EcomRef: odooBrandRefPrefix + strconv.FormatInt(vehicle.BrandID, 10),
+					Name:    vehicle.BrandName,
+				},
+				Type: odooInfra.FitmentType{Name: odooVehicleMachineTypeName, IsVehicle: true},
+			})
 		}
-		fitments = append(fitments, odooInfra.Fitment{
-			EcomRef:   odooVehicleFitmentRefPrefix + strconv.FormatInt(vehicle.FitmentID, 10),
-			Name:      vehicle.Model,
-			YearStart: vehicle.YearStart,
-			YearEnd:   yearEnd,
-			Brand: odooInfra.FitmentBrand{
-				EcomRef: odooBrandRefPrefix + strconv.FormatInt(vehicle.BrandID, 10),
-				Name:    vehicle.BrandName,
-			},
-			Type: odooInfra.FitmentType{Name: odooVehicleMachineTypeName, IsVehicle: true},
-		})
 	}
 
 	for _, equipment := range equipmentFitments {
