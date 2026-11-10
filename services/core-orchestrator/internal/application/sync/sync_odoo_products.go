@@ -459,6 +459,20 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 		// Stock came back (reactivation): sale_ok is already restored, so fall
 		// through to the full-field push below instead of stopping at price/stock.
 		if shouldPause || qtyAvailable <= 0 {
+			// Paused for zero stock: skip update() (it would not touch sale_ok, but
+			// its map rewrite would drop the paused status) yet still push what
+			// does not interfere with the pause — SKU, custom attributes and
+			// compatibilities.
+			externalID, parseErr := strconv.ParseInt(strings.TrimSpace(externalIDStr), 10, 64)
+			if parseErr != nil {
+				return false, fmt.Errorf("error parsing external id %q for product %d: %w", externalIDStr, product.ID, parseErr)
+			}
+			if err := productsHandler.UpdateProductSKU(ctx, credentials, externalID, strings.TrimSpace(product.SKU)); err != nil {
+				return false, fmt.Errorf("error updating SKU of odoo product %d (local product %d): %w", externalID, product.ID, err)
+			}
+			if err := s.syncProductExtras(ctx, productInfoHandler, fitmentsHandler, credentials, connectionID, product, externalID); err != nil {
+				return false, err
+			}
 			return true, nil
 		}
 	}
@@ -636,6 +650,7 @@ func (s *OdooProductSyncService) update(
 		Weight:               weight,
 		Volume:               volume,
 		DescriptionEcommerce: descriptionEcommerce,
+		VgSKU:                strings.TrimSpace(product.SKU),
 	}
 
 	externalCategoryID := derefString(existingMap.ExternalCategoryID)
@@ -741,9 +756,25 @@ func (s *OdooProductSyncService) update(
 		return fmt.Errorf("error recording channel product map for product %d: %w", productID, err)
 	}
 
-	// Re-sync website.sale.product.info on a full update, same as the category is
-	// re-resolved above. Unlike create this never aborts on a missing required
-	// attribute — the listing already exists; a cleared value just drops its row.
+	return s.syncProductExtras(ctx, productInfoHandler, fitmentsHandler, credentials, connectionID, product, externalID)
+}
+
+// syncProductExtras pushes what lives outside product.template's own columns:
+// the custom attributes (website.sale.product.info) and the compatibilities.
+// Shared by the full update and by the zero-stock-paused resync, which skips
+// the rest of update. Unlike create this never aborts on a missing required
+// attribute — the listing already exists; a cleared value just drops its row.
+func (s *OdooProductSyncService) syncProductExtras(
+	ctx context.Context,
+	productInfoHandler *odooInfra.ProductInfoHandler,
+	fitmentsHandler *odooInfra.FitmentsHandler,
+	credentials odooInfra.Credentials,
+	connectionID int64,
+	product *mysqlInfra.ProductDTO,
+	externalID int64,
+) error {
+	productID := product.ID
+
 	infoEntries, managedInfoKeys, missingRequired, _, err := s.resolveProductInfoEntries(ctx, product, connectionID)
 	if err != nil {
 		return fmt.Errorf("error resolving odoo custom attributes for product %d: %w", productID, err)
@@ -751,15 +782,12 @@ func (s *OdooProductSyncService) update(
 	if len(missingRequired) > 0 {
 		log.Printf("odoo update: product %d (odoo template %d) — missing required attributes not sent: %s", productID, externalID, strings.Join(missingRequired, ", "))
 	}
+	log.Printf("odoo update: product %d (odoo template %d) — sending %d custom attribute(s)", productID, externalID, len(infoEntries))
 	if err := s.syncProductInfo(ctx, productInfoHandler, credentials, externalID, infoEntries, managedInfoKeys); err != nil {
 		return fmt.Errorf("error syncing odoo product info for product %d (odoo template %d): %w", productID, externalID, err)
 	}
 
-	if err := s.syncProductFitments(ctx, fitmentsHandler, credentials, externalID, productID); err != nil {
-		return err
-	}
-
-	return nil
+	return s.syncProductFitments(ctx, fitmentsHandler, credentials, externalID, productID)
 }
 
 // resolveOdooRefreshTitle picks the title to (re-)send to Odoo on a
@@ -898,6 +926,7 @@ func (s *OdooProductSyncService) create(
 		PurchaseOK:           true,
 		Image1920:            coverImageBase64,
 		DefaultCode:          product.PartNumber,
+		VgSKU:                strings.TrimSpace(product.SKU),
 		ShowAvailability:     true,
 		IsStorable:           true,
 		AllowOutOfStockOrder: false,

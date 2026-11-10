@@ -159,6 +159,9 @@ type CreateProductVals struct {
 	PurchaseOK           bool    `json:"purchase_ok"`
 	Image1920            string  `json:"image_1920,omitempty"`
 	DefaultCode          string  `json:"default_code,omitempty"`
+	// VgSKU is website_vegusa's vg_sku (the product's SKU, distinct from
+	// default_code which carries the part number).
+	VgSKU                string  `json:"vg_sku,omitempty"`
 	ShowAvailability     bool    `json:"show_availability"`
 	IsStorable           bool    `json:"is_storable"`
 	AllowOutOfStockOrder bool    `json:"allow_out_of_stock_order"`
@@ -217,6 +220,8 @@ type UpdateProductVals struct {
 	PublicCategIDs       [][]any `json:"public_categ_ids,omitempty"`
 	Image1920            string  `json:"image_1920,omitempty"`
 	DescriptionEcommerce string  `json:"description_ecommerce"`
+	// VgSKU is website_vegusa's vg_sku; omitted when the product has no SKU.
+	VgSKU string `json:"vg_sku,omitempty"`
 	// IsPublished (website.published.mixin's is_published) makes the product
 	// visible on the Odoo storefront. A pointer + omitempty: nil leaves the
 	// current state untouched; a full resync sets it to true only when the
@@ -273,4 +278,17 @@ func (h *ProductsHandler) UpdateProductPriceStock(ctx context.Context, req Updat
 	}
 
 	return h.client.Call(ctx, req.Credentials, "product.template", "write", params, nil)
+}
+
+// UpdateProductSKU writes only website_vegusa's vg_sku on an existing
+// product.template — used by flows that must not touch name/price/stock.
+func (h *ProductsHandler) UpdateProductSKU(ctx context.Context, credentials Credentials, externalID int64, sku string) error {
+	if sku == "" {
+		return nil
+	}
+	params := map[string]any{
+		"ids":  []int64{externalID},
+		"vals": map[string]any{"vg_sku": sku},
+	}
+	return h.client.Call(ctx, credentials, "product.template", "write", params, nil)
 }
