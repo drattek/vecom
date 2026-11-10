@@ -1142,6 +1142,24 @@ func (s *Service) ImportVideosForProduct(ctx context.Context, input ImportVideos
 			continue
 		}
 
+		// Un enlace de YouTube no es un archivo: se normaliza y se guarda tal
+		// cual, sin HEAD (devolvería la página HTML de YouTube).
+		if canonical, isYouTube, ytErr := ParseYouTubeURL(url); isYouTube {
+			if ytErr != nil {
+				results[i].Error = ytErr.Error()
+				continue
+			}
+			results[i].URL = canonical
+			pending = append(pending, pendingVideo{
+				url:       canonical,
+				size:      0,
+				mimeType:  YouTubeMimeType,
+				extension: YouTubeExtension,
+				result:    &results[i],
+			})
+			continue
+		}
+
 		size, contentType, checkErr := s.inspectURL(ctx, url)
 		if checkErr != nil {
 			results[i].Error = checkErr.Error()
@@ -1259,11 +1277,24 @@ func (s *Service) ReplaceProductVideo(ctx context.Context, input ReplaceProductV
 		actorID = systemImportUserID
 	}
 
-	size, contentType, checkErr := s.inspectURL(ctx, url)
-	if checkErr != nil {
-		return &VideoImportResult{URL: url, Error: checkErr.Error()}, nil
+	var (
+		size                int64
+		mimeType, extension string
+	)
+	if canonical, isYouTube, ytErr := ParseYouTubeURL(url); isYouTube {
+		if ytErr != nil {
+			return &VideoImportResult{URL: url, Error: ytErr.Error()}, nil
+		}
+		url, mimeType, extension = canonical, YouTubeMimeType, YouTubeExtension
+	} else {
+		var contentType string
+		var checkErr error
+		size, contentType, checkErr = s.inspectURL(ctx, url)
+		if checkErr != nil {
+			return &VideoImportResult{URL: url, Error: checkErr.Error()}, nil
+		}
+		mimeType, extension = resolveVideoMeta(url, contentType)
 	}
-	mimeType, extension := resolveVideoMeta(url, contentType)
 
 	result := &VideoImportResult{URL: url}
 

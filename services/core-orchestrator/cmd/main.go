@@ -39,6 +39,7 @@ import (
 	productAttributeChecklistApp "core-orchestrator/internal/application/product_attributes_checklist"
 	productCategorySelectionApp "core-orchestrator/internal/application/product_category_selection"
 	productDetailsApp "core-orchestrator/internal/application/product_details"
+	productBulkUpdateApp "core-orchestrator/internal/application/product_bulk_update"
 	productImageImportApp "core-orchestrator/internal/application/product_image_import"
 	productMediaApp "core-orchestrator/internal/application/product_media"
 	productSyncApp "core-orchestrator/internal/application/product_sync"
@@ -513,6 +514,20 @@ func main() {
 		mercadoLibreRateLimiter,
 	)
 	meliBulkImportHandler := httpHandler.NewMeliBulkImportHandler(meliBulkImportService)
+	// Actualización masiva de productos por Excel (Productos → Actualización
+	// masiva): cola en MySQL que el worker de más abajo drena. Las fotos y el
+	// video se vinculan con productImageImportService (ADR 0008).
+	productBulkUpdateService := productBulkUpdateApp.NewService(
+		db,
+		mysqlInfra.NewProductBulkUpdateRepository(db),
+		mysqlRepos.ProductRepository,
+		mysqlRepos.SourcesRepository,
+		mysqlRepos.StorageDiskRepository,
+		mysqlRepos.BrandsRepository,
+		productImageImportService,
+		channelListingsService,
+	)
+	productBulkUpdateHandler := httpHandler.NewProductBulkUpdateHandler(productBulkUpdateService)
 	productImageImportHandler := httpHandler.NewProductImageImportHandler(productImageImportService)
 	productVideosHandler := httpHandler.NewProductVideosHandler(productVideosService)
 	productPartNumbersHandler := httpHandler.NewProductPartNumbersHandler(productPartNumbersService)
@@ -680,6 +695,10 @@ func main() {
 	// Excel de Productos → Importar (ecom_meli_import_items).
 	go safe.Supervise(bgCtx, "meli bulk import worker", meliBulkImportService.Start)
 
+	// Product bulk update worker: aplica las filas en cola del Excel de
+	// Productos → Actualización masiva (ecom_product_bulk_update_items).
+	go safe.Supervise(bgCtx, "product bulk update worker", productBulkUpdateService.Start)
+
 	// Una vez al día (02:00 por defecto) reencola las filas "faltantes" de esa
 	// importación cuyo SKU ya existe en ecom_products; el worker de arriba las
 	// vincula.
@@ -717,6 +736,7 @@ func main() {
 		reportsHandler,
 		meliListingImportHandler,
 		meliBulkImportHandler,
+		productBulkUpdateHandler,
 	)
 
 	server := &http.Server{

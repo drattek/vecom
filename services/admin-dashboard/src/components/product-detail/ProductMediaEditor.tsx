@@ -55,6 +55,7 @@ import {
     FileTextIcon,
     ImagePlusIcon,
     PencilIcon,
+    PlayIcon,
     PlusIcon,
     RefreshCwIcon,
     StarIcon,
@@ -1131,8 +1132,8 @@ function AddVideosDialog({
                 <DialogHeader>
                     <DialogTitle>Agregar videos por URL</DialogTitle>
                     <DialogDescription>
-                        Pegá una URL por línea. Cada URL se valida (debe responder) antes de asociarla al
-                        producto. Se toma la URL donde ya está alojado el archivo, no se sube.
+                        Pegá una URL por línea: un archivo de video ya alojado (se valida que responda) o un
+                        enlace de YouTube. No se sube ningún archivo.
                     </DialogDescription>
                 </DialogHeader>
 
@@ -1150,7 +1151,7 @@ function AddVideosDialog({
                                 setResults(null)
                             }}
                             rows={5}
-                            placeholder={"https://cdn.ejemplo.com/video-1.mp4\nhttps://cdn.ejemplo.com/video-2.mp4"}
+                            placeholder={"https://cdn.ejemplo.com/video-1.mp4\nhttps://www.youtube.com/watch?v=XXXXXXXXXXX"}
                             disabled={mutation.isPending}
                             aria-label="URLs de los videos"
                         />
@@ -1286,6 +1287,78 @@ function ReplaceVideoDialog({
     )
 }
 
+// Un video puede ser un archivo (mp4, webm…) o un enlace de YouTube. Los de
+// YouTube se guardan en ecom_files con mime_type "video/youtube" y la URL del
+// video como path (ver ADR 0008); no hay archivo que reproducir con <video>.
+const YOUTUBE_MIME_TYPE = "video/youtube"
+
+function isYouTubeVideo(video: ProductMediaItem): boolean {
+    return video.mimeType === YOUTUBE_MIME_TYPE || video.extension === "youtube"
+}
+
+/** https://www.youtube.com/watch?v=ID → URL del reproductor incrustado (null si no hay ID válido). */
+function youTubeEmbedUrl(url: string | null | undefined): string | null {
+    if (!url) return null
+    try {
+        const id = new URL(url).searchParams.get("v")
+        return id && /^[A-Za-z0-9_-]{11}$/.test(id) ? `https://www.youtube-nocookie.com/embed/${id}` : null
+    } catch {
+        return null
+    }
+}
+
+/** Vista previa: reproductor de YouTube incrustado, o <video> para un archivo. */
+function VideoPreviewDialog({ video }: { video: ProductMediaItem }) {
+    const youTube = isYouTubeVideo(video)
+    const embedUrl = youTube ? youTubeEmbedUrl(video.url) : null
+
+    return (
+        <Dialog>
+            <DialogTrigger
+                render={
+                    <Button variant="ghost" size="xs" aria-label="Ver video">
+                        <PlayIcon />
+                        Ver
+                    </Button>
+                }
+            />
+            <DialogContent className="w-3xl max-w-[calc(100%-2rem)]">
+                <DialogHeader>
+                    <DialogTitle>{youTube ? "Video de YouTube" : video.filename}</DialogTitle>
+                    <DialogDescription className="break-all">{video.url}</DialogDescription>
+                </DialogHeader>
+
+                {youTube ? (
+                    embedUrl ? (
+                        <iframe
+                            src={embedUrl}
+                            title="Video de YouTube"
+                            className="aspect-video w-full rounded-md border-0"
+                            allow="accelerometer; encrypted-media; picture-in-picture; fullscreen"
+                            allowFullScreen
+                            referrerPolicy="strict-origin-when-cross-origin"
+                        />
+                    ) : (
+                        <p className="text-sm text-destructive">
+                            El enlace guardado no es un video de YouTube válido; ábrelo desde “Abrir” o reemplázalo.
+                        </p>
+                    )
+                ) : video.url ? (
+                    <video src={video.url} controls preload="metadata" className="aspect-video w-full rounded-md bg-black">
+                        Tu navegador no puede reproducir este video; usa “Abrir”.
+                    </video>
+                ) : (
+                    <p className="text-sm text-muted-foreground">Este video no tiene una URL pública.</p>
+                )}
+
+                <DialogFooter>
+                    <DialogClose render={<Button variant="ghost" size="sm">Cerrar</Button>} />
+                </DialogFooter>
+            </DialogContent>
+        </Dialog>
+    )
+}
+
 function VideoRow({
     productId,
     video,
@@ -1297,29 +1370,33 @@ function VideoRow({
 }) {
     const [confirmingDelete, setConfirmingDelete] = useState(false)
     const deleteMutation = useDeleteProductVideo(productId)
+    const youTube = isYouTubeVideo(video)
 
     return (
         <TableRow>
             <TableCell className="flex items-center gap-2">
                 <VideoIcon className="size-4 shrink-0 text-muted-foreground" />
-                <span className="truncate">{video.filename}</span>
+                <span className="truncate">{youTube ? (video.url ?? video.filename) : video.filename}</span>
             </TableCell>
-            <TableCell className="uppercase text-muted-foreground">{video.extension}</TableCell>
-            <TableCell className="tabular-nums">{formatFileSize(video.size)}</TableCell>
+            <TableCell className="uppercase text-muted-foreground">{youTube ? "YouTube" : video.extension}</TableCell>
+            <TableCell className="tabular-nums">{youTube ? "—" : formatFileSize(video.size)}</TableCell>
             <TableCell className="whitespace-nowrap text-muted-foreground">
                 {formatDate(video.createdAt)}
             </TableCell>
             <TableCell>
                 {video.url ? (
-                    <a
-                        href={video.url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 text-sm underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
-                    >
-                        Abrir
-                        <ExternalLinkIcon className="size-3.5" />
-                    </a>
+                    <div className="flex items-center gap-1">
+                        <VideoPreviewDialog video={video} />
+                        <a
+                            href={video.url}
+                            target="_blank"
+                            rel="noreferrer"
+                            className="inline-flex items-center gap-1 text-sm underline underline-offset-2 outline-none hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/50"
+                        >
+                            Abrir
+                            <ExternalLinkIcon className="size-3.5" />
+                        </a>
+                    </div>
                 ) : (
                     <span className="text-muted-foreground">—</span>
                 )}

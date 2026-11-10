@@ -75,6 +75,7 @@ func NewRouter(
 	reportsHandler *httpHandler.ReportsHandler,
 	meliListingImportHandler *httpHandler.MeliListingImportHandler,
 	meliBulkImportHandler *httpHandler.MeliBulkImportHandler,
+	productBulkUpdateHandler *httpHandler.ProductBulkUpdateHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -309,6 +310,16 @@ func NewRouter(
 		protected.Get("/api/meli-bulk-import/summary", meliBulkImportHandler.Summary)
 		protected.Post("/api/meli-bulk-import/items/{itemId}/retry", meliBulkImportHandler.Retry)
 		protected.Post("/api/meli-bulk-import/retry", meliBulkImportHandler.RetryAll)
+
+		// Actualización masiva de productos por Excel (ADR 0008).
+		protected.Post("/api/product-bulk-update/batches", productBulkUpdateHandler.Upload)
+		protected.Get("/api/product-bulk-update/batches", productBulkUpdateHandler.ListBatches)
+		protected.Get("/api/product-bulk-update/batches/{batchId}/export", productBulkUpdateHandler.ExportBatch)
+		protected.Get("/api/product-bulk-update/template", productBulkUpdateHandler.Template)
+		protected.Get("/api/product-bulk-update/items", productBulkUpdateHandler.List)
+		protected.Get("/api/product-bulk-update/summary", productBulkUpdateHandler.Summary)
+		protected.Post("/api/product-bulk-update/items/{itemId}/retry", productBulkUpdateHandler.Retry)
+		protected.Post("/api/product-bulk-update/retry", productBulkUpdateHandler.RetryAll)
 
 		// Videos por URL desde el detalle de producto (Multimedia). Solo disco +
 		// URLs; sin orden, portada ni tipo.

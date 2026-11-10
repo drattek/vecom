@@ -1,17 +1,20 @@
 import { PageHeader } from "@/components/PageHeader.tsx";
 import { TablePagination } from "@/components/TablePagination";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiClient } from "@/lib/api";
 import { paginatedProductsResponseSchema } from "@/lib/schemas/products";
 import { useProductsPaginationStore } from "@/stores/productsPaginationStore";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
-import { Loader2Icon, SearchIcon, XIcon } from "lucide-react";
+import { FileSpreadsheetIcon, Loader2Icon, SearchIcon, XIcon } from "lucide-react";
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { ChannelBadges, ProductSKULink, ProductThumbnail, SortableTableHead, TableLoadingOverlay } from "@/components/products/ProductTableHelpers";
 import { formatPrice } from "@/components/products/ProductTableHelpers";
 
 export function ProductsPage() {
+    const navigate = useNavigate()
     const offset = useProductsPaginationStore((state) => state.offset)
     const pageSize = useProductsPaginationStore((state) => state.pageSize)
     const sortBy = useProductsPaginationStore((state) => state.sortBy)
@@ -93,6 +96,10 @@ export function ProductsPage() {
                                 Actualizando...
                             </span>
                         ) : null}
+                        <Button variant="outline" size="sm" onClick={() => navigate("/products/bulk-update")}>
+                            <FileSpreadsheetIcon />
+                            Actualización masiva
+                        </Button>
                     </div>
                 </div>
 
