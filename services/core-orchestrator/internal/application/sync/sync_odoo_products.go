@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	pricingApp "core-orchestrator/internal/application/pricing"
 	odooInfra "core-orchestrator/internal/infrastructure/marketplace/odoo"
@@ -996,22 +997,18 @@ func (s *OdooProductSyncService) create(
 // title: each word capitalized (rest of the word lowercased, so an
 // all-caps ERP name like "FILTRO DE CABINA NISSAN" becomes "Filtro De
 // Cabina Nissan" rather than staying shouty), followed by the product's own
-// part number in upper case — e.g. "Filtro De Cabina Nissan SAR1234". This
-// only affects what's sent to Odoo; other channels (MercadoLibre) keep
-// whatever title channel_listings.Service built. Idempotent: normalizing an
-// already-normalized title (e.g. re-running this on the stored
-// ecom_channel_product_map.listing_title during a refresh) strips the
-// trailing part number first instead of capitalizing it as another word and
-// appending a second copy.
+// part number in upper case — e.g. "Filtro De Cabina Nissan SAR1234". The part
+// number is only appended when the title does not already contain it (as a
+// whole token, case-insensitive); when it does, it is kept where it is, in
+// upper case. This only affects what's sent to Odoo; other channels
+// (MercadoLibre) keep whatever title channel_listings.Service built.
+// Idempotent: re-normalizing an already-normalized title (e.g. the stored
+// ecom_channel_product_map.listing_title during a refresh) finds the part
+// number already there and never appends a second copy.
 func normalizeOdooTitle(title, partNumber string) string {
 	partNumber = strings.ToUpper(strings.TrimSpace(partNumber))
 
-	base := strings.TrimSpace(title)
-	if partNumber != "" {
-		base = strings.TrimSpace(strings.TrimSuffix(base, partNumber))
-	}
-
-	words := strings.Fields(base)
+	words := strings.Fields(strings.TrimSpace(title))
 	for i, word := range words {
 		runes := []rune(strings.ToLower(word))
 		runes[0] = unicode.ToUpper(runes[0])
@@ -1023,7 +1020,41 @@ func normalizeOdooTitle(title, partNumber string) string {
 		return capitalized
 	}
 
+	if start := indexOfToken(capitalized, partNumber); start >= 0 {
+		return capitalized[:start] + partNumber + capitalized[start+len(partNumber):]
+	}
+
 	return strings.TrimSpace(capitalized + " " + partNumber)
+}
+
+// indexOfToken returns the byte offset of the first case-insensitive
+// occurrence of token in text that is not glued to other letters or digits
+// (so part number "123" is not found inside "1234"), or -1. Only ASCII-safe
+// matches are reported: if upper-casing changes byte lengths, it gives up.
+func indexOfToken(text, token string) int {
+	upper := strings.ToUpper(text)
+	if len(upper) != len(text) || token == "" {
+		return -1
+	}
+
+	for from := 0; from <= len(upper)-len(token); {
+		i := strings.Index(upper[from:], token)
+		if i < 0 {
+			return -1
+		}
+		start := from + i
+		end := start + len(token)
+
+		before, _ := utf8.DecodeLastRuneInString(upper[:start])
+		after, _ := utf8.DecodeRuneInString(upper[end:])
+		boundaryBefore := start == 0 || !(unicode.IsLetter(before) || unicode.IsDigit(before))
+		boundaryAfter := end == len(upper) || !(unicode.IsLetter(after) || unicode.IsDigit(after))
+		if boundaryBefore && boundaryAfter {
+			return start
+		}
+		from = start + 1
+	}
+	return -1
 }
 
 // priceOrStockChangedSince reports whether a product's effective price or
