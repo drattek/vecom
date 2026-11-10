@@ -1021,7 +1021,18 @@ func normalizeOdooTitle(title, partNumber string) string {
 	}
 
 	if start := indexOfToken(capitalized, partNumber); start >= 0 {
-		return capitalized[:start] + partNumber + capitalized[start+len(partNumber):]
+		// Keep the first occurrence and drop any repeats (a title stored by an
+		// earlier version could carry the part number twice).
+		head := capitalized[:start] + partNumber
+		tail := capitalized[start+len(partNumber):]
+		for {
+			i := indexOfToken(tail, partNumber)
+			if i < 0 {
+				break
+			}
+			tail = tail[:i] + tail[i+len(partNumber):]
+		}
+		return strings.Join(strings.Fields(head+tail), " ")
 	}
 
 	return strings.TrimSpace(capitalized + " " + partNumber)

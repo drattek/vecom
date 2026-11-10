@@ -10,6 +10,8 @@ func TestNormalizeOdooTitle(t *testing.T) {
 		{"filtro sar1234 nissan", "sar1234", "Filtro SAR1234 Nissan"},
 		{"Filtro 1234 Nissan", "123", "Filtro 1234 Nissan 123"},
 		{"Filtro Nissan", "", "Filtro Nissan"},
+		{"Filtro Nissan SAR1234 SAR1234", "SAR1234", "Filtro Nissan SAR1234"},
+		{"FILTRO SAR1234 NISSAN sar1234", "SAR1234", "Filtro SAR1234 Nissan"},
 		{"Filtro Nissan (SAR-12)", "SAR-12", "Filtro Nissan (SAR-12)"},
 	}
 	for _, c := range cases {
