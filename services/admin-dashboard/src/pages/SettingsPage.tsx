@@ -33,6 +33,7 @@ const settingsMenuGroups: SettingsMenuGroup[] = [
         label: 'Precios',
         items: [
             { label: 'Listas de precios', to: '/settings/pricing-price-lists' },
+            { label: 'Fórmulas de precios', to: '/settings/pricing-formulas' },
         ],
     },
     {
