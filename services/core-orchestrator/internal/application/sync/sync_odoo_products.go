@@ -127,7 +127,11 @@ type OdooProductSyncService struct {
 	// chain several of these sequentially (update, search, unlink, N image
 	// creates), and Odoo has been observed taking longer than 15s on a plain
 	// product.image.unlink under load.
-	odooAPIClient          *http.Client
+	odooAPIClient *http.Client
+	// odooImagesAPIClient is the same but for product.image calls (search_read,
+	// unlink, create): Odoo can take minutes to unlink a template's images
+	// (attachment cleanup), well past odooAPIClient's 60s.
+	odooImagesAPIClient    *http.Client
 	formulaCalculator      *pricingApp.PricingFormulaCalculator
 	effectivePriceResolver *pricingApp.EffectivePriceResolver
 }
@@ -181,6 +185,7 @@ func NewOdooProductSyncService(
 		rateLimiter:                   rateLimiter,
 		httpClient:                    &http.Client{Timeout: 20 * time.Second},
 		odooAPIClient:                 &http.Client{Timeout: 60 * time.Second},
+		odooImagesAPIClient:           &http.Client{Timeout: 240 * time.Second},
 		formulaCalculator:             formulaCalculator,
 		effectivePriceResolver:        effectivePriceResolver,
 	}
@@ -222,7 +227,7 @@ func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfr
 
 	client := odooInfra.NewClient(s.odooAPIClient, odooURL, s.rateLimiter)
 	productsHandler := odooInfra.NewProductsHandler(client)
-	imagesHandler := odooInfra.NewImagesHandler(client)
+	imagesHandler := odooInfra.NewImagesHandler(odooInfra.NewClient(s.odooImagesAPIClient, odooURL, s.rateLimiter))
 	categoriesHandler := odooInfra.NewCategoriesHandler(client)
 	productInfoHandler := odooInfra.NewProductInfoHandler(client)
 	fitmentsHandler := odooInfra.NewFitmentsHandler(client)
@@ -371,11 +376,12 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 		return false, nil
 	}
 
-	// Same paused-row protection as Refresh.
+	// The manual resync is mandatory: it is never skipped because of the
+	// listing's status or its stock (zero stock, paused, ...). The only reason
+	// not to push is a missing or zero price, checked right after the price is
+	// calculated below.
 	isZeroStockPaused := listing.Status == odooPausedStatus && derefString(listing.PausedReason) == pausedReasonZeroStock
-	if listing.Status == odooPausedStatus && !isZeroStockPaused {
-		return false, nil
-	}
+	isUserPaused := listing.Status == odooPausedStatus && !isZeroStockPaused
 
 	mxnCurrency, err := s.currenciesRepository.FindByCode(ctx, odooSyncCurrency)
 	if err != nil {
@@ -413,7 +419,7 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 
 	client := odooInfra.NewClient(s.odooAPIClient, odooURL, s.rateLimiter)
 	productsHandler := odooInfra.NewProductsHandler(client)
-	imagesHandler := odooInfra.NewImagesHandler(client)
+	imagesHandler := odooInfra.NewImagesHandler(odooInfra.NewClient(s.odooImagesAPIClient, odooURL, s.rateLimiter))
 	categoriesHandler := odooInfra.NewCategoriesHandler(client)
 	productInfoHandler := odooInfra.NewProductInfoHandler(client)
 	fitmentsHandler := odooInfra.NewFitmentsHandler(client)
@@ -421,6 +427,9 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
 	if err != nil {
 		return false, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
+	}
+	if listPrice <= 0 {
+		return false, nil
 	}
 
 	qtyAvailable := 0.0
@@ -449,39 +458,38 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 		return false, err
 	}
 
-	if shouldPause || isZeroStockPaused {
-		saleOK, nextMapStatus, nextPausedReason := resolveOdooZeroStockTransition(listing, shouldPause, qtyAvailable)
-		if isZeroStockPaused && qtyAvailable <= 0 {
-			return false, nil
-		}
+	// Status the map row must end up with. update() always rewrites it as
+	// synced, so a paused outcome is restored afterwards. A listing paused by
+	// someone else keeps its status and sale_ok untouched, but still gets the
+	// full-field push.
+	var saleOK *bool
+	nextMapStatus, nextPausedReason := odooSyncedStatus, ""
+	if isUserPaused {
+		nextMapStatus, nextPausedReason = odooPausedStatus, derefString(listing.PausedReason)
+	} else {
+		saleOK, nextMapStatus, nextPausedReason = resolveOdooZeroStockTransition(listing, shouldPause, qtyAvailable)
+	}
+
+	// Pause / reactivation changes Odoo's sale_ok, which update() does not send.
+	if saleOK != nil {
 		if err := s.updatePriceAndStock(ctx, productsHandler, credentials, connectionID, listing, listPrice, qtyAvailable, saleOK, nextMapStatus, nextPausedReason); err != nil {
 			return false, err
-		}
-		// Stock came back (reactivation): sale_ok is already restored, so fall
-		// through to the full-field push below instead of stopping at price/stock.
-		if shouldPause || qtyAvailable <= 0 {
-			// Paused for zero stock: skip update() (it would not touch sale_ok, but
-			// its map rewrite would drop the paused status) yet still push what
-			// does not interfere with the pause — SKU, custom attributes and
-			// compatibilities.
-			externalID, parseErr := strconv.ParseInt(strings.TrimSpace(externalIDStr), 10, 64)
-			if parseErr != nil {
-				return false, fmt.Errorf("error parsing external id %q for product %d: %w", externalIDStr, product.ID, parseErr)
-			}
-			if err := productsHandler.UpdateProductVegusaFields(ctx, credentials, externalID, strings.TrimSpace(product.SKU), odooShortDescription(product)); err != nil {
-				return false, fmt.Errorf("error updating SKU of odoo product %d (local product %d): %w", externalID, product.ID, err)
-			}
-			if err := s.syncProductExtras(ctx, productInfoHandler, fitmentsHandler, credentials, connectionID, product, externalID); err != nil {
-				return false, err
-			}
-			return true, nil
 		}
 	}
 
 	title := resolveOdooRefreshTitle(listing, product)
 
-	if err := s.update(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, fitmentsHandler, credentials, connectionID, product, listing, title, listPrice, qtyAvailable); err != nil {
-		return false, err
+	updateErr := s.update(ctx, productsHandler, imagesHandler, categoriesHandler, productInfoHandler, fitmentsHandler, credentials, connectionID, product, listing, title, listPrice, qtyAvailable)
+
+	// Restore the paused state even if update failed late (e.g. on the photos,
+	// after it already rewrote the map row as synced).
+	if nextMapStatus != odooSyncedStatus {
+		if err := s.channelProductMapRepository.UpdateStatus(ctx, listing.ID, nextMapStatus, nextPausedReason); err != nil {
+			return false, fmt.Errorf("error restoring %s status of channel product map for product %d: %w", nextMapStatus, product.ID, err)
+		}
+	}
+	if updateErr != nil {
+		return false, updateErr
 	}
 
 	return true, nil
@@ -715,6 +723,27 @@ func (s *OdooProductSyncService) update(
 		return fmt.Errorf("error updating odoo product %d (local product %d): %w", externalID, productID, err)
 	}
 
+	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
+		ProductID:          productID,
+		ConnectionID:       connectionID,
+		VehicleFitmentID:   existingMap.VehicleFitmentID,
+		ListingTitle:       title,
+		ExternalID:         externalIDStr,
+		ExternalCategoryID: externalCategoryID,
+		Status:             odooSyncedStatus,
+		ActorID:            systemOdooSyncActorID,
+	}); err != nil {
+		return fmt.Errorf("error recording channel product map for product %d: %w", productID, err)
+	}
+
+	if err := s.syncProductExtras(ctx, productInfoHandler, fitmentsHandler, credentials, connectionID, product, externalID); err != nil {
+		return err
+	}
+
+	// The extra photos go last: replacing them is the slowest Odoo call
+	// (unlink can take minutes), and a failure or timeout here must not leave
+	// the rest of the push — fields, map row, attributes, compatibilities —
+	// unapplied.
 	if coverImage != nil {
 		// Clear out every product.image row already attached to this template
 		// before recreating them from ecom_product_images' current state — the
@@ -745,20 +774,7 @@ func (s *OdooProductSyncService) update(
 		}
 	}
 
-	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
-		ProductID:          productID,
-		ConnectionID:       connectionID,
-		VehicleFitmentID:   existingMap.VehicleFitmentID,
-		ListingTitle:       title,
-		ExternalID:         externalIDStr,
-		ExternalCategoryID: externalCategoryID,
-		Status:             odooSyncedStatus,
-		ActorID:            systemOdooSyncActorID,
-	}); err != nil {
-		return fmt.Errorf("error recording channel product map for product %d: %w", productID, err)
-	}
-
-	return s.syncProductExtras(ctx, productInfoHandler, fitmentsHandler, credentials, connectionID, product, externalID)
+	return nil
 }
 
 // syncProductExtras pushes what lives outside product.template's own columns:
