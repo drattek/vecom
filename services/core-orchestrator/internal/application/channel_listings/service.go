@@ -23,10 +23,27 @@ import (
 	"log"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
+
+const (
+	// resyncDetachedTimeout bounds a manual resync that keeps running after the
+	// HTTP client gave up (see ResyncProductListings).
+	resyncDetachedTimeout = 10 * time.Minute
+	// bookkeepingTimeout bounds writes of last_error / listing events, which
+	// must survive a cancelled request context.
+	bookkeepingTimeout = 10 * time.Second
+)
+
+// bookkeepingContext returns a context that keeps ctx's values but is not
+// cancelled with it, so a failure can still be recorded after the request that
+// triggered it was cancelled (client disconnect, proxy timeout).
+func bookkeepingContext(ctx context.Context) (context.Context, context.CancelFunc) {
+	return context.WithTimeout(context.WithoutCancel(ctx), bookkeepingTimeout)
+}
 
 // maxCompatibilitiesPerSKU bounds how many vehicle compatibilities are
 // fanned out into listings for a single SKU in one call.
@@ -646,6 +663,13 @@ func (s *Service) ResyncProductListings(ctx context.Context, input ResyncListing
 		return nil, ErrInvalidChannelConnection
 	}
 
+	// A resync can take minutes (Odoo replaces the photos), longer than a
+	// browser or proxy waits. If the request context is cancelled mid-way, the
+	// push would stop half-applied (e.g. photos deleted but not recreated), so
+	// it runs to completion on a bounded, non-cancelled context instead.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), resyncDetachedTimeout)
+	defer cancel()
+
 	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelConnectionNotFound) {
@@ -1255,6 +1279,8 @@ func (s *Service) recordEvent(ctx context.Context, in mysqlInfra.RecordListingEv
 	if s.listingEventsRepository == nil {
 		return
 	}
+	ctx, cancel := bookkeepingContext(ctx)
+	defer cancel()
 	if err := s.listingEventsRepository.Record(ctx, in); err != nil {
 		log.Printf("channel_listings: no se pudo registrar evento %s/%s product=%d connection=%d: %v", in.Action, in.Outcome, in.ProductID, in.ConnectionID, err)
 	}
@@ -1270,6 +1296,8 @@ func (s *Service) recordPublishError(ctx context.Context, productID, connectionI
 // recordListingFailure logs a refresh/resync error and stamps it as the
 // row's last_error (status untouched).
 func (s *Service) recordListingFailure(ctx context.Context, listing *mysqlInfra.ChannelProductMapDTO, action string, err error) {
+	ctx, cancel := bookkeepingContext(ctx)
+	defer cancel()
 	if setErr := s.channelProductMapRepository.SetLastError(ctx, listing.ID, err.Error()); setErr != nil {
 		log.Printf("channel_listings: no se pudo guardar last_error en map %d: %v", listing.ID, setErr)
 	}
@@ -1285,6 +1313,8 @@ func (s *Service) recordListingFailure(ctx context.Context, listing *mysqlInfra.
 // status changed in the process (zero-stock pause / reactivation) it is
 // logged as pause/reactivate instead, so the history reads naturally.
 func (s *Service) recordListingChange(ctx context.Context, listing *mysqlInfra.ChannelProductMapDTO, action, message string) {
+	ctx, cancel := bookkeepingContext(ctx)
+	defer cancel()
 	after, err := s.channelProductMapRepository.FindByProductConnectionAndFitment(ctx, listing.ProductID, listing.ConnectionID, listing.VehicleFitmentID)
 	statusAfter := listing.Status
 	if err == nil && after != nil {
