@@ -197,6 +197,13 @@ export function useAttributeChecklist(productId: string | undefined, connectionI
  */
 const PUBLISH_LISTING_TIMEOUT_MS = 90_000
 
+/**
+ * Un resync completo en Odoo reemplaza las fotos del producto y escribe el
+ * título en cada idioma, y puede tardar varios minutos. El core lo deja correr
+ * hasta 10 min aunque el cliente se desconecte, así que aquí se espera igual.
+ */
+const RESYNC_LISTING_TIMEOUT_MS = 600_000
+
 export function usePublishChannelListing(productId: string | undefined) {
     const queryClient = useQueryClient()
     return useMutation({
@@ -346,7 +353,7 @@ export function useResyncChannelListing(productId: string | undefined) {
             const response = await apiClient.post(
                 "/api/channel-listings/resync",
                 { connectionId: input.connectionId, productId: Number(productId) },
-                { timeout: PUBLISH_LISTING_TIMEOUT_MS },
+                { timeout: RESYNC_LISTING_TIMEOUT_MS },
             )
             return resyncListingsResultSchema.parse(response.data)
         },

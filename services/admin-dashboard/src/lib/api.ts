@@ -51,6 +51,14 @@ export function getServerErrorMessage(error: unknown, fallback: string): string 
     return responseMessage
   }
 
+  // Sin respuesta del servidor (timeout o corte) o un 502/503/504 del proxy: la
+  // operación pudo seguir en el servidor, así que el mensaje genérico confunde.
+  const status = error.response?.status
+  const noResponse = !error.response && (error.code === 'ECONNABORTED' || error.code === 'ETIMEDOUT' || error.code === 'ERR_NETWORK')
+  if (noResponse || status === 502 || status === 503 || status === 504) {
+    return `${fallback} El servidor tardó demasiado en responder o se cortó la conexión; la operación puede haber continuado en segundo plano, revisa el historial.`
+  }
+
   return fallback
 }
 
