@@ -1,6 +1,10 @@
 package sync
 
-import "testing"
+import (
+	"testing"
+
+	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
+)
 
 func TestNormalizeOdooTitle(t *testing.T) {
 	cases := []struct{ title, pn, want string }{
@@ -22,5 +26,21 @@ func TestNormalizeOdooTitle(t *testing.T) {
 		if got := normalizeOdooTitle(c.want, c.pn); got != c.want {
 			t.Errorf("no idempotente para %q: %q", c.want, got)
 		}
+	}
+}
+
+func TestResolveOdooRefreshTitle(t *testing.T) {
+	stale := "Titulo Viejo SAR1234"
+	fitment := int64(7)
+	product := &mysqlInfra.ProductDTO{Name: "TITULO NUEVO", PartNumber: "SAR1234"}
+
+	general := &mysqlInfra.ChannelProductMapDTO{ListingTitle: &stale}
+	if got, want := resolveOdooRefreshTitle(general, product), "Titulo Nuevo SAR1234"; got != want {
+		t.Errorf("general = %q, want %q", got, want)
+	}
+
+	perFitment := &mysqlInfra.ChannelProductMapDTO{ListingTitle: &stale, VehicleFitmentID: &fitment}
+	if got, want := resolveOdooRefreshTitle(perFitment, product), "Titulo Viejo SAR1234"; got != want {
+		t.Errorf("fitment = %q, want %q", got, want)
 	}
 }

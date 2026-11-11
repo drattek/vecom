@@ -792,16 +792,21 @@ func (s *OdooProductSyncService) syncProductExtras(
 	return s.syncProductFitments(ctx, fitmentsHandler, credentials, externalID, productID)
 }
 
-// resolveOdooRefreshTitle picks the title to (re-)send to Odoo on a
-// price/stock refresh: the listing's own recorded title when there is one
-// (so a per-vehicle-fitment listing keeps its fitment-specific name), or the
-// product's own name as a fallback for rows where no title was ever
-// recorded. Either way it's run through normalizeOdooTitle, which is
-// idempotent, so a title normalized once before just normalizes to itself.
+// resolveOdooRefreshTitle picks the title to (re-)send to Odoo on a refresh or
+// resync. A general listing (no vehicle fitment) always uses the product's
+// current ecom_products.name — the same source channel_listings used to build
+// it — so renaming the product is picked up; the stored listing_title is only
+// a record of what was last sent, and trusting it kept resending the old name.
+// A per-vehicle-fitment listing keeps its recorded fitment-specific title
+// (product name + vehicle brand/model/years), falling back to the product's
+// name when none was recorded. Either way the result goes through
+// normalizeOdooTitle, which is idempotent.
 func resolveOdooRefreshTitle(existingMap *mysqlInfra.ChannelProductMapDTO, product *mysqlInfra.ProductDTO) string {
-	raw := derefString(existingMap.ListingTitle)
-	if strings.TrimSpace(raw) == "" {
-		raw = product.Name
+	raw := product.Name
+	if existingMap.VehicleFitmentID != nil {
+		if stored := derefString(existingMap.ListingTitle); strings.TrimSpace(stored) != "" {
+			raw = stored
+		}
 	}
 	return normalizeOdooTitle(raw, product.PartNumber)
 }
