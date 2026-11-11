@@ -650,9 +650,10 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 		qtyAvailable += stock.AvailableQty
 	}
 
-	// Same short-circuit as Refresh: nothing to send to a paused listing while
-	// the product has no stock or no price.
-	if isPaused && (qtyAvailable <= 0 || finalPrice <= 0) {
+	// The manual resync is mandatory: it is never skipped because of the
+	// listing's status or the product's stock (zero stock, paused, ...). The only
+	// reason not to push is a zero price.
+	if finalPrice <= 0 {
 		return false, nil
 	}
 
@@ -762,6 +763,11 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 			return false, fmt.Errorf("error reactivating mercadolibre item %s for product %d: %w", externalID, product.ID, err)
 		}
 		log.Printf("mercadolibre: resync — listing %s reactivated (stock back) for product %d", externalID, product.ID)
+	case isZeroStockPaused:
+		// Still out of stock: everything was resent above, but the listing stays
+		// paused for zero stock (the upsert below must not mark it synced).
+		nextMapStatus = mercadoLibreMapStatusPaused
+		nextPausedReason = pausedReasonZeroStock
 	case isPaused && !isZeroStockPaused:
 		// Paused by someone else: see Refresh — record whatever status
 		// MercadoLibre reports now, never reactivating it ourselves.
