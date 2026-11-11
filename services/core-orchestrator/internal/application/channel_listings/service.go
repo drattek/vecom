@@ -1296,6 +1296,7 @@ func (s *Service) recordPublishError(ctx context.Context, productID, connectionI
 // recordListingFailure logs a refresh/resync error and stamps it as the
 // row's last_error (status untouched).
 func (s *Service) recordListingFailure(ctx context.Context, listing *mysqlInfra.ChannelProductMapDTO, action string, err error) {
+	log.Printf("channel_listings: %s falló product=%d connection=%d map=%d external=%s: %v", action, listing.ProductID, listing.ConnectionID, listing.ID, derefStr(listing.ExternalID), err)
 	ctx, cancel := bookkeepingContext(ctx)
 	defer cancel()
 	if setErr := s.channelProductMapRepository.SetLastError(ctx, listing.ID, err.Error()); setErr != nil {
