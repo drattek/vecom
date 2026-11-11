@@ -37,6 +37,8 @@ const (
 	// ecom_channel_product_map's own status enum by foldMercadoLibreStatus.
 	mercadoLibreStatusUnderReview = "under_review"
 	mercadoLibreStatusPaused      = "paused"
+	mercadoLibreStatusClosed      = "closed"
+	mercadoLibreStatusInactive    = "inactive"
 
 	// mercadoLibreSubStatusForbidden is a sub_status MercadoLibre reports
 	// alongside status "under_review" for a listing that will never clear
@@ -969,9 +971,10 @@ func (s *MercadoLibreProductSyncService) reconcileStatusAfterFailedUpdate(ctx co
 // review flow, so treating it as merely "under review" would make
 // RefreshChannelProductMapStatus (and anything gating on the closed /
 // under_review statuses) keep expecting it to come back on its own. Absent
-// that, under_review and paused each map to their own distinct value; every other MercadoLibre status (active, closed,
-// inactive, ...) folds into mercadoLibreMapStatusSynced since none of them
-// are branched on today.
+// that, under_review and paused each map to their own distinct value; closed
+// and inactive (both unmodifiable on MercadoLibre) fold into
+// mercadoLibreMapStatusClosed; every other status (active, ...) folds into
+// mercadoLibreMapStatusSynced.
 func foldMercadoLibreStatus(rawStatus string, subStatus []string) string {
 	for _, s := range subStatus {
 		if strings.EqualFold(strings.TrimSpace(s), mercadoLibreSubStatusForbidden) {
@@ -984,6 +987,10 @@ func foldMercadoLibreStatus(rawStatus string, subStatus []string) string {
 		return mercadoLibreMapStatusUnderReview
 	case mercadoLibreStatusPaused:
 		return mercadoLibreMapStatusPaused
+	case mercadoLibreStatusClosed, mercadoLibreStatusInactive:
+		// MercadoLibre rejects every modification of a closed or inactive item
+		// ("price is not modifiable", ...), so it is as dead as a forbidden one.
+		return mercadoLibreMapStatusClosed
 	default:
 		return mercadoLibreMapStatusSynced
 	}
