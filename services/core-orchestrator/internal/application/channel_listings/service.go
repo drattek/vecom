@@ -33,6 +33,11 @@ const (
 	// resyncDetachedTimeout bounds a manual resync that keeps running after the
 	// HTTP client gave up (see ResyncProductListings).
 	resyncDetachedTimeout = 10 * time.Minute
+	// publishDetachedTimeout bounds a manual publish (CreateListings) that keeps
+	// running after the HTTP client gave up: a product with dozens of listings
+	// (e.g. republishing those MercadoLibre closed) takes longer than a browser
+	// or proxy waits.
+	publishDetachedTimeout = 20 * time.Minute
 	// bookkeepingTimeout bounds writes of last_error / listing events, which
 	// must survive a cancelled request context.
 	bookkeepingTimeout = 10 * time.Second
@@ -393,6 +398,13 @@ func (s *Service) CreateListings(ctx context.Context, input CreateListingsInput)
 	if input.ConnectionID <= 0 || len(skus) == 0 {
 		return nil, ErrEmptyChannelListingsInput
 	}
+
+	// Publicar decenas de listings puede tardar más de lo que espera el navegador
+	// o el proxy. Si se cancela el contexto de la petición a media tarea, la
+	// publicación quedaría a medias, así que corre completa sobre un contexto
+	// acotado y no cancelable por el cliente.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), publishDetachedTimeout)
+	defer cancel()
 
 	connection, publisher, err := s.resolveConnectionPublisher(ctx, input.ConnectionID)
 	if err != nil {

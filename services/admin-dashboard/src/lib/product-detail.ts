@@ -204,6 +204,13 @@ const PUBLISH_LISTING_TIMEOUT_MS = 90_000
  */
 const RESYNC_LISTING_TIMEOUT_MS = 600_000
 
+/**
+ * Publicar un producto con decenas de listings (p. ej. republicar los que
+ * MercadoLibre cerró) puede tardar varios minutos. El core lo deja correr hasta
+ * 20 min aunque el cliente se desconecte.
+ */
+const PUBLISH_PRODUCT_TIMEOUT_MS = 1_200_000
+
 export function usePublishChannelListing(productId: string | undefined) {
     const queryClient = useQueryClient()
     return useMutation({
@@ -211,7 +218,7 @@ export function usePublishChannelListing(productId: string | undefined) {
             const response = await apiClient.post(
                 "/api/channel-listings/publish",
                 { connectionId: input.connectionId, skus: [input.sku] },
-                { timeout: PUBLISH_LISTING_TIMEOUT_MS },
+                { timeout: PUBLISH_PRODUCT_TIMEOUT_MS },
             )
             return createListingsResultSchema.parse(response.data)
         },
