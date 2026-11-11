@@ -451,6 +451,10 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 		return false, nil
 	}
 
+	if basePrice <= 0 {
+		return false, nil
+	}
+
 	finalPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
 	if err != nil {
 		return false, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
@@ -638,6 +642,12 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 	stocks, err := s.productStockRepository.FindByProductID(ctx, product.ID)
 	if err != nil {
 		return false, fmt.Errorf("error loading stock for product %d: %w", product.ID, err)
+	}
+
+	// Sin precio base (antes de la fórmula) no se sincroniza, aunque la fórmula
+	// deje un precio final > 0 (p. ej. por montos fijos).
+	if basePrice <= 0 {
+		return false, nil
 	}
 
 	finalPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
@@ -1171,6 +1181,11 @@ func (s *MercadoLibreProductSyncService) resolvePriceStockAndToken(ctx context.C
 			return 0, 0, "", fmt.Errorf("no active price list entry for product %d: %w", productID, err)
 		}
 		return 0, 0, "", fmt.Errorf("error loading effective price for product %d: %w", productID, err)
+	}
+	// El precio base (antes de la fórmula) debe existir: la fórmula puede sumar
+	// montos fijos y dejar un precio final > 0 a partir de un precio base de 0.
+	if basePrice <= 0 {
+		return 0, 0, "", fmt.Errorf("el producto %d no tiene precio base (> 0) asignado; no se puede publicar: %w", productID, mysqlInfra.ErrProductPriceNotFound)
 	}
 	finalPrice, err = s.formulaCalculator.CalculatePrice(ctx, brandID, connectionID, priceListID, basePrice)
 	if err != nil {

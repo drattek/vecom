@@ -214,6 +214,12 @@ func (s *Service) hasSellablePrice(ctx context.Context, product mysqlInfra.Ready
 		return false, err
 	}
 
+	// El precio base (antes de la fórmula) debe ser > 0: la fórmula puede sumar
+	// montos fijos y volver "vendible" un producto sin precio.
+	if basePrice <= 0 {
+		return false, nil
+	}
+
 	brandID := product.BrandID
 	finalPrice, err := s.formula.CalculatePrice(ctx, &brandID, connectionID, priceListID, basePrice)
 	if err != nil {

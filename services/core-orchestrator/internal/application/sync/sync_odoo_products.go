@@ -244,6 +244,11 @@ func (s *OdooProductSyncService) Publish(ctx context.Context, product *mysqlInfr
 		}
 		return "", nil, nil, fmt.Errorf("error loading effective price for product %d: %w", product.ID, err)
 	}
+	// El precio base (antes de la fórmula) debe existir y ser > 0: la fórmula puede
+	// sumar montos fijos y dejar un precio final > 0 a partir de un base de 0.
+	if basePrice <= 0 {
+		return "", nil, nil, fmt.Errorf("el producto %d no tiene precio base (> 0) asignado; no se puede publicar: %w", product.ID, mysqlInfra.ErrProductPriceNotFound)
+	}
 	listPrice, err := s.formulaCalculator.CalculatePrice(ctx, product.BrandID, connectionID, priceListID, basePrice)
 	if err != nil {
 		return "", nil, nil, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
@@ -305,6 +310,11 @@ func (s *OdooProductSyncService) Refresh(ctx context.Context, product *mysqlInfr
 	}
 
 	if odooRefreshPriceStockGateEnabled && !priceOrStockChangedSince(priceUpdatedAt, stocks, listing.LastSyncedAt) {
+		return false, nil
+	}
+
+	// Sin precio base (antes de la fórmula) no se sincroniza.
+	if basePrice <= 0 {
 		return false, nil
 	}
 
@@ -399,6 +409,11 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 	stocks, err := s.productStockRepository.FindByProductID(ctx, product.ID)
 	if err != nil {
 		return false, fmt.Errorf("error loading stock for product %d: %w", product.ID, err)
+	}
+
+	// Sin precio base (antes de la fórmula) no se sincroniza.
+	if basePrice <= 0 {
+		return false, nil
 	}
 
 	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
