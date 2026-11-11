@@ -285,6 +285,49 @@ func (h *ProductsHandler) UpdateProductPriceStock(ctx context.Context, req Updat
 	return h.client.Call(ctx, req.Credentials, "product.template", "write", params, nil)
 }
 
+// ActiveLanguageCodes returns the codes (es_MX, en_US, ...) of the languages
+// installed and active in Odoo.
+func (h *ProductsHandler) ActiveLanguageCodes(ctx context.Context, credentials Credentials) ([]string, error) {
+	params := map[string]any{
+		"domain": []any{[]any{"active", "=", true}},
+		"fields": []string{"code"},
+	}
+
+	var rows []struct {
+		Code string `json:"code"`
+	}
+	if err := h.client.Call(ctx, credentials, "res.lang", "search_read", params, &rows); err != nil {
+		return nil, err
+	}
+
+	codes := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if row.Code != "" {
+			codes = append(codes, row.Code)
+		}
+	}
+	return codes, nil
+}
+
+// UpdateProductNameInLanguages writes product.template.name once per language.
+// The field is translatable and a plain write only updates the API user's own
+// language (create stores en_US plus that language), so a rename sent without
+// this leaves the old name in every other language — including en_US, the
+// source one the storefront may fall back to.
+func (h *ProductsHandler) UpdateProductNameInLanguages(ctx context.Context, credentials Credentials, externalID int64, name string, languages []string) error {
+	for _, lang := range languages {
+		params := map[string]any{
+			"ids":     []int64{externalID},
+			"vals":    map[string]any{"name": name},
+			"context": map[string]any{"lang": lang},
+		}
+		if err := h.client.Call(ctx, credentials, "product.template", "write", params, nil); err != nil {
+			return fmt.Errorf("error writing name in language %s: %w", lang, err)
+		}
+	}
+	return nil
+}
+
 // UpdateProductVegusaFields writes only website_vegusa's vg_sku and
 // vg_short_description on an existing product.template (empty values are
 // skipped) — used by flows that must not touch name/price/stock.

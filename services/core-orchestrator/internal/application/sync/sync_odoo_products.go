@@ -723,6 +723,15 @@ func (s *OdooProductSyncService) update(
 		return fmt.Errorf("error updating odoo product %d (local product %d): %w", externalID, productID, err)
 	}
 
+	// name is a translatable field: the write above only reached the API
+	// user's language, so push the title to every active language too.
+	languages, err := productsHandler.ActiveLanguageCodes(ctx, credentials)
+	if err != nil {
+		log.Printf("odoo update: product %d (odoo template %d) — could not list active languages, title only written in the API user's language: %v", productID, externalID, err)
+	} else if err := productsHandler.UpdateProductNameInLanguages(ctx, credentials, externalID, title, languages); err != nil {
+		return fmt.Errorf("error updating title of odoo product %d (local product %d): %w", externalID, productID, err)
+	}
+
 	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
 		ProductID:          productID,
 		ConnectionID:       connectionID,
