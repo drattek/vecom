@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode/utf8"
 
 	channelAttributeValuesApp "core-orchestrator/internal/application/channel_attribute_values"
 	pricingApp "core-orchestrator/internal/application/pricing"
@@ -517,7 +518,7 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 		if err != nil {
 			log.Printf("mercadolibre: product %d — error loading brand %d for family_name refresh, leaving title unchanged: %v", product.ID, *product.BrandID, err)
 		} else {
-			familyName = strings.TrimSpace(withNissanOriginalSuffix(product.BrandID, derefString(listing.ListingTitle)) + " " + brand.Name)
+			familyName = mercadoLibreFamilyName(product.BrandID, derefString(listing.ListingTitle), brand.Name, product.PartNumber)
 		}
 	}
 
@@ -1102,6 +1103,31 @@ func withNissanOriginalSuffix(brandID *int64, name string) string {
 	return name
 }
 
+// mercadoLibreFamilyNameMaxRunes is MercadoLibre's cap for family_name (title).
+const mercadoLibreFamilyNameMaxRunes = 60
+
+// mercadoLibreFamilyName builds the family_name (title) sent to MercadoLibre:
+// "<title> [Original] <brand>" (see withNissanOriginalSuffix) followed by the
+// product's part number, e.g. "Filtro De Cabina Nissan SAR1234". The part
+// number is only appended when the title does not already contain it (as a
+// whole token, case-insensitive), and never when the result would exceed
+// MercadoLibre's 60-character cap — then the title is sent as it was before
+// rather than truncating its words.
+func mercadoLibreFamilyName(brandID *int64, listingName, brandName, partNumber string) string {
+	title := strings.TrimSpace(withNissanOriginalSuffix(brandID, listingName) + " " + brandName)
+
+	partNumber = strings.TrimSpace(partNumber)
+	if partNumber == "" || indexOfToken(title, strings.ToUpper(partNumber)) >= 0 {
+		return title
+	}
+
+	withPartNumber := title + " " + partNumber
+	if utf8.RuneCountInString(withPartNumber) > mercadoLibreFamilyNameMaxRunes {
+		return title
+	}
+	return withPartNumber
+}
+
 // mercadoLibreRefreshPriceStockGateEnabled gates Refresh so it only calls out
 // to MercadoLibre when product's price or stock actually changed since
 // listing.LastSyncedAt (priceOrStockChangedSince below) — see
@@ -1480,7 +1506,7 @@ func (s *MercadoLibreProductSyncService) createNewItem(
 		CategoryID:        externalCategoryID,
 		OfficialStoreID:   officialStoreID,
 		Status:            initialStatus,
-		FamilyName:        strings.TrimSpace(withNissanOriginalSuffix(product.BrandID, listingName) + " " + brand.Name),
+		FamilyName:        mercadoLibreFamilyName(product.BrandID, listingName, brand.Name, product.PartNumber),
 		Pictures:          pictures,
 		Attributes:        attributes,
 	}
