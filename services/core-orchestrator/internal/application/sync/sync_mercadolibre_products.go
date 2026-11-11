@@ -689,6 +689,11 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 			Attributes:        attributes,
 		},
 	}); err != nil {
+		// The update may have been rejected precisely because MercadoLibre moved
+		// the listing to under_review/closed (or paused it) since the last sync:
+		// record whatever status it reports now, so the local state never stays
+		// "synced" for a listing that isn't.
+		s.reconcileStatusAfterFailedUpdate(ctx, accessToken, product.ID, connectionID, listing, externalCategoryID)
 		if isUnderReview {
 			log.Printf("mercadolibre: resync — listing %s still under review, leaving status unchanged: %v", externalID, err)
 			return false, nil
@@ -919,6 +924,40 @@ func fitmentIDsEqual(a, b *int64) bool {
 		return a == nil && b == nil
 	}
 	return *a == *b
+}
+
+// reconcileStatusAfterFailedUpdate re-reads listing's live status on
+// MercadoLibre after an UpdateItem rejection and, when it differs from the
+// recorded one, persists it in ecom_channel_product_map (a listing MercadoLibre
+// moved to under_review/closed, or that someone paused, would otherwise stay
+// "synced" locally). Best effort: if the live status can't be read or saved
+// the original update error is still what the caller reports.
+func (s *MercadoLibreProductSyncService) reconcileStatusAfterFailedUpdate(ctx context.Context, accessToken string, productID, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO, externalCategoryID string) {
+	externalID := derefString(listing.ExternalID)
+	liveStatus := s.liveListingStatus(ctx, accessToken, externalID, listing.Status)
+	if liveStatus == listing.Status {
+		return
+	}
+
+	pausedReason := ""
+	if liveStatus == mercadoLibreMapStatusPaused {
+		pausedReason = "user"
+	}
+	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
+		ProductID:          productID,
+		ConnectionID:       connectionID,
+		VehicleFitmentID:   listing.VehicleFitmentID,
+		ListingTitle:       derefString(listing.ListingTitle),
+		ExternalID:         externalID,
+		ExternalCategoryID: externalCategoryID,
+		Status:             liveStatus,
+		PausedReason:       pausedReason,
+		ActorID:            systemMercadoLibreSyncActorID,
+	}); err != nil {
+		log.Printf("mercadolibre: listing %s — could not record live status %q after a failed update: %v", externalID, liveStatus, err)
+		return
+	}
+	log.Printf("mercadolibre: listing %s status reconciled %q -> %q after a failed update", externalID, listing.Status, liveStatus)
 }
 
 // foldMercadoLibreStatus maps a raw MercadoLibre item status (plus its
