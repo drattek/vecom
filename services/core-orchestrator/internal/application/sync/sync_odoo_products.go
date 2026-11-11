@@ -468,7 +468,7 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 			if parseErr != nil {
 				return false, fmt.Errorf("error parsing external id %q for product %d: %w", externalIDStr, product.ID, parseErr)
 			}
-			if err := productsHandler.UpdateProductSKU(ctx, credentials, externalID, strings.TrimSpace(product.SKU)); err != nil {
+			if err := productsHandler.UpdateProductVegusaFields(ctx, credentials, externalID, strings.TrimSpace(product.SKU), odooShortDescription(product)); err != nil {
 				return false, fmt.Errorf("error updating SKU of odoo product %d (local product %d): %w", externalID, product.ID, err)
 			}
 			if err := s.syncProductExtras(ctx, productInfoHandler, fitmentsHandler, credentials, connectionID, product, externalID); err != nil {
@@ -641,7 +641,7 @@ func (s *OdooProductSyncService) update(
 	// sends it with no omitempty), rather than leaving a stale one behind.
 	var descriptionEcommerce string
 	if product.Description != nil && strings.TrimSpace(*product.Description) != "" {
-		descriptionEcommerce = *product.Description
+		descriptionEcommerce = odooDescriptionHTML(*product.Description)
 	}
 
 	vals := odooInfra.UpdateProductVals{
@@ -652,6 +652,7 @@ func (s *OdooProductSyncService) update(
 		Volume:               volume,
 		DescriptionEcommerce: descriptionEcommerce,
 		VgSKU:                strings.TrimSpace(product.SKU),
+		VgShortDescription:   odooShortDescription(product),
 	}
 
 	externalCategoryID := derefString(existingMap.ExternalCategoryID)
@@ -894,7 +895,7 @@ func (s *OdooProductSyncService) create(
 	// unset rather than falling back to title.
 	var descriptionEcommerce string
 	if product.Description != nil && strings.TrimSpace(*product.Description) != "" {
-		descriptionEcommerce = *product.Description
+		descriptionEcommerce = odooDescriptionHTML(*product.Description)
 	}
 
 	// Seed sale_ok / status based on the sync_zero_stock_as_paused flow. A
@@ -928,6 +929,7 @@ func (s *OdooProductSyncService) create(
 		Image1920:            coverImageBase64,
 		DefaultCode:          product.PartNumber,
 		VgSKU:                strings.TrimSpace(product.SKU),
+		VgShortDescription:   odooShortDescription(product),
 		ShowAvailability:     true,
 		IsStorable:           true,
 		AllowOutOfStockOrder: false,
@@ -991,6 +993,23 @@ func (s *OdooProductSyncService) create(
 	}
 
 	return externalIDStr, missingRequired, missingOptional, nil
+}
+
+// odooShortDescriptionMaxRunes is the size of website_vegusa's
+// vg_short_description Char field.
+const odooShortDescriptionMaxRunes = 200
+
+// odooShortDescription returns the product's short description trimmed and cut
+// to what vg_short_description accepts (the Excel/UI allow up to 255).
+func odooShortDescription(product *mysqlInfra.ProductDTO) string {
+	if product.ShortDescription == nil {
+		return ""
+	}
+	runes := []rune(strings.TrimSpace(*product.ShortDescription))
+	if len(runes) > odooShortDescriptionMaxRunes {
+		runes = runes[:odooShortDescriptionMaxRunes]
+	}
+	return string(runes)
 }
 
 // normalizeOdooTitle applies Odoo's own naming convention to a listing
