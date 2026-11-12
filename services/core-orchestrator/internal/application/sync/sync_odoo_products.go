@@ -401,6 +401,26 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 		return false, nil
 	}
 
+	// Solo cuenta la categoría elegida para ESTA conexión (nunca la del producto
+	// como respaldo) y debe estar ya mapeada a Odoo. Sin mapeo, update() la
+	// crearía en Odoo (con todos sus ancestros), lo que tarda lo suficiente para
+	// provocar un 504; esa creación solo ocurre al publicar.
+	selection, err := s.categorySelectionRepository.FindByProductAndConnection(ctx, product.ID, connectionID)
+	if err != nil {
+		if errors.Is(err, mysqlInfra.ErrChannelProductCategorySelectionNotFound) {
+			log.Printf("odoo resync: product %d (odoo template %s) has no category selected on connection %d, skipped", product.ID, externalIDStr, connectionID)
+			return false, nil
+		}
+		return false, fmt.Errorf("error loading category selection for product %d: %w", product.ID, err)
+	}
+	if _, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, selection.CategoryID, connectionID); err != nil {
+		if errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
+			log.Printf("odoo resync: product %d (odoo template %s) — category %d is not mapped on connection %d, skipped", product.ID, externalIDStr, selection.CategoryID, connectionID)
+			return false, nil
+		}
+		return false, fmt.Errorf("error loading channel category map for category %d: %w", selection.CategoryID, err)
+	}
+
 	// The manual resync is mandatory: it is never skipped because of the
 	// listing's status or its stock (zero stock, paused, ...). The only reason
 	// not to push is a missing or zero price, checked right after the price is
