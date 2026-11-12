@@ -69,17 +69,57 @@ func (h *ImagesHandler) SearchProductImageIDs(ctx context.Context, credentials C
 	return ids, nil
 }
 
-// DeleteProductImages calls product.image/unlink to remove every id in ids —
-// a no-op (no call made) when ids is empty, since Odoo's unlink rejects an
-// empty id list.
-func (h *ImagesHandler) DeleteProductImages(ctx context.Context, credentials Credentials, ids []int64) error {
-	if len(ids) == 0 {
-		return nil
+const (
+	// deleteImagesBatchSize: unlink de product.image es lento (borra también
+	// el adjunto); en lotes chicos cada llamada queda por debajo del timeout
+	// de 100 s de Cloudflare (error 524).
+	deleteImagesBatchSize = 3
+	// deleteImagesMaxAttempts: intentos por lote ante un error de gateway.
+	deleteImagesMaxAttempts = 3
+)
+
+// DeleteProductImages calls product.image/unlink to remove every id in ids, in
+// small batches — a no-op (no call made) when ids is empty, since Odoo's
+// unlink rejects an empty id list.
+//
+// A gateway timeout (524, 504...) does not mean the unlink failed: Odoo usually
+// keeps working after the proxy gave up. So on that error the batch is
+// re-checked against Odoo (only ids that still exist are retried; unlinking a
+// missing id raises an error) and retried.
+func (h *ImagesHandler) DeleteProductImages(ctx context.Context, credentials Credentials, productTemplateID int64, ids []int64) error {
+	for start := 0; start < len(ids); start += deleteImagesBatchSize {
+		end := start + deleteImagesBatchSize
+		if end > len(ids) {
+			end = len(ids)
+		}
+		batch := ids[start:end]
+
+		for attempt := 1; len(batch) > 0; attempt++ {
+			err := h.client.Call(ctx, credentials, "product.image", "unlink", map[string]any{"ids": batch}, nil)
+			if err == nil {
+				break
+			}
+			if !IsGatewayTimeout(err) || attempt >= deleteImagesMaxAttempts {
+				return err
+			}
+
+			remaining, searchErr := h.SearchProductImageIDs(ctx, credentials, productTemplateID)
+			if searchErr != nil {
+				return err
+			}
+			still := make(map[int64]bool, len(remaining))
+			for _, id := range remaining {
+				still[id] = true
+			}
+			pending := make([]int64, 0, len(batch))
+			for _, id := range batch {
+				if still[id] {
+					pending = append(pending, id)
+				}
+			}
+			batch = pending
+		}
 	}
 
-	params := map[string]any{
-		"ids": ids,
-	}
-
-	return h.client.Call(ctx, credentials, "product.image", "unlink", params, nil)
+	return nil
 }

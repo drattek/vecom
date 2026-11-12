@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -46,6 +47,36 @@ type apiError struct {
 	Message string `json:"message"`
 }
 
+// StatusError is the error Call returns for a non-200 response, so callers can
+// react to the HTTP status (errors.As) — e.g. retry a gateway timeout.
+type StatusError struct {
+	Model   string
+	Method  string
+	Status  int
+	Message string
+}
+
+func (e *StatusError) Error() string {
+	if e.Message != "" {
+		return fmt.Sprintf("odoo %s.%s failed (%d): %s", e.Model, e.Method, e.Status, e.Message)
+	}
+	return fmt.Sprintf("odoo %s.%s failed with status %d", e.Model, e.Method, e.Status)
+}
+
+// IsGatewayTimeout reports whether err is a proxy/gateway error (502, 503,
+// 504, or Cloudflare's 524): the request may well have completed in Odoo.
+func IsGatewayTimeout(err error) bool {
+	var statusErr *StatusError
+	if !errors.As(err, &statusErr) {
+		return false
+	}
+	switch statusErr.Status {
+	case 502, 503, 504, 524:
+		return true
+	}
+	return false
+}
+
 // Call invokes POST {baseURL}/json/2/{model}/{method}, per Odoo's External
 // JSON-2 API (https://www.odoo.com/documentation/19.0/developer/reference/external_api.html),
 // and decodes the response body into out.
@@ -85,10 +116,8 @@ func (c *Client) Call(ctx context.Context, credentials Credentials, model, metho
 
 	if response.StatusCode != http.StatusOK {
 		var errPayload apiError
-		if json.Unmarshal(responsePayload, &errPayload) == nil && errPayload.Message != "" {
-			return fmt.Errorf("odoo %s.%s failed (%d): %s", model, method, response.StatusCode, errPayload.Message)
-		}
-		return fmt.Errorf("odoo %s.%s failed with status %d", model, method, response.StatusCode)
+		_ = json.Unmarshal(responsePayload, &errPayload)
+		return &StatusError{Model: model, Method: method, Status: response.StatusCode, Message: errPayload.Message}
 	}
 
 	if out == nil {

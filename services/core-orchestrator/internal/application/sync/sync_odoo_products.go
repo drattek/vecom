@@ -772,7 +772,7 @@ func (s *OdooProductSyncService) update(
 		if err != nil {
 			return fmt.Errorf("error listing existing odoo images for product %d (odoo template %d): %w", productID, externalID, err)
 		}
-		if err := imagesHandler.DeleteProductImages(ctx, credentials, existingImageIDs); err != nil {
+		if err := imagesHandler.DeleteProductImages(ctx, credentials, externalID, existingImageIDs); err != nil {
 			return fmt.Errorf("error deleting existing odoo images for product %d (odoo template %d): %w", productID, externalID, err)
 		}
 		for i, image := range extraImages {
