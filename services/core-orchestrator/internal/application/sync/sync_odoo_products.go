@@ -1106,8 +1106,9 @@ func (s *OdooProductSyncService) createOdooVideos(
 }
 
 // odooShortDescriptionMaxRunes is the size of website_vegusa's
-// vg_short_description Char field.
-const odooShortDescriptionMaxRunes = 200
+// vg_short_description Char field (ampliado a 255 en Odoo, igual que el
+// máximo de la descripción corta local).
+const odooShortDescriptionMaxRunes = 255
 
 // odooShortDescription returns the product's short description trimmed and cut
 // to what vg_short_description accepts (the Excel/UI allow up to 255).

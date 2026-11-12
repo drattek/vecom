@@ -162,7 +162,7 @@ type CreateProductVals struct {
 	// VgSKU is website_vegusa's vg_sku (the product's SKU, distinct from
 	// default_code which carries the part number).
 	VgSKU                string  `json:"vg_sku,omitempty"`
-	// VgShortDescription is website_vegusa's vg_short_description (max 200 chars).
+	// VgShortDescription is website_vegusa's vg_short_description (max 255 chars).
 	VgShortDescription   string  `json:"vg_short_description,omitempty"`
 	ShowAvailability     bool    `json:"show_availability"`
 	IsStorable           bool    `json:"is_storable"`
@@ -224,7 +224,7 @@ type UpdateProductVals struct {
 	DescriptionEcommerce string  `json:"description_ecommerce"`
 	// VgSKU is website_vegusa's vg_sku; omitted when the product has no SKU.
 	VgSKU string `json:"vg_sku,omitempty"`
-	// VgShortDescription is website_vegusa's vg_short_description (max 200
+	// VgShortDescription is website_vegusa's vg_short_description (max 255
 	// chars); omitted when empty, so it never blanks an existing one.
 	VgShortDescription string `json:"vg_short_description,omitempty"`
 	// IsPublished (website.published.mixin's is_published) makes the product
