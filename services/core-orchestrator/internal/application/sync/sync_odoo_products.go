@@ -389,6 +389,18 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 		return false, nil
 	}
 
+	// Un producto sin imagen de portada no se actualiza: Odoo lo tiene como "No
+	// publicado" (publicar exige portada) y reescribirlo solo ensucia el
+	// listado. Se reporta como omitido (la fila de la cola termina en done).
+	images, err := s.productImagesRepository.FindAllByProductID(ctx, product.ID)
+	if err != nil {
+		return false, fmt.Errorf("error loading images for product %d: %w", product.ID, err)
+	}
+	if cover, _ := splitOdooImages(images); cover == nil {
+		log.Printf("odoo resync: product %d (odoo template %s) has no cover image, skipped", product.ID, externalIDStr)
+		return false, nil
+	}
+
 	// The manual resync is mandatory: it is never skipped because of the
 	// listing's status or its stock (zero stock, paused, ...). The only reason
 	// not to push is a missing or zero price, checked right after the price is
