@@ -77,14 +77,64 @@ func IsGatewayTimeout(err error) bool {
 	return false
 }
 
+// gatewayRetryDelays: espera antes de cada reintento ante un error de gateway
+// (hasta len+1 intentos en total).
+var gatewayRetryDelays = []time.Duration{2 * time.Second, 5 * time.Second, 10 * time.Second}
+
+// retryableMethods son los métodos que se pueden repetir sin efectos
+// secundarios: el 502/524 no dice si Odoo llegó a ejecutar la llamada, y repetir
+// un create podría duplicar el registro (y un unlink ya aplicado falla por id
+// inexistente — ver ImagesHandler.DeleteProductImages, que lo maneja aparte).
+var retryableMethods = map[string]bool{
+	"write":        true,
+	"read":         true,
+	"search":       true,
+	"search_read":  true,
+	"search_count": true,
+	"fields_get":   true,
+}
+
 // Call invokes POST {baseURL}/json/2/{model}/{method}, per Odoo's External
 // JSON-2 API (https://www.odoo.com/documentation/19.0/developer/reference/external_api.html),
 // and decodes the response body into out.
+//
+// Cada intento respeta el rate limit y el tope de llamadas en vuelo del
+// limiter compartido. Ante un error de gateway (502/503/504/524) las llamadas
+// idempotentes (retryableMethods) se reintentan con espera creciente.
 func (c *Client) Call(ctx context.Context, credentials Credentials, model, method string, params map[string]any, out any) error {
+	for attempt := 0; ; attempt++ {
+		err := c.callLimited(ctx, credentials, model, method, params, out)
+		if err == nil || !retryableMethods[method] || !IsGatewayTimeout(err) || attempt >= len(gatewayRetryDelays) {
+			return err
+		}
+
+		timer := time.NewTimer(gatewayRetryDelays[attempt])
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return err
+		case <-timer.C:
+		}
+	}
+}
+
+// callLimited waits for the rate limit and an in-flight slot, then does one
+// request.
+func (c *Client) callLimited(ctx context.Context, credentials Credentials, model, method string, params map[string]any, out any) error {
 	if err := c.limiter.Wait(ctx); err != nil {
 		return fmt.Errorf("error waiting for odoo %s.%s rate limit: %w", model, method, err)
 	}
 
+	release, err := c.limiter.Acquire(ctx)
+	if err != nil {
+		return fmt.Errorf("error waiting for odoo %s.%s slot: %w", model, method, err)
+	}
+	defer release()
+
+	return c.callOnce(ctx, credentials, model, method, params, out)
+}
+
+func (c *Client) callOnce(ctx context.Context, credentials Credentials, model, method string, params map[string]any, out any) error {
 	payload, err := json.Marshal(params)
 	if err != nil {
 		return fmt.Errorf("error encoding odoo %s.%s request: %w", model, method, err)

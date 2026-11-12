@@ -16,11 +16,34 @@ type RateLimiter struct {
 	max    int
 	window time.Duration
 	calls  []time.Time
+	// inFlight es un semáforo con las llamadas simultáneas permitidas: el rate
+	// limit solo cuenta cuándo EMPIEZA cada llamada, así que varias llamadas
+	// lentas (subir fotos, unlink) podían acumularse y saturar los workers de
+	// Odoo (502/524).
+	inFlight chan struct{}
+}
+
+// MaxInFlightCalls es cuántas llamadas a Odoo puede haber en curso a la vez.
+const MaxInFlightCalls = 2
+
+// Acquire reserves one in-flight slot, blocking until one is free or ctx is
+// cancelled, and returns the function that releases it.
+func (r *RateLimiter) Acquire(ctx context.Context) (func(), error) {
+	if r == nil {
+		return func() {}, nil
+	}
+
+	select {
+	case r.inFlight <- struct{}{}:
+		return func() { <-r.inFlight }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
 }
 
 // NewRateLimiter builds a limiter allowing at most max calls within window.
 func NewRateLimiter(max int, window time.Duration) *RateLimiter {
-	return &RateLimiter{max: max, window: window}
+	return &RateLimiter{max: max, window: window, inFlight: make(chan struct{}, MaxInFlightCalls)}
 }
 
 // Wait blocks until a call is allowed under the limiter's budget, or returns
