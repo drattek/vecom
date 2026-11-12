@@ -19,8 +19,10 @@ func NewImagesHandler(client *Client) *ImagesHandler {
 // product itself via product.template/create, not through this model).
 type CreateProductImageVals struct {
 	ProductTemplateID int64  `json:"product_tmpl_id"`
-	Image1920         string `json:"image_1920"`
-	Name              string `json:"name"`
+	Image1920         string `json:"image_1920,omitempty"`
+	// VideoURL: enlace de YouTube; con él product.image no necesita imagen.
+	VideoURL string `json:"video_url,omitempty"`
+	Name     string `json:"name"`
 }
 
 type CreateProductImageRequest struct {
