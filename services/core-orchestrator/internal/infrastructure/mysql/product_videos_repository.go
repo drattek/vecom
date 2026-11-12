@@ -126,6 +126,34 @@ func (r *ProductVideosRepository) FindByProductID(ctx context.Context, productID
 	return &PaginatedProductVideos{Data: videos, Total: total}, nil
 }
 
+// FindAllByProductID returns every non-deleted video of the product, oldest
+// first (no pagination) — used by the marketplace syncs.
+func (r *ProductVideosRepository) FindAllByProductID(ctx context.Context, productID int64) ([]ProductVideoDTO, error) {
+	query := `
+		SELECT id, product_id, file_id, created_by, updated_by, created_at, updated_at
+		FROM ecom_product_videos
+		WHERE product_id = ? AND deleted_at IS NULL
+		ORDER BY id ASC
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, productID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	videos := make([]ProductVideoDTO, 0)
+	for rows.Next() {
+		var p ProductVideoDTO
+		if err := rows.Scan(&p.ID, &p.ProductID, &p.FileID, &p.CreatedBy, &p.UpdatedBy, &p.CreatedAt, &p.UpdatedAt); err != nil {
+			return nil, err
+		}
+		videos = append(videos, p)
+	}
+
+	return videos, rows.Err()
+}
+
 // FindByProductAndFile looks up an existing ecom_product_videos row linking a
 // file to a product, so callers that receive the same URL twice can reuse the
 // existing row instead of inserting a duplicate.

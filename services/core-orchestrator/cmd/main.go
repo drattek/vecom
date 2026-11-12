@@ -408,6 +408,7 @@ func main() {
 		mysqlRepos.ProductStockRepository,
 		mysqlRepos.ProductDimensionsRepository,
 		mysqlRepos.ProductImagesRepository,
+		mysqlRepos.ProductVideosRepository,
 		mysqlRepos.FilesRepository,
 		mysqlRepos.CurrenciesRepository,
 		mysqlRepos.CategoriesRepository,

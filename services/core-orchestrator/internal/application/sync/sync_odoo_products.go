@@ -91,6 +91,7 @@ type OdooProductSyncService struct {
 	productStockRepository       *mysqlInfra.ProductStockRepository
 	productDimensionsRepository  *mysqlInfra.ProductDimensionsRepository
 	productImagesRepository      *mysqlInfra.ProductImagesRepository
+	productVideosRepository      *mysqlInfra.ProductVideosRepository
 	filesRepository              *mysqlInfra.FilesRepository
 	currenciesRepository         *mysqlInfra.CurrenciesRepository
 	categoriesRepository         *mysqlInfra.CategoriesRepository
@@ -144,6 +145,7 @@ func NewOdooProductSyncService(
 	productStockRepository *mysqlInfra.ProductStockRepository,
 	productDimensionsRepository *mysqlInfra.ProductDimensionsRepository,
 	productImagesRepository *mysqlInfra.ProductImagesRepository,
+	productVideosRepository *mysqlInfra.ProductVideosRepository,
 	filesRepository *mysqlInfra.FilesRepository,
 	currenciesRepository *mysqlInfra.CurrenciesRepository,
 	categoriesRepository *mysqlInfra.CategoriesRepository,
@@ -169,6 +171,7 @@ func NewOdooProductSyncService(
 		productStockRepository:        productStockRepository,
 		productDimensionsRepository:   productDimensionsRepository,
 		productImagesRepository:       productImagesRepository,
+		productVideosRepository:       productVideosRepository,
 		filesRepository:               filesRepository,
 		currenciesRepository:          currenciesRepository,
 		categoriesRepository:          categoriesRepository,
@@ -704,10 +707,7 @@ func (s *OdooProductSyncService) update(
 		return fmt.Errorf("error loading images for product %d: %w", productID, err)
 	}
 
-	coverImage, extraImages, videoURLs, err := s.splitOdooMedia(ctx, images)
-	if err != nil {
-		return fmt.Errorf("error classifying media for product %d: %w", productID, err)
-	}
+	coverImage, extraImages := splitOdooImages(images)
 
 	if coverImage != nil {
 		coverImageBase64, err := s.downloadImageAsBase64(ctx, coverImage.FileID)
@@ -793,7 +793,7 @@ func (s *OdooProductSyncService) update(
 		}
 
 		// Los videos de YouTube van siempre al final, después de todas las fotos.
-		if err := s.createOdooVideos(ctx, imagesHandler, credentials, externalID, product.SKU, videoURLs); err != nil {
+		if err := s.createOdooVideos(ctx, imagesHandler, credentials, externalID, product.SKU, productID); err != nil {
 			return err
 		}
 	}
@@ -901,10 +901,7 @@ func (s *OdooProductSyncService) create(
 		return "", missingRequired, missingOptional, fmt.Errorf("error loading images for product %d: %w", imageSourceProductID, err)
 	}
 
-	coverImage, extraImages, videoURLs, err := s.splitOdooMedia(ctx, images)
-	if err != nil {
-		return "", missingRequired, missingOptional, err
-	}
+	coverImage, extraImages := splitOdooImages(images)
 
 	if coverImage == nil {
 		return "", missingRequired, missingOptional, fmt.Errorf("%w: product %d has no cover image (is_first) (image source product %d)", workers.ErrSyncNotReady, product.ID, imageSourceProductID)
@@ -1033,7 +1030,7 @@ func (s *OdooProductSyncService) create(
 	}
 
 	// Los videos de YouTube van siempre al final, después de todas las fotos.
-	if err := s.createOdooVideos(ctx, imagesHandler, credentials, externalID, product.SKU, videoURLs); err != nil {
+	if err := s.createOdooVideos(ctx, imagesHandler, credentials, externalID, product.SKU, imageSourceProductID); err != nil {
 		return "", missingRequired, missingOptional, err
 	}
 
@@ -1044,62 +1041,59 @@ func (s *OdooProductSyncService) create(
 // los enlaces de YouTube en ecom_files (ADR 0008).
 const odooYouTubeMimeType = "video/youtube"
 
-// splitOdooMedia separa las filas de ecom_product_images en portada, fotos
-// extra y URLs de video de YouTube. Un video nunca puede ser portada ni foto
-// extra (no hay archivo que descargar): la portada es la imagen is_first, o la
-// primera imagen real si la marcada is_first fuera un video.
-func (s *OdooProductSyncService) splitOdooMedia(ctx context.Context, images []mysqlInfra.ProductImageDTO) (*mysqlInfra.ProductImageDTO, []mysqlInfra.ProductImageDTO, []string, error) {
-	photos := make([]mysqlInfra.ProductImageDTO, 0, len(images))
-	videoURLs := make([]string, 0)
-	for i := range images {
-		file, err := s.filesRepository.FindByID(ctx, images[i].FileID)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("error loading file %d: %w", images[i].FileID, err)
-		}
-		if file.MimeType == odooYouTubeMimeType {
-			videoURLs = append(videoURLs, file.Path)
-			continue
-		}
-		photos = append(photos, images[i])
-	}
-
+// splitOdooImages separa las filas de ecom_product_images en portada (is_first)
+// y fotos extra.
+func splitOdooImages(images []mysqlInfra.ProductImageDTO) (*mysqlInfra.ProductImageDTO, []mysqlInfra.ProductImageDTO) {
 	var cover *mysqlInfra.ProductImageDTO
-	extra := make([]mysqlInfra.ProductImageDTO, 0, len(photos))
-	for i := range photos {
-		if photos[i].IsFirst && cover == nil {
-			cover = &photos[i]
+	extra := make([]mysqlInfra.ProductImageDTO, 0, len(images))
+	for i := range images {
+		if images[i].IsFirst && cover == nil {
+			cover = &images[i]
 			continue
 		}
-		extra = append(extra, photos[i])
+		extra = append(extra, images[i])
 	}
-	if cover == nil && len(extra) > 0 {
-		cover = &extra[0]
-		extra = extra[1:]
-	}
-
-	return cover, extra, videoURLs, nil
+	return cover, extra
 }
 
 // createOdooVideos crea un product.image con video_url (sin image_1920) por
-// cada enlace de YouTube; Odoo genera el embed a partir de la URL.
+// cada video de YouTube del producto (ecom_product_videos; ADR 0008). Los
+// videos que son un archivo (mp4, etc.) no se envían: Odoo solo acepta enlaces
+// de video por video_url. Se llama siempre después de las fotos, así que los
+// videos quedan al final del multimedia.
 func (s *OdooProductSyncService) createOdooVideos(
 	ctx context.Context,
 	imagesHandler *odooInfra.ImagesHandler,
 	credentials odooInfra.Credentials,
 	externalID int64,
 	sku string,
-	videoURLs []string,
+	videoSourceProductID int64,
 ) error {
-	for i, videoURL := range videoURLs {
+	videos, err := s.productVideosRepository.FindAllByProductID(ctx, videoSourceProductID)
+	if err != nil {
+		return fmt.Errorf("error loading videos for product %d: %w", videoSourceProductID, err)
+	}
+
+	n := 0
+	for _, video := range videos {
+		file, err := s.filesRepository.FindByID(ctx, video.FileID)
+		if err != nil {
+			return fmt.Errorf("error loading file %d of video %d: %w", video.FileID, video.ID, err)
+		}
+		if file.MimeType != odooYouTubeMimeType {
+			continue
+		}
+
+		n++
 		if err := imagesHandler.CreateProductImage(ctx, odooInfra.CreateProductImageRequest{
 			Credentials: credentials,
 			Vals: odooInfra.CreateProductImageVals{
 				ProductTemplateID: externalID,
-				VideoURL:          videoURL,
-				Name:              fmt.Sprintf("%s_video_%d", sku, i+1),
+				VideoURL:          file.Path,
+				Name:              fmt.Sprintf("%s_video_%d", sku, n),
 			},
 		}); err != nil {
-			return fmt.Errorf("error uploading video %q for odoo product %d: %w", videoURL, externalID, err)
+			return fmt.Errorf("error uploading video %q for odoo product %d: %w", file.Path, externalID, err)
 		}
 	}
 	return nil
