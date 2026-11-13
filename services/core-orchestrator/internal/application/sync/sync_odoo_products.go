@@ -398,7 +398,7 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 	}
 	if cover, _ := splitOdooImages(images); cover == nil {
 		log.Printf("odoo resync: product %d (odoo template %s) has no cover image, skipped", product.ID, externalIDStr)
-		return false, nil
+		return false, &odooResyncSkip{reason: "no se sincronizó: el producto no tiene imagen de portada"}
 	}
 
 	// Solo cuenta la categoría elegida para ESTA conexión (nunca la del producto
@@ -409,14 +409,14 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 	if err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelProductCategorySelectionNotFound) {
 			log.Printf("odoo resync: product %d (odoo template %s) has no category selected on connection %d, skipped", product.ID, externalIDStr, connectionID)
-			return false, nil
+			return false, &odooResyncSkip{reason: "no se sincronizó: el producto no tiene categoría elegida para esta conexión (la categoría del producto no se usa)"}
 		}
 		return false, fmt.Errorf("error loading category selection for product %d: %w", product.ID, err)
 	}
 	if _, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, selection.CategoryID, connectionID); err != nil {
 		if errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
 			log.Printf("odoo resync: product %d (odoo template %s) — category %d is not mapped on connection %d, skipped", product.ID, externalIDStr, selection.CategoryID, connectionID)
-			return false, nil
+			return false, &odooResyncSkip{reason: fmt.Sprintf("no se sincronizó: la categoría %d elegida para esta conexión no está mapeada a una categoría de Odoo", selection.CategoryID)}
 		}
 		return false, fmt.Errorf("error loading channel category map for category %d: %w", selection.CategoryID, err)
 	}
@@ -448,7 +448,7 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 
 	// Sin precio base (antes de la fórmula) no se sincroniza.
 	if basePrice <= 0 {
-		return false, nil
+		return false, &odooResyncSkip{reason: "no se sincronizó: el producto no tiene precio base mayor a 0 en la lista de precios"}
 	}
 
 	values, err := LoadOdooConnectionValues(ctx, s.credentialsRepository, s.settingsRepository, connectionID)
@@ -479,7 +479,7 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 		return false, fmt.Errorf("error calculating final price for product %d: %w", product.ID, err)
 	}
 	if listPrice <= 0 {
-		return false, nil
+		return false, &odooResyncSkip{reason: "no se sincronizó: el precio final calculado con la fórmula es 0 o menor"}
 	}
 
 	qtyAvailable := 0.0
@@ -1068,6 +1068,16 @@ func (s *OdooProductSyncService) create(
 
 	return externalIDStr, missingRequired, missingOptional, nil
 }
+
+// odooResyncSkip is what Resync returns, instead of a plain (false, nil), when it
+// leaves a product alone on purpose and wants the reason shown to the user.
+// channel_listings recognizes it through ResyncSkipReason (duck-typed: that
+// package does not import this one) and reports the listing as skipped with the
+// reason as its message, not as an error.
+type odooResyncSkip struct{ reason string }
+
+func (e *odooResyncSkip) Error() string            { return e.reason }
+func (e *odooResyncSkip) ResyncSkipReason() string { return e.reason }
 
 // odooYouTubeMimeType es el mime_type con el que la actualización masiva guarda
 // los enlaces de YouTube en ecom_files (ADR 0008).

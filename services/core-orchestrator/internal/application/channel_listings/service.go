@@ -741,6 +741,13 @@ func (s *Service) resyncOne(ctx context.Context, fullRefresher FullRefresher, li
 
 	updated, err := fullRefresher.Resync(ctx, product, listing.ConnectionID, listing)
 	if err != nil {
+		// A channel can leave a product alone on purpose and say why (not an error).
+		var skip interface{ ResyncSkipReason() string }
+		if errors.As(err, &skip) {
+			outcome.Skipped = true
+			outcome.Message = skip.ResyncSkipReason()
+			return outcome
+		}
 		outcome.Error = err.Error()
 		s.recordListingFailure(ctx, listing, mysqlInfra.ListingEventResync, err)
 		return outcome

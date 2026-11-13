@@ -232,7 +232,7 @@ func (s *Service) resync(ctx context.Context, productID int64, claim *mysqlInfra
 		}
 
 		updated, unchanged := 0, 0
-		var failures []string
+		var failures, skipReasons []string
 		for _, outcome := range result.Results {
 			switch {
 			case outcome.Error != "":
@@ -241,6 +241,9 @@ func (s *Service) resync(ctx context.Context, productID int64, claim *mysqlInfra
 				updated++
 			default:
 				unchanged++
+				if outcome.Message != "" {
+					skipReasons = append(skipReasons, outcome.Message)
+				}
 			}
 		}
 		switch {
@@ -251,7 +254,11 @@ func (s *Service) resync(ctx context.Context, productID int64, claim *mysqlInfra
 		case updated > 0:
 			parts = append(parts, fmt.Sprintf("%s: %d publicación(es) actualizada(s)", name, updated))
 		default:
-			parts = append(parts, fmt.Sprintf("%s: sin cambios que enviar (%d)", name, unchanged))
+			detail := fmt.Sprintf("%s: sin cambios que enviar (%d)", name, unchanged)
+			if len(skipReasons) > 0 {
+				detail += " — " + strings.Join(skipReasons, "; ")
+			}
+			parts = append(parts, detail)
 		}
 	}
 
