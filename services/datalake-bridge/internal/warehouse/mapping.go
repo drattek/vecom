@@ -6,6 +6,7 @@ package warehouse
 
 import (
 	"fmt"
+	"sort"
 	"strings"
 )
 
@@ -40,4 +41,18 @@ func OdooCode(company, site string) (string, error) {
 		return "", fmt.Errorf("sucursal %q de la empresa %q sin almacén mapeado en Odoo", site, company)
 	}
 	return code, nil
+}
+
+// OdooCodes devuelve todos los códigos de almacén Odoo mapeados, tengan o no
+// máquinas en este momento. El sync los revisa todos para poder retirar las
+// series de una sucursal que se quedó sin unidades en D365.
+func OdooCodes() []string {
+	var codes []string
+	for _, sites := range codeByCompanySite {
+		for _, code := range sites {
+			codes = append(codes, code)
+		}
+	}
+	sort.Strings(codes)
+	return codes
 }

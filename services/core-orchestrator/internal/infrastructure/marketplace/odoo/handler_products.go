@@ -4,6 +4,8 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"sync"
+	"time"
 )
 
 type ProductsHandler struct {
@@ -243,9 +245,14 @@ type UpdateProductRequest struct {
 // UpdateProduct calls product.template/write to refresh an already-synced
 // product's qty_available/list_price.
 func (h *ProductsHandler) UpdateProduct(ctx context.Context, req UpdateProductRequest) error {
+	vals, err := h.valsWithoutTrackedStock(ctx, req.Credentials, req.ExternalID, req.Vals)
+	if err != nil {
+		return err
+	}
+
 	params := map[string]any{
 		"ids":  []int64{req.ExternalID},
-		"vals": req.Vals,
+		"vals": vals,
 	}
 
 	return h.client.Call(ctx, req.Credentials, "product.template", "write", params, nil)
@@ -277,12 +284,95 @@ type UpdateProductPriceStockRequest struct {
 // UpdateProduct above remains the one used by Sync/update for a full
 // refresh (name/weight/volume/category included).
 func (h *ProductsHandler) UpdateProductPriceStock(ctx context.Context, req UpdateProductPriceStockRequest) error {
+	vals, err := h.valsWithoutTrackedStock(ctx, req.Credentials, req.ExternalID, req.Vals)
+	if err != nil {
+		return err
+	}
+
 	params := map[string]any{
 		"ids":  []int64{req.ExternalID},
-		"vals": req.Vals,
+		"vals": vals,
 	}
 
 	return h.client.Call(ctx, req.Credentials, "product.template", "write", params, nil)
+}
+
+// trackedTemplatesTTL is how long the set of lot/serial-tracked templates is
+// reused before asking Odoo again.
+const trackedTemplatesTTL = 10 * time.Minute
+
+type trackedTemplatesEntry struct {
+	ids       map[int64]struct{}
+	fetchedAt time.Time
+}
+
+var (
+	trackedTemplatesMu    sync.Mutex
+	trackedTemplatesCache = map[string]trackedTemplatesEntry{}
+)
+
+// trackedTemplateIDs returns the product.template ids tracked by lot or serial
+// number in Odoo (tracking != 'none'), cached per client+database.
+func (h *ProductsHandler) trackedTemplateIDs(ctx context.Context, credentials Credentials) (map[int64]struct{}, error) {
+	key := fmt.Sprintf("%p|%s", h.client, credentials.Database)
+
+	trackedTemplatesMu.Lock()
+	entry, ok := trackedTemplatesCache[key]
+	trackedTemplatesMu.Unlock()
+	if ok && time.Since(entry.fetchedAt) < trackedTemplatesTTL {
+		return entry.ids, nil
+	}
+
+	params := map[string]any{
+		"domain":  []any{[]any{"tracking", "!=", "none"}},
+		"fields":  []string{"id"},
+		"context": map[string]any{"active_test": false},
+	}
+
+	var rows []struct {
+		ID int64 `json:"id"`
+	}
+	if err := h.client.Call(ctx, credentials, "product.template", "search_read", params, &rows); err != nil {
+		return nil, fmt.Errorf("error reading lot/serial tracked products: %w", err)
+	}
+
+	ids := make(map[int64]struct{}, len(rows))
+	for _, row := range rows {
+		ids[row.ID] = struct{}{}
+	}
+
+	trackedTemplatesMu.Lock()
+	trackedTemplatesCache[key] = trackedTemplatesEntry{ids: ids, fetchedAt: time.Now()}
+	trackedTemplatesMu.Unlock()
+
+	return ids, nil
+}
+
+// valsWithoutTrackedStock drops qty_available from a product.template write
+// when the template is tracked by lot or serial number. Writing qty_available
+// makes Odoo book the whole quantity as a quant WITHOUT lot in the first
+// warehouse, which double counts the units that datalake-bridge already keeps
+// one by one per serial number (machines). Everything else is sent untouched.
+func (h *ProductsHandler) valsWithoutTrackedStock(ctx context.Context, credentials Credentials, externalID int64, vals any) (any, error) {
+	tracked, err := h.trackedTemplateIDs(ctx, credentials)
+	if err != nil {
+		return nil, err
+	}
+	if _, ok := tracked[externalID]; !ok {
+		return vals, nil
+	}
+
+	raw, err := json.Marshal(vals)
+	if err != nil {
+		return nil, fmt.Errorf("error encoding vals for odoo product %d: %w", externalID, err)
+	}
+	fields := map[string]any{}
+	if err := json.Unmarshal(raw, &fields); err != nil {
+		return nil, fmt.Errorf("error decoding vals for odoo product %d: %w", externalID, err)
+	}
+	delete(fields, "qty_available")
+
+	return fields, nil
 }
 
 // ActiveLanguageCodes returns the codes (es_MX, en_US, ...) of the languages

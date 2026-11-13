@@ -106,6 +106,7 @@ type Product struct {
 	Tmpl          M2O     `json:"product_tmpl_id"`
 	DefaultCode   string  `json:"default_code"`
 	Tracking      string  `json:"tracking"`
+	IsStorable    bool    `json:"is_storable"`
 	ListPrice     float64 `json:"list_price"`
 	StandardPrice float64 `json:"standard_price"`
 	Weight        float64 `json:"weight"`
@@ -117,7 +118,7 @@ type Product struct {
 // FindProduct busca la variante (product.product) por default_code, leyendo los
 // campos de modelo (incluye x_capacidad solo si el campo custom existe).
 func (c *Client) FindProduct(ctx context.Context, code string) (Product, bool, error) {
-	fields := []string{"id", "product_tmpl_id", "default_code", "tracking",
+	fields := []string{"id", "product_tmpl_id", "default_code", "tracking", "is_storable",
 		"list_price", "standard_price", "weight", "volume", "product_brand_id"}
 	if c.capacidadField != "" {
 		fields = append(fields, c.capacidadField)
