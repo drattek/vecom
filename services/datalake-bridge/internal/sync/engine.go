@@ -52,6 +52,8 @@ type Result struct {
 	Removed         int // series puestas en 0 (ya no están en D365)
 	Unchanged       int // series que ya estaban bien (no se tocó Odoo)
 	Skipped         int // filas descartadas (almacén sin mapear, etc.)
+	Failed          int // unidades o retiros con error (la pasada sigue con el resto)
+	ProductsFixed   int // productos existentes corregidos a almacenable + serie
 }
 
 // engineState es la caché por pasada.
@@ -127,8 +129,8 @@ func (e *Engine) Run(ctx context.Context) (Result, error) {
 		st.uomID = uomID
 	}
 
-	// Resolver almacenes usados y reunir sus ubicaciones de stock.
-	locationIDs, err := e.resolveWarehouses(ctx, units, st)
+	// Resolver todos los almacenes mapeados y reunir sus ubicaciones de stock.
+	locationIDs, err := e.resolveWarehouses(ctx, st)
 	if err != nil {
 		return res, err
 	}
@@ -144,8 +146,23 @@ func (e *Engine) Run(ctx context.Context) (Result, error) {
 	}
 	e.log.Info("existencias de serie actuales en Odoo", "quants", len(current))
 
-	// Recorrer el estado deseado y colocar lo que cambie.
+	// 1) Estado deseado: resolver producto y lote de cada unidad. El error de una
+	// unidad no detiene la pasada: se registra y se sigue con las demás.
+	type placement struct {
+		key  placedKey
+		unit datalake.Unit
+		code string
+	}
+	var desired []placement
 	seen := make(map[placedKey]bool, len(units))
+	// Productos con alguna unidad sin resolver: sus series no se retiran en esta
+	// pasada (no se sabe si la existencia que hay en Odoo sigue siendo válida).
+	failedProducts := map[int64]bool{}
+	failedItems := map[string]bool{}
+	// Si falló la búsqueda de un producto no se conoce su id, así que no se puede
+	// proteger solo ese producto: se omite el retiro completo de la pasada.
+	skipRemoval := false
+
 	for _, u := range units {
 		code, err := warehouse.OdooCode(u.Company, u.Site)
 		if err != nil {
@@ -158,54 +175,80 @@ func (e *Engine) Run(ctx context.Context) (Result, error) {
 			res.Skipped++
 			continue
 		}
-		locID := wh.LotStockID.ID
+		if failedItems[u.ItemID] {
+			res.Failed++
+			continue
+		}
 
 		// Producto (modelo) — cotizable exista o no exista stock.
 		prod, err := e.ensureProduct(ctx, u, st, &res)
 		if err != nil {
-			return res, err
+			e.log.Error("unidad con error; se omite", "serie", u.Serial, "modelo", u.ItemID, "error", err.Error())
+			res.Failed++
+			failedItems[u.ItemID] = true
+			if prod.ID != 0 {
+				failedProducts[prod.ID] = true
+			} else {
+				skipRemoval = true
+			}
+			continue
 		}
 
 		// Lote (serie).
 		lotID, err := e.ensureLot(ctx, prod.ID, wh.CompanyID.ID, u.Serial, st, &res)
 		if err != nil {
-			return res, err
+			e.log.Error("unidad con error; se omite", "serie", u.Serial, "modelo", u.ItemID, "error", err.Error())
+			res.Failed++
+			failedProducts[prod.ID] = true
+			continue
 		}
 
-		key := placedKey{prod.ID, lotID, locID}
+		key := placedKey{prod.ID, lotID, wh.LotStockID.ID}
 		seen[key] = true
+		desired = append(desired, placement{key: key, unit: u, code: code})
+	}
 
-		if q, ok := currentByKey[key]; ok && q.Quantity == 1 {
+	// 2) Retiro ANTES de colocar: series que en Odoo tienen existencia donde D365
+	// ya no las tiene (vendidas o movidas de sucursal) -> a 0. Al ir primero, una
+	// serie que cambió de almacén nunca queda en dos sitios a la vez.
+	if skipRemoval {
+		e.log.Warn("retiro omitido en esta pasada: no se pudo resolver algún producto")
+	} else {
+		for key, q := range currentByKey {
+			if seen[key] || q.Quantity == 0 || failedProducts[key.productID] {
+				continue
+			}
+			if e.dryRun {
+				e.log.Info("[dry-run] retiraría serie", "lot_id", key.lotID, "location_id", key.locationID)
+				res.Removed++
+				continue
+			}
+			if err := e.odoo.SetInventory(ctx, key.productID, key.lotID, key.locationID, 0); err != nil {
+				e.log.Error("no se pudo retirar la serie", "lot_id", key.lotID, "location_id", key.locationID, "error", err.Error())
+				res.Failed++
+				continue
+			}
+			res.Removed++
+		}
+	}
+
+	// 3) Colocar lo que falte.
+	for _, d := range desired {
+		if q, ok := currentByKey[d.key]; ok && q.Quantity == 1 {
 			res.Unchanged++
 			continue
 		}
-
 		if e.dryRun {
-			e.log.Info("[dry-run] colocaría serie", "serie", u.Serial, "modelo", u.ItemID, "almacen", code)
+			e.log.Info("[dry-run] colocaría serie", "serie", d.unit.Serial, "modelo", d.unit.ItemID, "almacen", d.code)
 			res.Placed++
 			continue
 		}
-		if err := e.odoo.SetInventory(ctx, prod.ID, lotID, locID, 1); err != nil {
-			return res, fmt.Errorf("colocar serie %q (%s) en %s: %w", u.Serial, u.ItemID, code, err)
+		if err := e.odoo.SetInventory(ctx, d.key.productID, d.key.lotID, d.key.locationID, 1); err != nil {
+			e.log.Error("no se pudo colocar la serie", "serie", d.unit.Serial, "modelo", d.unit.ItemID, "almacen", d.code, "error", err.Error())
+			res.Failed++
+			continue
 		}
 		res.Placed++
-	}
-
-	// Reconciliación: series que en Odoo tienen existencia pero ya no están en
-	// D365 (vendidas/movidas) -> a 0.
-	for key, q := range currentByKey {
-		if seen[key] || q.Quantity == 0 {
-			continue
-		}
-		if e.dryRun {
-			e.log.Info("[dry-run] retiraría serie", "lot_id", key.lotID, "location_id", key.locationID)
-			res.Removed++
-			continue
-		}
-		if err := e.odoo.SetInventory(ctx, key.productID, key.lotID, key.locationID, 0); err != nil {
-			return res, fmt.Errorf("retirar serie lot_id=%d loc=%d: %w", key.lotID, key.locationID, err)
-		}
-		res.Removed++
 	}
 
 	e.log.Info("pasada de sync completada",
@@ -218,24 +261,22 @@ func (e *Engine) Run(ctx context.Context) (Result, error) {
 		"retiradas", res.Removed,
 		"sin_cambio", res.Unchanged,
 		"descartadas", res.Skipped,
+		"productos_corregidos", res.ProductsFixed,
+		"con_error", res.Failed,
 		"dry_run", e.dryRun,
 	)
+	if res.Failed > 0 {
+		return res, fmt.Errorf("%d unidades o retiros con error (ver el detalle arriba)", res.Failed)
+	}
 	return res, nil
 }
 
-// resolveWarehouses resuelve, contra Odoo, cada código de almacén que aparece en
-// las unidades y devuelve las ubicaciones de stock destino.
-func (e *Engine) resolveWarehouses(ctx context.Context, units []datalake.Unit, st *engineState) ([]int64, error) {
-	needed := map[string]bool{}
-	for _, u := range units {
-		code, err := warehouse.OdooCode(u.Company, u.Site)
-		if err != nil {
-			continue // se reporta luego, por unidad
-		}
-		needed[code] = true
-	}
+// resolveWarehouses resuelve, contra Odoo, todos los almacenes mapeados (tengan o
+// no unidades en el datalake) y devuelve sus ubicaciones de stock. Se revisan
+// todos para poder retirar las series de una sucursal que quedó en cero.
+func (e *Engine) resolveWarehouses(ctx context.Context, st *engineState) ([]int64, error) {
 	var locationIDs []int64
-	for code := range needed {
+	for _, code := range warehouse.OdooCodes() {
 		wh, ok, err := e.odoo.ResolveWarehouse(ctx, code)
 		if err != nil {
 			return nil, fmt.Errorf("resolver almacén %q: %w", code, err)
@@ -290,6 +331,20 @@ func (e *Engine) ensureProduct(ctx context.Context, u datalake.Unit, st *engineS
 		return p, nil
 	}
 
+	// Producto existente que no es almacenable con seguimiento por serie (lo creó
+	// otro proceso como consumible): Odoo rechaza ponerle existencia por serie, así
+	// que se corrige antes de usarlo.
+	if !p.IsStorable || p.Tracking != "serial" {
+		if e.dryRun {
+			e.log.Info("[dry-run] corregiría producto a almacenable + serie", "modelo", u.ItemID,
+				"is_storable", p.IsStorable, "tracking", p.Tracking)
+		} else if err := e.odoo.UpdateModel(ctx, p.Tmpl.ID, map[string]any{"is_storable": true, "tracking": "serial"}); err != nil {
+			return p, fmt.Errorf("corregir producto %q a almacenable + serie: %w", u.ItemID, err)
+		}
+		p.IsStorable, p.Tracking = true, "serial"
+		res.ProductsFixed++
+	}
+
 	// Producto existente: gate — solo escribe los campos de modelo que cambiaron.
 	diff := modelDiff(p, model, brandID, capacidad)
 	if len(diff) > 0 {
@@ -297,7 +352,7 @@ func (e *Engine) ensureProduct(ctx context.Context, u datalake.Unit, st *engineS
 			e.log.Info("[dry-run] enriquecería modelo", "modelo", u.ItemID, "campos", keys(diff))
 			res.ModelsEnriched++
 		} else if err := e.odoo.UpdateModel(ctx, p.Tmpl.ID, diff); err != nil {
-			return odoo.Product{}, fmt.Errorf("enriquecer modelo %q: %w", u.ItemID, err)
+			return p, fmt.Errorf("enriquecer modelo %q: %w", u.ItemID, err)
 		} else {
 			res.ModelsEnriched++
 		}
