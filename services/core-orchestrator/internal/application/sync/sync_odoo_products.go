@@ -1624,6 +1624,9 @@ func (s *OdooProductSyncService) SyncCompatibilities(ctx context.Context, produc
 	}
 
 	message := fmt.Sprintf("compatibilidades sincronizadas: %d vinculadas, %d desvinculadas", result.Linked, result.Unlinked)
+	if len(result.Skipped) > 0 {
+		message += fmt.Sprintf("; %d omitidas por chocar con un modelo existente en Odoo (%s)", len(result.Skipped), strings.Join(result.Skipped, ", "))
+	}
 	return result.Linked > 0 || result.Unlinked > 0, message, nil
 }
 
