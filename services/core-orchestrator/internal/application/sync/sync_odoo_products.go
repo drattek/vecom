@@ -14,6 +14,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	channelListingsApp "core-orchestrator/internal/application/channel_listings"
 	pricingApp "core-orchestrator/internal/application/pricing"
 	odooInfra "core-orchestrator/internal/infrastructure/marketplace/odoo"
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
@@ -405,20 +406,37 @@ func (s *OdooProductSyncService) Resync(ctx context.Context, product *mysqlInfra
 	// como respaldo) y debe estar ya mapeada a Odoo. Sin mapeo, update() la
 	// crearía en Odoo (con todos sus ancestros), lo que tarda lo suficiente para
 	// provocar un 504; esa creación solo ocurre al publicar.
+	// En la actualización masiva (OmitMissingCategory) una categoría ausente o sin
+	// mapeo no frena el resto: se actualiza el producto sin enviar la categoría.
+	omitMissingCategory := channelListingsApp.ResyncOmitMissingCategory(ctx)
+	omitCategory := false
 	selection, err := s.categorySelectionRepository.FindByProductAndConnection(ctx, product.ID, connectionID)
-	if err != nil {
-		if errors.Is(err, mysqlInfra.ErrChannelProductCategorySelectionNotFound) {
+	switch {
+	case err != nil && errors.Is(err, mysqlInfra.ErrChannelProductCategorySelectionNotFound):
+		if !omitMissingCategory {
 			log.Printf("odoo resync: product %d (odoo template %s) has no category selected on connection %d, skipped", product.ID, externalIDStr, connectionID)
 			return false, &odooResyncSkip{reason: "no se sincronizó: el producto no tiene categoría elegida para esta conexión (la categoría del producto no se usa)"}
 		}
+		log.Printf("odoo resync: product %d (odoo template %s) has no category selected on connection %d, category omitted", product.ID, externalIDStr, connectionID)
+		omitCategory = true
+	case err != nil:
 		return false, fmt.Errorf("error loading category selection for product %d: %w", product.ID, err)
-	}
-	if _, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, selection.CategoryID, connectionID); err != nil {
-		if errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
-			log.Printf("odoo resync: product %d (odoo template %s) — category %d is not mapped on connection %d, skipped", product.ID, externalIDStr, selection.CategoryID, connectionID)
-			return false, &odooResyncSkip{reason: fmt.Sprintf("no se sincronizó: la categoría %d elegida para esta conexión no está mapeada a una categoría de Odoo", selection.CategoryID)}
+	default:
+		if _, err := s.channelCategoryMapRepository.FindByCategoryAndConnection(ctx, selection.CategoryID, connectionID); err != nil {
+			if errors.Is(err, mysqlInfra.ErrChannelCategoryMapNotFound) {
+				if !omitMissingCategory {
+					log.Printf("odoo resync: product %d (odoo template %s) — category %d is not mapped on connection %d, skipped", product.ID, externalIDStr, selection.CategoryID, connectionID)
+					return false, &odooResyncSkip{reason: fmt.Sprintf("no se sincronizó: la categoría %d elegida para esta conexión no está mapeada a una categoría de Odoo", selection.CategoryID)}
+				}
+				log.Printf("odoo resync: product %d (odoo template %s) — category %d is not mapped on connection %d, category omitted", product.ID, externalIDStr, selection.CategoryID, connectionID)
+				omitCategory = true
+			} else {
+				return false, fmt.Errorf("error loading channel category map for category %d: %w", selection.CategoryID, err)
+			}
 		}
-		return false, fmt.Errorf("error loading channel category map for category %d: %w", selection.CategoryID, err)
+	}
+	if omitCategory {
+		ctx = withOdooOmitCategory(ctx)
 	}
 
 	// The manual resync is mandatory: it is never skipped because of the
@@ -714,9 +732,13 @@ func (s *OdooProductSyncService) update(
 	}
 
 	externalCategoryID := derefString(existingMap.ExternalCategoryID)
-	categoryID, err := s.resolveConnectionCategoryID(ctx, product, connectionID)
-	if err != nil {
-		return err
+	var categoryID *int64
+	if !odooOmitCategory(ctx) {
+		var err error
+		categoryID, err = s.resolveConnectionCategoryID(ctx, product, connectionID)
+		if err != nil {
+			return err
+		}
 	}
 	if categoryID != nil {
 		resolvedCategoryID, err := s.resolveOdooCategory(ctx, categoriesHandler, credentials, *categoryID, connectionID)
@@ -1258,6 +1280,19 @@ func priceOrStockChangedSince(priceUpdatedAt time.Time, stocks []mysqlInfra.Prod
 		}
 	}
 	return false
+}
+
+type odooOmitCategoryKey struct{}
+
+// withOdooOmitCategory makes update leave the category out of the write (Odoo
+// keeps whatever it has) and keep the map row's external_category_id as is.
+func withOdooOmitCategory(ctx context.Context) context.Context {
+	return context.WithValue(ctx, odooOmitCategoryKey{}, true)
+}
+
+func odooOmitCategory(ctx context.Context) bool {
+	v, _ := ctx.Value(odooOmitCategoryKey{}).(bool)
+	return v
 }
 
 // resolveConnectionCategoryID returns the local ecom_categories id to

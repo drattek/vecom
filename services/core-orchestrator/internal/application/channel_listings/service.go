@@ -658,6 +658,10 @@ func (s *Service) refreshOne(ctx context.Context, refresher Refresher, listing *
 type ResyncListingsInput struct {
 	ProductID    int64
 	ConnectionID int64
+	// OmitMissingCategory: if the product has no usable category on the
+	// connection, push everything else and leave the category out (see
+	// WithResyncOmitMissingCategory).
+	OmitMissingCategory bool
 }
 
 // ResyncProductListings dispatches every ecom_channel_product_map row
@@ -681,6 +685,9 @@ func (s *Service) ResyncProductListings(ctx context.Context, input ResyncListing
 	// it runs to completion on a bounded, non-cancelled context instead.
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), resyncDetachedTimeout)
 	defer cancel()
+	if input.OmitMissingCategory {
+		ctx = WithResyncOmitMissingCategory(ctx)
+	}
 
 	connection, err := s.channelConnectionRepository.FindByID(ctx, input.ConnectionID)
 	if err != nil {

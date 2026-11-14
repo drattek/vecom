@@ -33,3 +33,20 @@ func (s *Service) ValidateResyncConnection(ctx context.Context, connectionID int
 	}
 	return connection.Name, nil
 }
+
+type resyncOmitMissingCategoryKey struct{}
+
+// WithResyncOmitMissingCategory marks ctx so that a channel's Resync, when the
+// product has no usable category on the connection (none chosen, or not mapped
+// to an external category), still pushes the rest of the fields and just leaves
+// the category out instead of skipping/failing the whole resync. Used by the
+// bulk update; the manual button and the queue keep the strict behavior.
+func WithResyncOmitMissingCategory(ctx context.Context) context.Context {
+	return context.WithValue(ctx, resyncOmitMissingCategoryKey{}, true)
+}
+
+// ResyncOmitMissingCategory reports whether ctx carries WithResyncOmitMissingCategory.
+func ResyncOmitMissingCategory(ctx context.Context) bool {
+	v, _ := ctx.Value(resyncOmitMissingCategoryKey{}).(bool)
+	return v
+}

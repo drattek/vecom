@@ -223,8 +223,9 @@ func (s *Service) resync(ctx context.Context, productID int64, claim *mysqlInfra
 		}
 
 		result, err := s.listings.ResyncProductListings(ctx, channelListingsApp.ResyncListingsInput{
-			ProductID:    productID,
-			ConnectionID: connectionID,
+			ProductID:           productID,
+			ConnectionID:        connectionID,
+			OmitMissingCategory: true,
 		})
 		if err != nil {
 			problems = append(problems, fmt.Sprintf("%s: %v", name, err))
