@@ -194,7 +194,8 @@ func (h *ChannelListingsHandler) ResyncListings(w http.ResponseWriter, r *http.R
 			writeJSONError(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeJSONError(w, http.StatusInternalServerError, "internal error")
+		log.Printf("channel listings resync (product %d, connection %d): %v", req.ProductID, req.ConnectionID, err)
+		writeJSONError(w, http.StatusInternalServerError, "no se pudo resincronizar: "+err.Error())
 		return
 	}
 

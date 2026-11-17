@@ -43,7 +43,8 @@ apiClient.interceptors.response.use(
  */
 export function getServerErrorMessage(error: unknown, fallback: string): string {
   if (!axios.isAxiosError(error)) {
-    return fallback
+    // Error local (p. ej. la respuesta no cumple el esquema de Zod): se muestra el motivo.
+    return error instanceof Error && error.message ? `${fallback} Detalle: ${error.message}` : fallback
   }
 
   const responseMessage = error.response?.data?.error
@@ -59,7 +60,11 @@ export function getServerErrorMessage(error: unknown, fallback: string): string 
     return `${fallback} El servidor tardó demasiado en responder o se cortó la conexión; la operación puede haber continuado en segundo plano, revisa el historial.`
   }
 
-  return fallback
+  if (status) {
+    return `${fallback} (HTTP ${status}${error.response?.statusText ? ` ${error.response.statusText}` : ''})`
+  }
+
+  return error.message ? `${fallback} Detalle: ${error.message}` : fallback
 }
 
 /**
