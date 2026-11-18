@@ -415,7 +415,7 @@ func (s *Service) CreateListings(ctx context.Context, input CreateListingsInput)
 	processedProductIDs := make(map[int64]bool, len(skus))
 
 	for _, sku := range skus {
-		product, err := s.productRepository.FindBySKU(ctx, sku)
+		product, err := s.findProductBySKU(ctx, sku)
 		if err != nil {
 			if errors.Is(err, mysqlInfra.ErrProductNotFound) {
 				results = append(results, ListingOutcome{SKU: sku, Error: "product not found for sku"})
@@ -1254,19 +1254,39 @@ func cleanSKUs(raw []string) []string {
 	seen := make(map[string]bool, len(raw))
 	cleaned := make([]string, 0, len(raw))
 	for _, s := range raw {
-		sku := strings.Map(func(r rune) rune {
-			if unicode.IsSpace(r) {
-				return -1
-			}
-			return r
-		}, s)
-		if sku == "" || seen[sku] {
+		// Se conserva el SKU tal cual llegó (con sus espacios): puede haber dos
+		// productos distintos cuyo SKU solo difiere por un espacio al final
+		// ("MSB-0006666" vs "MSB-0006666 "). La normalización (quitar espacios)
+		// solo se usa como respaldo en findProductBySKU.
+		if stripSpaces(s) == "" || seen[s] {
 			continue
 		}
-		seen[sku] = true
-		cleaned = append(cleaned, sku)
+		seen[s] = true
+		cleaned = append(cleaned, s)
 	}
 	return cleaned
+}
+
+func stripSpaces(s string) string {
+	return strings.Map(func(r rune) rune {
+		if unicode.IsSpace(r) {
+			return -1
+		}
+		return r
+	}, s)
+}
+
+// findProductBySKU busca primero el SKU exacto y, si no existe, el SKU sin
+// espacios (listas pegadas a mano con espacios de más).
+func (s *Service) findProductBySKU(ctx context.Context, sku string) (*mysqlInfra.ProductDTO, error) {
+	product, err := s.productRepository.FindBySKU(ctx, sku)
+	if err == nil || !errors.Is(err, mysqlInfra.ErrProductNotFound) {
+		return product, err
+	}
+	if stripped := stripSpaces(sku); stripped != sku {
+		return s.productRepository.FindBySKU(ctx, stripped)
+	}
+	return product, err
 }
 
 // generalListingTitle is used both for connections that don't allow multiple
