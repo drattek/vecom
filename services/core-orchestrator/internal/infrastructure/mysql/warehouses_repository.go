@@ -130,6 +130,8 @@ func (r *WarehousesRepository) FindByBranchID(ctx context.Context, branchID int6
 }
 
 func (r *WarehousesRepository) FindByNameAndBranch(ctx context.Context, name string, branchID int64) (*WarehouseDTO, error) {
+	name = NormalizeLocationName(name)
+
 	query := `
 		SELECT id, name, branch_id, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_warehouses
@@ -145,6 +147,8 @@ func (r *WarehousesRepository) FindByNameAndBranch(ctx context.Context, name str
 // no vacío que ya tienen un almacén activo llamado name. Lo usa el sync de
 // stock del ERP para inferir la sucursal cuando el ERP no reporta su nombre.
 func (r *WarehousesRepository) FindNamedBranchIDsByWarehouseName(ctx context.Context, name string) ([]int64, error) {
+	name = NormalizeLocationName(name)
+
 	query := `
 		SELECT DISTINCT w.branch_id
 		FROM ecom_warehouses w
@@ -188,6 +192,7 @@ func (r *WarehousesRepository) ensureNamedBranch(ctx context.Context, branchID i
 }
 
 func (r *WarehousesRepository) Create(ctx context.Context, input CreateWarehouseInput) (*WarehouseDTO, error) {
+	input.Name = NormalizeLocationName(input.Name)
 	if !HasVisibleName(input.Name) {
 		return nil, ErrInvalidLocationName
 	}
@@ -214,6 +219,7 @@ func (r *WarehousesRepository) Create(ctx context.Context, input CreateWarehouse
 }
 
 func (r *WarehousesRepository) Update(ctx context.Context, id int64, input UpdateWarehouseInput) (*WarehouseDTO, error) {
+	input.Name = NormalizeLocationName(input.Name)
 	if !HasVisibleName(input.Name) {
 		return nil, ErrInvalidLocationName
 	}

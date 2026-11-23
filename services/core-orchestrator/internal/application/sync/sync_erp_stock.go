@@ -5,7 +5,6 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"core-orchestrator/internal/domain"
@@ -190,12 +189,15 @@ func (t *erpStockSyncTx) run(ctx context.Context, productID int64, inv *domain.I
 // real colgado. En su lugar se infiere la sucursal del almacén, pero solo si ese nombre de
 // almacén ya existe bajo exactamente una sucursal con nombre; si no, se rechaza el registro.
 func (t *erpStockSyncTx) resolveErpBranch(ctx context.Context, inv *domain.Inventory, cache *erpStockSyncCache) (int64, error) {
-	if strings.TrimSpace(inv.BranchName) != "" {
+	// "Vacío" = sin ninguna letra ni dígito (cadena vacía, espacios, caracteres invisibles
+	// como el espacio de ancho cero): mismo criterio que el repositorio y el CHECK de
+	// ecom_branches, para que ningún nombre invisible se cuele como sucursal.
+	if mysqlRepo.HasVisibleName(inv.BranchName) {
 		return t.resolveBranch(ctx, inv.BranchName, cache)
 	}
 
-	warehouse := inv.Warehouse
-	if strings.TrimSpace(warehouse) == "" {
+	warehouse := mysqlRepo.NormalizeLocationName(inv.Warehouse)
+	if !mysqlRepo.HasVisibleName(warehouse) {
 		return 0, errors.New("el ERP no reportó nombre de sucursal ni de almacén")
 	}
 

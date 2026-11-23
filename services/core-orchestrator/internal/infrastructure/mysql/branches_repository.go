@@ -101,6 +101,8 @@ func (r *BranchesRepository) FindByID(ctx context.Context, id int64) (*BranchDTO
 }
 
 func (r *BranchesRepository) FindByName(ctx context.Context, name string) (*BranchDTO, error) {
+	name = NormalizeLocationName(name)
+
 	query := `
 		SELECT id, name, created_by, updated_by, created_at, updated_at, deleted_at
 		FROM ecom_branches
@@ -113,6 +115,7 @@ func (r *BranchesRepository) FindByName(ctx context.Context, name string) (*Bran
 }
 
 func (r *BranchesRepository) Create(ctx context.Context, input CreateBranchInput) (*BranchDTO, error) {
+	input.Name = NormalizeLocationName(input.Name)
 	if !HasVisibleName(input.Name) {
 		return nil, ErrInvalidLocationName
 	}
@@ -136,6 +139,7 @@ func (r *BranchesRepository) Create(ctx context.Context, input CreateBranchInput
 }
 
 func (r *BranchesRepository) Update(ctx context.Context, id int64, input UpdateBranchInput) (*BranchDTO, error) {
+	input.Name = NormalizeLocationName(input.Name)
 	if !HasVisibleName(input.Name) {
 		return nil, ErrInvalidLocationName
 	}
