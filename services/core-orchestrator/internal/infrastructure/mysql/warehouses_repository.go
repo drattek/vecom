@@ -141,7 +141,60 @@ func (r *WarehousesRepository) FindByNameAndBranch(ctx context.Context, name str
 	return scanWarehouseRow(row)
 }
 
+// FindNamedBranchIDsByWarehouseName devuelve las sucursales activas con nombre
+// no vacío que ya tienen un almacén activo llamado name. Lo usa el sync de
+// stock del ERP para inferir la sucursal cuando el ERP no reporta su nombre.
+func (r *WarehousesRepository) FindNamedBranchIDsByWarehouseName(ctx context.Context, name string) ([]int64, error) {
+	query := `
+		SELECT DISTINCT w.branch_id
+		FROM ecom_warehouses w
+		JOIN ecom_branches b ON b.id = w.branch_id AND b.deleted_at IS NULL
+		WHERE w.name = ? AND w.deleted_at IS NULL AND b.name REGEXP '[[:alnum:]]'
+	`
+
+	rows, err := r.db.QueryContext(ctx, query, name)
+	if err != nil {
+		return nil, fmt.Errorf("error finding branches by warehouse name: %w", err)
+	}
+	defer rows.Close()
+
+	var ids []int64
+	for rows.Next() {
+		var id int64
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		ids = append(ids, id)
+	}
+
+	return ids, rows.Err()
+}
+
+// ensureNamedBranch rechaza crear o mover un almacén bajo una sucursal inexistente, dada de
+// baja o sin nombre (la causa de los almacenes colgados de "Sin sucursal").
+func (r *WarehousesRepository) ensureNamedBranch(ctx context.Context, branchID int64) error {
+	var name string
+	err := r.db.QueryRowContext(ctx, "SELECT name FROM ecom_branches WHERE id = ? AND deleted_at IS NULL", branchID).Scan(&name)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrBranchNotFound
+	}
+	if err != nil {
+		return fmt.Errorf("error checking warehouse branch: %w", err)
+	}
+	if !HasVisibleName(name) {
+		return ErrInvalidLocationName
+	}
+	return nil
+}
+
 func (r *WarehousesRepository) Create(ctx context.Context, input CreateWarehouseInput) (*WarehouseDTO, error) {
+	if !HasVisibleName(input.Name) {
+		return nil, ErrInvalidLocationName
+	}
+	if err := r.ensureNamedBranch(ctx, input.BranchID); err != nil {
+		return nil, err
+	}
+
 	query := `
 		INSERT INTO ecom_warehouses (name, branch_id, created_by, created_at, updated_at)
 		VALUES (?, ?, ?, NOW(), NOW())
@@ -161,6 +214,13 @@ func (r *WarehousesRepository) Create(ctx context.Context, input CreateWarehouse
 }
 
 func (r *WarehousesRepository) Update(ctx context.Context, id int64, input UpdateWarehouseInput) (*WarehouseDTO, error) {
+	if !HasVisibleName(input.Name) {
+		return nil, ErrInvalidLocationName
+	}
+	if err := r.ensureNamedBranch(ctx, input.BranchID); err != nil {
+		return nil, err
+	}
+
 	query := `
 		UPDATE ecom_warehouses
 		SET name = ?, branch_id = ?, updated_by = ?, updated_at = NOW()

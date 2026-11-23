@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"core-orchestrator/internal/domain"
@@ -26,6 +27,9 @@ type erpStockSyncCache struct {
 	priceListID   int64
 	branchIDs     map[string]int64
 	warehouseIDs  map[string]int64
+	// branchIDByWarehouse cachea la sucursal inferida por nombre de almacén cuando el ERP
+	// no reporta el nombre de la sucursal (ver resolveErpBranch).
+	branchIDByWarehouse map[string]int64
 }
 
 func prepareErpStockSyncCache(ctx context.Context, db *sql.DB) (*erpStockSyncCache, error) {
@@ -54,6 +58,8 @@ func prepareErpStockSyncCache(ctx context.Context, db *sql.DB) (*erpStockSyncCac
 		priceListID:   priceList.ID,
 		branchIDs:     make(map[string]int64),
 		warehouseIDs:  make(map[string]int64),
+
+		branchIDByWarehouse: make(map[string]int64),
 	}, nil
 }
 
@@ -152,9 +158,9 @@ func newErpStockSyncTx(tx *sql.Tx, seen *stockSeen) *erpStockSyncTx {
 }
 
 func (t *erpStockSyncTx) run(ctx context.Context, productID int64, inv *domain.Inventory, cache *erpStockSyncCache) error {
-	branchID, err := t.resolveBranch(ctx, inv.BranchName, cache)
+	branchID, err := t.resolveErpBranch(ctx, inv, cache)
 	if err != nil {
-		return fmt.Errorf("resolving branch %q: %w", inv.BranchName, err)
+		return fmt.Errorf("resolving branch %q (warehouse %q): %w", inv.BranchName, inv.Warehouse, err)
 	}
 
 	warehouseID, err := t.resolveWarehouse(ctx, branchID, inv.Warehouse, cache)
@@ -175,6 +181,42 @@ func (t *erpStockSyncTx) run(ctx context.Context, productID int64, inv *domain.I
 	}
 
 	return nil
+}
+
+// resolveErpBranch decide la sucursal de un registro de stock del ERP. Si el ERP manda el
+// nombre de la sucursal se usa tal cual (find-or-create). Si lo manda vacío (la columna Name
+// de dyn.ItemInventLocation puede venir NULL/en blanco) NO se crea una sucursal sin nombre:
+// eso duplicaba el almacén bajo una sucursal "Sin sucursal" y dejaba el stock de la sucursal
+// real colgado. En su lugar se infiere la sucursal del almacén, pero solo si ese nombre de
+// almacén ya existe bajo exactamente una sucursal con nombre; si no, se rechaza el registro.
+func (t *erpStockSyncTx) resolveErpBranch(ctx context.Context, inv *domain.Inventory, cache *erpStockSyncCache) (int64, error) {
+	if strings.TrimSpace(inv.BranchName) != "" {
+		return t.resolveBranch(ctx, inv.BranchName, cache)
+	}
+
+	warehouse := inv.Warehouse
+	if strings.TrimSpace(warehouse) == "" {
+		return 0, errors.New("el ERP no reportó nombre de sucursal ni de almacén")
+	}
+
+	if id, ok := cache.branchIDByWarehouse[warehouse]; ok {
+		return id, nil
+	}
+
+	ids, err := t.warehousesRepo.FindNamedBranchIDsByWarehouseName(ctx, warehouse)
+	if err != nil {
+		return 0, err
+	}
+
+	switch len(ids) {
+	case 1:
+		cache.branchIDByWarehouse[warehouse] = ids[0]
+		return ids[0], nil
+	case 0:
+		return 0, fmt.Errorf("el ERP no reportó el nombre de la sucursal y el almacén %q no existe bajo ninguna sucursal con nombre", warehouse)
+	default:
+		return 0, fmt.Errorf("el ERP no reportó el nombre de la sucursal y el almacén %q existe en %d sucursales (ambiguo)", warehouse, len(ids))
+	}
 }
 
 func (t *erpStockSyncTx) resolveBranch(ctx context.Context, name string, cache *erpStockSyncCache) (int64, error) {

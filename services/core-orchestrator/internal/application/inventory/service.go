@@ -42,14 +42,14 @@ func (s *BranchService) GetBranchByID(ctx context.Context, id int64) (*mysqlInfr
 }
 
 func (s *BranchService) CreateBranch(ctx context.Context, input mysqlInfra.CreateBranchInput) (*mysqlInfra.BranchDTO, error) {
-	if input.Name == "" || input.CreatedBy <= 0 {
+	if !mysqlInfra.HasVisibleName(input.Name) || input.CreatedBy <= 0 {
 		return nil, ErrInvalidInventoryPayload
 	}
 	return s.repository.Create(ctx, input)
 }
 
 func (s *BranchService) UpdateBranch(ctx context.Context, id int64, input mysqlInfra.UpdateBranchInput) (*mysqlInfra.BranchDTO, error) {
-	if id <= 0 || input.Name == "" || input.UpdatedBy <= 0 {
+	if id <= 0 || !mysqlInfra.HasVisibleName(input.Name) || input.UpdatedBy <= 0 {
 		return nil, ErrInvalidInventoryPayload
 	}
 	return s.repository.Update(ctx, id, input)
@@ -101,14 +101,14 @@ func (s *WarehouseService) GetWarehousesByBranch(ctx context.Context, branchID i
 }
 
 func (s *WarehouseService) CreateWarehouse(ctx context.Context, input mysqlInfra.CreateWarehouseInput) (*mysqlInfra.WarehouseDTO, error) {
-	if input.Name == "" || input.BranchID <= 0 || input.CreatedBy <= 0 {
+	if !mysqlInfra.HasVisibleName(input.Name) || input.BranchID <= 0 || input.CreatedBy <= 0 {
 		return nil, ErrInvalidInventoryPayload
 	}
 	return s.repository.Create(ctx, input)
 }
 
 func (s *WarehouseService) UpdateWarehouse(ctx context.Context, id int64, input mysqlInfra.UpdateWarehouseInput) (*mysqlInfra.WarehouseDTO, error) {
-	if id <= 0 || input.Name == "" || input.BranchID <= 0 || input.UpdatedBy <= 0 {
+	if id <= 0 || !mysqlInfra.HasVisibleName(input.Name) || input.BranchID <= 0 || input.UpdatedBy <= 0 {
 		return nil, ErrInvalidInventoryPayload
 	}
 	return s.repository.Update(ctx, id, input)

@@ -113,6 +113,10 @@ func (r *BranchesRepository) FindByName(ctx context.Context, name string) (*Bran
 }
 
 func (r *BranchesRepository) Create(ctx context.Context, input CreateBranchInput) (*BranchDTO, error) {
+	if !HasVisibleName(input.Name) {
+		return nil, ErrInvalidLocationName
+	}
+
 	query := `
 		INSERT INTO ecom_branches (name, created_by, created_at, updated_at)
 		VALUES (?, ?, NOW(), NOW())
@@ -132,6 +136,10 @@ func (r *BranchesRepository) Create(ctx context.Context, input CreateBranchInput
 }
 
 func (r *BranchesRepository) Update(ctx context.Context, id int64, input UpdateBranchInput) (*BranchDTO, error) {
+	if !HasVisibleName(input.Name) {
+		return nil, ErrInvalidLocationName
+	}
+
 	query := `
 		UPDATE ecom_branches
 		SET name = ?, updated_by = ?, updated_at = NOW()
