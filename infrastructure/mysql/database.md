@@ -17,6 +17,7 @@
 
 ## Convenciones del esquema
 - `ecom_api_user` es la fuente de identidad para operaciones de auditoría; no debe usarse como tabla de negocio directa.
+- Permisos del admin-dashboard (RBAC): `ecom_roles` (roles configurables, con soft delete), `ecom_permissions` (catálogo `resource`+`action`, sembrado por migración `2026-11-18_rbac_permissions_seed.sql`), `ecom_role_permissions` (permisos de cada rol) y `ecom_user_permissions` (excepciones por usuario: `effect` = `grant` agrega un permiso extra, `deny` quita uno del rol). `ecom_api_user.role_id` apunta al rol (nullable). Permisos efectivos = (rol ∪ grants) − denies. Los usuarios con `ecom_api_user.role = 'admin'` tienen acceso total y no consultan estas tablas.
 - `ecom_products` es la tabla central del catálogo y sirve como punto de unión para dimensiones, SEO, media, stock y precios.
 - `ecom_sources` identifica el origen de un producto (código y nombre); `ecom_products.source_id` es obligatorio y referencia esta tabla.
 - `ecom_brands` y `ecom_categories` son dimensiones principales del catálogo y deben mantenerse relativamente estables.
