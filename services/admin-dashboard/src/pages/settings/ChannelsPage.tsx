@@ -8,8 +8,10 @@ import { apiClient } from "@/lib/api";
 import { paginatedChannelsResponseSchema } from "@/lib/schemas/channels";
 import { useChannelsPaginationStore } from "@/stores/channelsPaginationStore";
 import { keepPreviousData, useQuery } from "@tanstack/react-query";
+import { useState } from "react";
 import type { MouseEvent } from "react";
 import type { Channel } from "@/lib/schemas/channels";
+import { ChannelConfigDialog } from "./ChannelConfigDialog";
 
 function statusLabel(status: Channel["status"]) {
     if (status === "active") return "Activo";
@@ -44,6 +46,7 @@ export function ChannelsPage() {
     const currentPage = Math.min(totalPages, Math.floor(offset / pageSize) + 1);
     const canGoPrevious = offset > 0;
     const canGoNext = offset + pageSize < total;
+    const [configChannel, setConfigChannel] = useState<Channel | null>(null);
 
     const handlePageSizeChange = (value: string | null) => {
         if (!value) {
@@ -184,6 +187,9 @@ export function ChannelsPage() {
                                     />
                                     <DropdownMenuContent>
                                         <DropdownMenuGroup>
+                                            <DropdownMenuItem onClick={() => setConfigChannel(channel)}>
+                                                Ver configuración
+                                            </DropdownMenuItem>
                                             <DropdownMenuItem>Editar</DropdownMenuItem>
                                         </DropdownMenuGroup>
                                     </DropdownMenuContent>
@@ -193,6 +199,14 @@ export function ChannelsPage() {
                     ))}
                 </TableBody>
             </Table>
+
+            <ChannelConfigDialog
+                channel={configChannel}
+                open={configChannel !== null}
+                onOpenChange={(isOpen) => {
+                    if (!isOpen) setConfigChannel(null);
+                }}
+            />
         </section>
     )
 }

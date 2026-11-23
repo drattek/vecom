@@ -76,6 +76,7 @@ func NewRouter(
 	meliListingImportHandler *httpHandler.MeliListingImportHandler,
 	meliBulkImportHandler *httpHandler.MeliBulkImportHandler,
 	productBulkUpdateHandler *httpHandler.ProductBulkUpdateHandler,
+	connectionConfigViewHandler *httpHandler.ConnectionConfigViewHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -370,6 +371,10 @@ func NewRouter(
 
 		// Connection Status endpoints
 		protected.Get("/api/connections/{connectionId}/status", connectionStatusHandler.GetStatusByConnection)
+
+		// Vista de solo lectura de la configuración de una conexión (credenciales
+		// enmascaradas, ajustes y estado). Cuando exista RBAC: connections.manage_credentials.
+		protected.Get("/api/channel-connections/{id}/config", connectionConfigViewHandler.GetConfig)
 
 		// Channel Parameters endpoints
 		protected.Get("/api/channel-parameters", channelParametersHandler.GetParameters)

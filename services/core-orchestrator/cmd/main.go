@@ -537,6 +537,9 @@ func main() {
 	connectionCredentialsHandler := httpHandler.NewConnectionCredentialsHandler(connectionCredentialsService)
 	connectionSettingsHandler := httpHandler.NewConnectionSettingsHandler(connectionSettingsService)
 	connectionStatusHandler := httpHandler.NewConnectionStatusHandler(connectionStatusService)
+	connectionConfigViewHandler := httpHandler.NewConnectionConfigViewHandler(
+		channelConfigApp.NewConnectionConfigViewService(connectionCredentialsService, connectionSettingsService, connectionStatusService),
+	)
 	channelParametersHandler := httpHandler.NewChannelParametersHandler(channelParametersService)
 	attributeHandler := httpHandler.NewAttributeHandler(attributeService)
 	attributeOptionHandler := httpHandler.NewAttributeOptionHandler(attributeOptionService)
@@ -738,6 +741,7 @@ func main() {
 		meliListingImportHandler,
 		meliBulkImportHandler,
 		productBulkUpdateHandler,
+		connectionConfigViewHandler,
 	)
 
 	server := &http.Server{

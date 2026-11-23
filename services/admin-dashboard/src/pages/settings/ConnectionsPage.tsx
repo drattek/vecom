@@ -6,6 +6,7 @@ import { paginatedChannelConnectionsResponseSchema, type ChannelConnection } fro
 import { useChannelConnectionsPaginationStore } from "@/stores/channelConnectionsPaginationStore";
 import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
+import { ConnectionConfigDialog } from "./ConnectionConfigDialog";
 import { ConnectionZeroStockDialog } from "./ConnectionZeroStockDialog";
 
 function formatDate(value: string): string {
@@ -54,6 +55,7 @@ export function ConnectionsPage() {
     const total = data?.total ?? 0
 
     const [zeroStockConnection, setZeroStockConnection] = useState<ChannelConnection | null>(null)
+    const [configConnection, setConfigConnection] = useState<ChannelConnection | null>(null)
 
     return (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
@@ -101,19 +103,29 @@ export function ConnectionsPage() {
                             <TableCell>{environmentLabel(connection.environment)}</TableCell>
                             <TableCell>{formatDate(connection.updatedAt)}</TableCell>
                             <TableCell>
-                                <Button
-                                    variant="outline"
-                                    size="sm"
-                                    onClick={() => setZeroStockConnection(connection)}
-                                    title="Configurar publicación de artículos sin stock"
-                                >
-                                    Sin stock
-                                    {connection.syncZeroStockAsPaused ? (
-                                        <span className="ml-2 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-                                            ON
-                                        </span>
-                                    ) : null}
-                                </Button>
+                                <div className="flex flex-wrap gap-2">
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setConfigConnection(connection)}
+                                        title="Ver credenciales (ocultas), ajustes y estado de la conexión"
+                                    >
+                                        Configuración
+                                    </Button>
+                                    <Button
+                                        variant="outline"
+                                        size="sm"
+                                        onClick={() => setZeroStockConnection(connection)}
+                                        title="Configurar publicación de artículos sin stock"
+                                    >
+                                        Sin stock
+                                        {connection.syncZeroStockAsPaused ? (
+                                            <span className="ml-2 inline-flex items-center rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
+                                                ON
+                                            </span>
+                                        ) : null}
+                                    </Button>
+                                </div>
                             </TableCell>
                         </TableRow>
                     ))}
@@ -126,6 +138,14 @@ export function ConnectionsPage() {
                 total={total}
                 onOffsetChange={setOffset}
                 onPageSizeChange={setPageSize}
+            />
+
+            <ConnectionConfigDialog
+                connection={configConnection}
+                open={configConnection !== null}
+                onOpenChange={(open) => {
+                    if (!open) setConfigConnection(null)
+                }}
             />
 
             <ConnectionZeroStockDialog
