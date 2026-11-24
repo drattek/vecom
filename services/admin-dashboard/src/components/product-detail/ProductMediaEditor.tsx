@@ -3,6 +3,7 @@ import {
     SectionCard,
     SectionState,
 } from "@/components/product-detail/ProductDetailPrimitives"
+import { Can } from "@/auth/Can"
 import { Button } from "@/components/ui/button"
 import {
     Dialog,
@@ -575,7 +576,8 @@ export function ProductImagesCard({ images }: { images: ProductMediaItem[] }) {
             action={
                 <div className="flex items-center gap-1.5">
                     {managing && images.length > 0 ? <AddImagesDialog productId={productId} /> : null}
-                    <Button variant="ghost" size="sm" onClick={() => setManaging((value) => !value)}>
+                    <Can any={["product_media.create", "product_media.edit", "product_media.delete"]}>
+<Button variant="ghost" size="sm" onClick={() => setManaging((value) => !value)}>
                         {managing ? (
                             "Listo"
                         ) : (
@@ -585,6 +587,7 @@ export function ProductImagesCard({ images }: { images: ProductMediaItem[] }) {
                             </>
                         )}
                     </Button>
+</Can>
                 </div>
             }
         >
@@ -1013,7 +1016,8 @@ export function ProductAttachmentsCard({ attachments }: { attachments: ProductMe
                     {managing && attachments.length > 0 ? (
                         <AddAttachmentsDialog productId={productId} />
                     ) : null}
-                    <Button variant="ghost" size="sm" onClick={() => setManaging((value) => !value)}>
+                    <Can any={["product_media.create", "product_media.edit", "product_media.delete"]}>
+<Button variant="ghost" size="sm" onClick={() => setManaging((value) => !value)}>
                         {managing ? (
                             "Listo"
                         ) : (
@@ -1023,6 +1027,7 @@ export function ProductAttachmentsCard({ attachments }: { attachments: ProductMe
                             </>
                         )}
                     </Button>
+</Can>
                 </div>
             }
         >
@@ -1455,7 +1460,8 @@ export function ProductVideosCard({ videos }: { videos: ProductMediaItem[] }) {
             action={
                 <div className="flex items-center gap-1.5">
                     {managing && videos.length > 0 ? <AddVideosDialog productId={productId} /> : null}
-                    <Button variant="ghost" size="sm" onClick={() => setManaging((value) => !value)}>
+                    <Can any={["product_media.create", "product_media.edit", "product_media.delete"]}>
+<Button variant="ghost" size="sm" onClick={() => setManaging((value) => !value)}>
                         {managing ? (
                             "Listo"
                         ) : (
@@ -1465,6 +1471,7 @@ export function ProductVideosCard({ videos }: { videos: ProductMediaItem[] }) {
                             </>
                         )}
                     </Button>
+</Can>
                 </div>
             }
         >

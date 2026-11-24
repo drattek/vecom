@@ -1,4 +1,5 @@
 import { ConfirmDeleteDialog } from "@/components/fitments/ConfirmDeleteDialog"
+import { Can } from "@/auth/Can"
 import { EquipmentTypeDialog } from "@/components/fitments/FitmentDialogs"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -49,10 +50,12 @@ export function EquipmentTypesPage() {
                         Clasificación de la maquinaria del catálogo. Un tipo en uso por alguna maquinaria no se puede eliminar.
                     </p>
                 </div>
-                <Button size="sm" onClick={() => openEditor(null)}>
+                <Can any={["equipment_types.create"]}>
+<Button size="sm" onClick={() => openEditor(null)}>
                     <PlusIcon />
                     Nuevo tipo
                 </Button>
+</Can>
             </div>
 
             {notice ? (
@@ -103,7 +106,8 @@ export function EquipmentTypesPage() {
                             </TableCell>
                             <TableCell>
                                 <div className="flex items-center gap-1">
-                                    <Button
+                                    <Can any={["equipment_types.edit"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Editar ${type.name}`}
@@ -111,7 +115,9 @@ export function EquipmentTypesPage() {
                                     >
                                         <PencilIcon />
                                     </Button>
-                                    <Button
+</Can>
+                                    <Can any={["equipment_types.delete"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Eliminar ${type.name}`}
@@ -128,6 +134,7 @@ export function EquipmentTypesPage() {
                                     >
                                         <Trash2Icon />
                                     </Button>
+</Can>
                                 </div>
                             </TableCell>
                         </TableRow>

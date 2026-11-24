@@ -1,4 +1,5 @@
 import { ImportMeliListingDialog } from "@/components/product-detail/ImportMeliListingDialog"
+import { Can } from "@/auth/Can"
 import { Badge, Field, FieldError, SectionCard, SectionState } from "@/components/product-detail/ProductDetailPrimitives"
 import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -168,9 +169,11 @@ function ConnectionCard({
                     {/* Una publicación que ya existe en MercadoLibre se vincula en
                         vez de publicar una nueva. */}
                     {isMercadoLibre ? (
-                        <Button size="sm" variant="outline" onClick={() => setImportOpen(true)} disabled={!productId}>
+                        <Can any={["product_sync.publish"]}>
+<Button size="sm" variant="outline" onClick={() => setImportOpen(true)} disabled={!productId}>
                             Importar publicación existente
                         </Button>
+</Can>
                     ) : null}
                 </div>
             ) : (
@@ -195,15 +198,19 @@ function ConnectionCard({
                     {/* Resincronizar solo actualiza publicaciones existentes: sin
                         ninguna no hace nada. */}
                     {activeListings.length > 0 ? (
-                        <ResyncButton
+                        <Can any={["channel_listings.resync"]}>
+<ResyncButton
                             productId={productId}
                             sku={sku}
                             connectionId={connection.connectionId}
                             listings={activeListings}
                         />
+</Can>
                     ) : null}
                     {supportsCompatibilitiesSync && activeListings.length > 0 ? (
-                        <SyncCompatibilitiesButton productId={productId} connectionId={connection.connectionId} />
+                        <Can any={["channel_listings.resync"]}>
+<SyncCompatibilitiesButton productId={productId} connectionId={connection.connectionId} />
+</Can>
                     ) : null}
                     {closedListings.length > 0 ? (
                         <ClosedListingsNotice
@@ -299,7 +306,8 @@ function PublishGate({
                             Atributos.
                         </p>
                     ) : null}
-                    <PublishButton
+                    <Can any={["product_sync.publish"]}>
+<PublishButton
                         productId={productId}
                         sku={sku}
                         connectionId={connectionId}
@@ -307,6 +315,7 @@ function PublishGate({
                         variant={variant}
                         disabled={!canPublish}
                     />
+</Can>
                 </div>
             )}
         </div>

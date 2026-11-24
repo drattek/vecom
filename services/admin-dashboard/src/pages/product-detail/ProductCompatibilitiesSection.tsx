@@ -1,4 +1,5 @@
 import { ConfirmDeleteDialog } from "@/components/fitments/ConfirmDeleteDialog"
+import { Can } from "@/auth/Can"
 import { AddCompatibilityDialog } from "@/components/product-detail/AddCompatibilityDialog"
 import { SectionCard, SectionState } from "@/components/product-detail/ProductDetailPrimitives"
 import { Button } from "@/components/ui/button"
@@ -94,10 +95,12 @@ export function ProductCompatibilitiesSection() {
                 <p className="text-sm text-muted-foreground">
                     Vehículos y maquinaria a los que aplica este producto.
                 </p>
-                <Button size="sm" onClick={() => setAddOpen(true)}>
+                <Can any={["product_compatibilities.create"]}>
+<Button size="sm" onClick={() => setAddOpen(true)}>
                     <PlusIcon />
                     Agregar compatibilidad
                 </Button>
+</Can>
             </div>
 
             {notice ? (
@@ -143,7 +146,8 @@ export function ProductCompatibilitiesSection() {
                                     <DashCell value={compatibility.position} />
                                     <DashCell value={compatibility.side} />
                                     <TableCell>
-                                        <Button
+                                        <Can any={["product_compatibilities.delete"]}>
+<Button
                                             variant="ghost"
                                             size="icon-sm"
                                             aria-label={`Quitar ${compatibility.brandName ?? ""} ${compatibility.model}`}
@@ -151,6 +155,7 @@ export function ProductCompatibilitiesSection() {
                                         >
                                             <Trash2Icon />
                                         </Button>
+</Can>
                                     </TableCell>
                                 </TableRow>
                             ))}
@@ -187,7 +192,8 @@ export function ProductCompatibilitiesSection() {
                                     <DashCell value={compatibility.model} />
                                     <DashCell value={compatibility.serie} />
                                     <TableCell>
-                                        <Button
+                                        <Can any={["product_compatibilities.delete"]}>
+<Button
                                             variant="ghost"
                                             size="icon-sm"
                                             aria-label={`Quitar ${compatibility.brandName ?? ""} ${compatibility.model ?? compatibility.serie ?? ""}`}
@@ -195,6 +201,7 @@ export function ProductCompatibilitiesSection() {
                                         >
                                             <Trash2Icon />
                                         </Button>
+</Can>
                                     </TableCell>
                                 </TableRow>
                             ))}

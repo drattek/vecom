@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/PageHeader.tsx";
+import { Can } from "@/auth/Can"
 import { TablePagination } from "@/components/TablePagination";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -96,10 +97,12 @@ export function ProductsPage() {
                                 Actualizando...
                             </span>
                         ) : null}
-                        <Button variant="outline" size="sm" onClick={() => navigate("/products/bulk-update")}>
+                        <Can any={["products_bulk_update.view"]}>
+<Button variant="outline" size="sm" onClick={() => navigate("/products/bulk-update")}>
                             <FileSpreadsheetIcon />
                             Actualización masiva
                         </Button>
+</Can>
                     </div>
                 </div>
 

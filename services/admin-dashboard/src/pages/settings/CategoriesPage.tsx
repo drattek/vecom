@@ -1,4 +1,5 @@
 import { CreateCategoryDialog } from "@/components/categories/CreateCategoryDialog"
+import { Can } from "@/auth/Can"
 import { ImportCategoryDialog } from "@/components/categories/ImportCategoryDialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -131,8 +132,12 @@ export function CategoriesPage() {
                     Colapsar todo
                 </Button>
                 <div className="flex-1" />
-                <CreateCategoryDialog />
-                <ImportCategoryDialog />
+                <Can any={["categories.create"]}>
+<CreateCategoryDialog />
+</Can>
+                <Can any={["categories.import"]}>
+<ImportCategoryDialog />
+</Can>
             </div>
 
             <div className="mt-3 min-h-0 flex-1 overflow-auto rounded-lg border border-border">

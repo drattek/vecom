@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/PageHeader.tsx"
+import { Can } from "@/auth/Can"
 import { TablePagination } from "@/components/TablePagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -253,10 +254,12 @@ export function ProductsBulkUpdatePage() {
                                     event.target.value = ""
                                 }}
                             />
-                            <Button variant="outline" size="sm" disabled={!canUpload} onClick={() => fileInput.current?.click()}>
+                            <Can any={["products_bulk_update.import"]}>
+<Button variant="outline" size="sm" disabled={!canUpload} onClick={() => fileInput.current?.click()}>
                                 {upload.isPending ? <Loader2Icon className="animate-spin" /> : <UploadIcon />}
                                 {upload.isPending ? "Subiendo…" : "Seleccionar archivo Excel"}
                             </Button>
+</Can>
                             <Button variant="ghost" size="sm" disabled={template.isPending} onClick={() => template.mutate()}>
                                 {template.isPending ? <Loader2Icon className="animate-spin" /> : <FileSpreadsheetIcon />}
                                 Descargar plantilla
@@ -281,7 +284,8 @@ export function ProductsBulkUpdatePage() {
                                     </option>
                                 ))}
                             </select>
-                            <Button
+                            <Can any={["products_bulk_update.export"]}>
+<Button
                                 variant="outline"
                                 size="sm"
                                 disabled={exportBatchId == null || exportBatch.isPending}
@@ -290,6 +294,7 @@ export function ProductsBulkUpdatePage() {
                                 {exportBatch.isPending ? <Loader2Icon className="animate-spin" /> : <DownloadIcon />}
                                 {exportBatch.isPending ? "Generando…" : "Exportar Excel"}
                             </Button>
+</Can>
                         </div>
                     </div>
                     {inProgress > 0 ? (
@@ -396,7 +401,8 @@ export function ProductsBulkUpdatePage() {
                                 {f.label} ({countFor(f.key)})
                             </Button>
                         ))}
-                        {filter === "failed" || filter === "missing" ? (
+                        <Can any={["products_bulk_update.retry"]}>
+{filter === "failed" || filter === "missing" ? (
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -408,6 +414,7 @@ export function ProductsBulkUpdatePage() {
                                 {filter === "missing" ? "Reprocesar faltantes" : "Reintentar con error"}
                             </Button>
                         ) : null}
+</Can>
                     </div>
                 ) : null}
                 {retryAll.isSuccess ? (
@@ -477,7 +484,8 @@ export function ProductsBulkUpdatePage() {
                                         {item.errorMessage ?? ""}
                                     </TableCell>
                                     <TableCell>
-                                        {item.retryable ? (
+                                        <Can any={["products_bulk_update.retry"]}>
+{item.retryable ? (
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -488,6 +496,7 @@ export function ProductsBulkUpdatePage() {
                                                 Reintentar
                                             </Button>
                                         ) : null}
+</Can>
                                     </TableCell>
                                 </TableRow>
                             ))}

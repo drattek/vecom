@@ -5,6 +5,7 @@ import {
     SectionEditActions,
     SectionState,
 } from "@/components/product-detail/ProductDetailPrimitives"
+import { Can } from "@/auth/Can"
 import { AttributeChecklistTable } from "@/components/product-detail/AttributeChecklistTable"
 import { ExternalCategoryTree } from "@/components/categories/ExternalCategoryTree"
 import { Button } from "@/components/ui/button"
@@ -257,9 +258,11 @@ function AttributesChecklistCard({
                             <span className="font-medium">
                                 {checklist.data.externalCategoryName ?? checklist.data.externalCategoryId}
                             </span>
-                            <Button size="sm" variant="outline" onClick={() => setChangingCategory(true)}>
+                            <Can any={["product_sync.publish"]}>
+<Button size="sm" variant="outline" onClick={() => setChangingCategory(true)}>
                                 Cambiar categoría
                             </Button>
+</Can>
                         </div>
                     ) : null}
                     {checklist.data.attributeScope === "product" ? (
@@ -393,7 +396,8 @@ function CategorySelector({
                                             </p>
                                         ) : null}
                                     </div>
-                                    <Button
+                                    <Can any={["product_sync.publish"]}>
+<Button
                                         size="sm"
                                         disabled={mutation.isPending}
                                         onClick={() => pick(suggestion.category_id)}
@@ -402,21 +406,26 @@ function CategorySelector({
                                             ? "Guardando…"
                                             : "Usar"}
                                     </Button>
+</Can>
                                 </li>
                             ))}
                         </ul>
-                        <div>
+                        <Can any={["product_sync.publish"]}>
+<div>
                             <Button size="sm" variant="outline" disabled={mutation.isPending} onClick={() => setShowTree(true)}>
                                 Elegir otra
                             </Button>
                         </div>
+</Can>
                     </div>
                 ) : (
                     <div className="flex flex-col items-start gap-2">
                         <p className="text-sm text-muted-foreground">No se pudo sugerir una categoría automáticamente.</p>
-                        <Button size="sm" variant="outline" onClick={() => setShowTree(true)}>
+                        <Can any={["product_sync.publish"]}>
+<Button size="sm" variant="outline" onClick={() => setShowTree(true)}>
                             Elegir categoría
                         </Button>
+</Can>
                     </div>
                 )}
                 <FieldError message={errorMessage} />
@@ -695,6 +704,7 @@ function DimensionsCard({
             description="Medidas en centímetros y peso en kilogramos. El volumen se calcula como largo × ancho × alto."
             action={
                 <SectionEditActions
+                    permission="product_attributes.edit"
                     isEditing={editor.isEditing}
                     isSaving={editor.isSaving}
                     onEdit={editor.start}
@@ -788,6 +798,7 @@ function SeoCard({ productId, seo }: { productId?: string; seo: ProductSeo | nul
             description="Metadatos usados al publicar el producto."
             action={
                 <SectionEditActions
+                    permission="product_attributes.edit"
                     isEditing={editor.isEditing}
                     isSaving={editor.isSaving}
                     onEdit={editor.start}

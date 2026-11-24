@@ -4,6 +4,7 @@ import {
     SectionCard,
     SectionState,
 } from "@/components/product-detail/ProductDetailPrimitives"
+import { Can } from "@/auth/Can"
 import { TablePagination } from "@/components/TablePagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -276,10 +277,12 @@ export function ProductInventorySection() {
                     <div className="flex items-center gap-3">
                         <span className="text-xs text-muted-foreground">{data.byLocation.length} ubicaciones</span>
                         {isMovementFormOpen ? null : (
-                            <Button variant="ghost" size="sm" onClick={() => setIsMovementFormOpen(true)}>
+                            <Can any={["product_inventory.create"]}>
+<Button variant="ghost" size="sm" onClick={() => setIsMovementFormOpen(true)}>
                                 <PlusIcon />
                                 Registrar movimiento
                             </Button>
+</Can>
                         )}
                     </div>
                 }

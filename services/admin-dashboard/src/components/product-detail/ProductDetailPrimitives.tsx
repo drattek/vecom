@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button"
+import { useAuth } from "@/auth/AuthContext"
 import { cn } from "@/lib/utils"
 import { PencilIcon } from "lucide-react"
 
@@ -90,18 +91,26 @@ export function Badge({
  * botón "Editar" en reposo, par "Cancelar / Guardar" en modo edición.
  */
 export function SectionEditActions({
+    permission,
     isEditing,
     isSaving,
     onEdit,
     onCancel,
     onSave,
 }: {
+    /** Permiso "recurso.accion" necesario para editar; sin él no se muestra nada. */
+    permission?: string
     isEditing: boolean
     isSaving: boolean
     onEdit: () => void
     onCancel: () => void
     onSave: () => void
 }) {
+    const { can } = useAuth()
+    if (permission && !can(permission)) {
+        return null
+    }
+
     if (!isEditing) {
         return (
             <Button variant="ghost" size="sm" onClick={onEdit}>

@@ -106,6 +106,7 @@ function IdentificationCard({ productId, data }: { productId?: string; data: Pro
             title="Identificación"
             action={
                 <SectionEditActions
+                    permission="products.edit"
                     isEditing={editor.isEditing}
                     isSaving={editor.isSaving}
                     onEdit={editor.start}
@@ -218,6 +219,7 @@ function ClassificationCard({ productId, data }: { productId?: string; data: Pro
             title="Clasificación"
             action={
                 <SectionEditActions
+                    permission="products.edit"
                     isEditing={editor.isEditing}
                     isSaving={editor.isSaving}
                     onEdit={editor.start}
@@ -303,6 +305,7 @@ function DescriptionCard({ productId, data }: { productId?: string; data: Produc
             title="Descripción"
             action={
                 <SectionEditActions
+                    permission="products.edit"
                     isEditing={editor.isEditing}
                     isSaving={editor.isSaving}
                     onEdit={editor.start}

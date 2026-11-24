@@ -77,6 +77,7 @@ func NewRouter(
 	meliBulkImportHandler *httpHandler.MeliBulkImportHandler,
 	productBulkUpdateHandler *httpHandler.ProductBulkUpdateHandler,
 	connectionConfigViewHandler *httpHandler.ConnectionConfigViewHandler,
+	rolesHandler *httpHandler.RolesHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -119,7 +120,11 @@ func NewRouter(
 
 	r.Group(func(protected chi.Router) {
 		protected.Use(authMiddleware.RequireAuth)
+		// RBAC (ADR 0009): permiso por ruta según routePermissions; admin
+		// siempre pasa y toda ruta sin entrada es solo para admin.
+		protected.Use(authMiddleware.RequireRoutePermission(routePermissions))
 		protected.Post("/api/logout", authHandler.Logout)
+		protected.Get("/api/me", authHandler.Me)
 		protected.Get("/api/products", productHandler.GetProducts)
 		protected.Get("/api/products/{id}", productHandler.GetProductByID)
 		protected.Post("/api/products", productHandler.CreateProduct)
@@ -159,11 +164,20 @@ func NewRouter(
 		// uppercased) — see brands.BrandService.BulkAssignBrands.
 		protected.Post("/api/brands/bulk-assign", brandHandler.BulkAssignBrands)
 
-		// Users endpoints (admin "Usuarios" page). No role gating yet — same
-		// RequireAuth-only criterion as every other route here; see
-		// application/users package doc.
+		// Users endpoints (admin "Usuarios" page): alta, detalle y acceso
+		// (rol + excepciones de permisos). Ver application/users.
 		protected.Get("/api/users", userHandler.GetUsers)
+		protected.Get("/api/users/{id}", userHandler.GetUser)
 		protected.Post("/api/users", userHandler.CreateUser)
+		protected.Put("/api/users/{id}", userHandler.UpdateUser)
+
+		// Roles y catálogo de permisos (Configuración → Roles).
+		protected.Get("/api/roles", rolesHandler.ListRoles)
+		protected.Get("/api/roles/{id}", rolesHandler.GetRole)
+		protected.Post("/api/roles", rolesHandler.CreateRole)
+		protected.Put("/api/roles/{id}", rolesHandler.UpdateRole)
+		protected.Delete("/api/roles/{id}", rolesHandler.DeleteRole)
+		protected.Get("/api/permissions", rolesHandler.ListPermissions)
 
 		// Categories endpoints
 		protected.Get("/api/categories", categoryHandler.GetCategories)

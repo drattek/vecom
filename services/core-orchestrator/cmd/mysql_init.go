@@ -60,6 +60,7 @@ type MySQLRepositories struct {
 	ProductDetailsRepository                  *mysqlInfra.ProductDetailsRepository
 	ChannelProductCategorySelectionRepository *mysqlInfra.ChannelProductCategorySelectionRepository
 	UsersRepository                           *mysqlInfra.UsersRepository
+	RBACRepository                            *mysqlInfra.RBACRepository
 	ProductFitmentsExportRepository           *mysqlInfra.ProductFitmentsExportRepository
 }
 
@@ -118,6 +119,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 	productDetailsRepository := mysqlInfra.NewProductDetailsRepository(db)
 	channelProductCategorySelectionRepository := mysqlInfra.NewChannelProductCategorySelectionRepository(db)
 	usersRepository := mysqlInfra.NewUsersRepository(db)
+	rbacRepository := mysqlInfra.NewRBACRepository(db)
 	productFitmentsExportRepository := mysqlInfra.NewProductFitmentsExportRepository(db)
 
 	return &MySQLRepositories{
@@ -173,6 +175,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 		ProductDetailsRepository:                  productDetailsRepository,
 		ChannelProductCategorySelectionRepository: channelProductCategorySelectionRepository,
 		UsersRepository:                           usersRepository,
+		RBACRepository:                            rbacRepository,
 		ProductFitmentsExportRepository:           productFitmentsExportRepository,
 	}
 }

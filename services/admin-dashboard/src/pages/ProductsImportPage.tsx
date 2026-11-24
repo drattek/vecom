@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/PageHeader.tsx"
+import { Can } from "@/auth/Can"
 import { TablePagination } from "@/components/TablePagination"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -222,7 +223,8 @@ export function ProductsImportPage() {
                                 event.target.value = ""
                             }}
                         />
-                        <Button
+                        <Can any={["products_import.import"]}>
+<Button
                             variant="outline"
                             size="sm"
                             disabled={selectedConnectionId == null || upload.isPending}
@@ -231,6 +233,7 @@ export function ProductsImportPage() {
                             {upload.isPending ? <Loader2Icon className="animate-spin" /> : <UploadIcon />}
                             {upload.isPending ? "Subiendo…" : "Seleccionar archivo Excel"}
                         </Button>
+</Can>
                     </div>
                     <div className="flex flex-col gap-1">
                         <label htmlFor="bulk-import-export-batch" className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
@@ -250,7 +253,8 @@ export function ProductsImportPage() {
                                     </option>
                                 ))}
                             </select>
-                            <Button
+                            <Can any={["products_import.export"]}>
+<Button
                                 variant="outline"
                                 size="sm"
                                 disabled={exportBatchId == null || exportBatch.isPending}
@@ -259,6 +263,7 @@ export function ProductsImportPage() {
                                 {exportBatch.isPending ? <Loader2Icon className="animate-spin" /> : <DownloadIcon />}
                                 {exportBatch.isPending ? "Generando…" : "Exportar Excel"}
                             </Button>
+</Can>
                         </div>
                     </div>
                     {inProgress > 0 ? (
@@ -331,7 +336,8 @@ export function ProductsImportPage() {
                                 {f.label} ({countFor(f.key)})
                             </Button>
                         ))}
-                        {filter === "failed" || filter === "missing" ? (
+                        <Can any={["products_import.retry"]}>
+{filter === "failed" || filter === "missing" ? (
                             <Button
                                 variant="outline"
                                 size="sm"
@@ -343,6 +349,7 @@ export function ProductsImportPage() {
                                 {filter === "missing" ? "Reprocesar faltantes" : "Reintentar con error"}
                             </Button>
                         ) : null}
+</Can>
                     </div>
                 ) : null}
                 {retryAll.isSuccess ? (
@@ -412,7 +419,8 @@ export function ProductsImportPage() {
                                         {item.errorMessage ?? stepsSummary(item) ?? ""}
                                     </TableCell>
                                     <TableCell>
-                                        {item.status === "failed" || item.status === "missing" ? (
+                                        <Can any={["products_import.retry"]}>
+{item.status === "failed" || item.status === "missing" ? (
                                             <Button
                                                 variant="ghost"
                                                 size="sm"
@@ -423,6 +431,7 @@ export function ProductsImportPage() {
                                                 Reintentar
                                             </Button>
                                         ) : null}
+</Can>
                                     </TableCell>
                                 </TableRow>
                             ))}

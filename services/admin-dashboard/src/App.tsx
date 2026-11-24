@@ -1,9 +1,11 @@
 import { useEffect } from 'react'
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { SettingsPage } from './pages/SettingsPage.tsx'
+import { SettingsIndexRedirect, SettingsPage } from './pages/SettingsPage.tsx'
 import { AuthProvider, useAuth } from './auth/AuthContext.tsx'
 import { ProtectedRoute } from './auth/ProtectedRoute.tsx'
+import { RequirePermission } from './auth/RequirePermission.tsx'
+import { HomeGate } from './auth/HomeGate.tsx'
 import { registerUnauthorizedHandler } from './lib/api.ts'
 import { DashboardPage } from './pages/DashboardPage.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
@@ -46,6 +48,7 @@ import { CategoryDetailPage } from './pages/settings/CategoryDetailPage.tsx'
 import { FitmentsVehiclesPage } from './pages/settings/FitmentsVehiclesPage.tsx'
 import { FitmentsEquipmentPage } from './pages/settings/FitmentsEquipmentPage.tsx'
 import { EquipmentTypesPage } from './pages/settings/EquipmentTypesPage.tsx'
+import { RolesPage } from './pages/settings/RolesPage.tsx'
 
 const queryClient = new QueryClient()
 
@@ -60,19 +63,19 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<DashboardPage />} />
+        <Route path="/dashboard" element={<HomeGate><DashboardPage /></HomeGate>} />
         <Route path="/profile" element={<ProfilePage />} />
-        <Route path="/users" element={<UsersPage />} />
+        <Route path="/users" element={<RequirePermission any={['users.view']}><UsersPage /></RequirePermission>} />
         <Route path="/meli" element={<Navigate to="/meli/listings" replace />} />
-        <Route path="/meli/listings" element={<MeliListingsPage />} />
+        <Route path="/meli/listings" element={<RequirePermission any={['meli_listings.view']}><MeliListingsPage /></RequirePermission>} />
         <Route path="/reports" element={<Navigate to="/reports/publications" replace />} />
-        <Route path="/reports/publications" element={<PublicationsReportPage />} />
-        <Route path="/products" element={<ProductsPage />} />
-        <Route path="/products/pending" element={<ProductsPendingPage />} />
-        <Route path="/products/images" element={<ProductsImagesPage />} />
-        <Route path="/products/import" element={<ProductsImportPage />} />
-        <Route path="/products/bulk-update" element={<ProductsBulkUpdatePage />} />
-        <Route path="/products/channels/:channelId" element={<ProductsChannelPage />}>
+        <Route path="/reports/publications" element={<RequirePermission any={['reports.view']}><PublicationsReportPage /></RequirePermission>} />
+        <Route path="/products" element={<RequirePermission any={['products.view']}><ProductsPage /></RequirePermission>} />
+        <Route path="/products/pending" element={<RequirePermission any={['products_pending.view']}><ProductsPendingPage /></RequirePermission>} />
+        <Route path="/products/images" element={<RequirePermission any={['products_images.view']}><ProductsImagesPage /></RequirePermission>} />
+        <Route path="/products/import" element={<RequirePermission any={['products_import.view']}><ProductsImportPage /></RequirePermission>} />
+        <Route path="/products/bulk-update" element={<RequirePermission any={['products_bulk_update.view']}><ProductsBulkUpdatePage /></RequirePermission>} />
+        <Route path="/products/channels/:channelId" element={<RequirePermission any={['products_channels.view']}><ProductsChannelPage /></RequirePermission>}>
           <Route index element={<ProductsChannelDashboard />} />
           <Route path="connections/:connectionId" element={<ProductsChannelConnectionPage />} />
         </Route>
@@ -82,84 +85,85 @@ function AppRoutes() {
           segmentos estáticos sobre :productId, así que esas rutas siguen
           ganando y este patrón solo captura ids reales.
         */}
-        <Route path="/products/:productId" element={<ProductDetailPage />}>
+        <Route path="/products/:productId" element={<RequirePermission any={['products.view']}><ProductDetailPage /></RequirePermission>}>
           <Route index element={<ProductGeneralSection />} />
-          <Route path="media" element={<ProductMediaSection />} />
-          <Route path="pricing" element={<ProductPricingSection />} />
-          <Route path="inventory" element={<ProductInventorySection />} />
-          <Route path="part-numbers" element={<ProductPartNumbersSection />} />
-          <Route path="attributes" element={<ProductAttributesSection />} />
-          <Route path="compatibilities" element={<ProductCompatibilitiesSection />} />
-          <Route path="sync" element={<ProductSyncSection />} />
+          <Route path="media" element={<RequirePermission any={['product_media.view']}><ProductMediaSection /></RequirePermission>} />
+          <Route path="pricing" element={<RequirePermission any={['product_pricing.view']}><ProductPricingSection /></RequirePermission>} />
+          <Route path="inventory" element={<RequirePermission any={['product_inventory.view']}><ProductInventorySection /></RequirePermission>} />
+          <Route path="part-numbers" element={<RequirePermission any={['product_part_numbers.view']}><ProductPartNumbersSection /></RequirePermission>} />
+          <Route path="attributes" element={<RequirePermission any={['product_attributes.view']}><ProductAttributesSection /></RequirePermission>} />
+          <Route path="compatibilities" element={<RequirePermission any={['product_compatibilities.view']}><ProductCompatibilitiesSection /></RequirePermission>} />
+          <Route path="sync" element={<RequirePermission any={['product_sync.view']}><ProductSyncSection /></RequirePermission>} />
         </Route>
         <Route path="/settings" element={<SettingsPage />}>
-          <Route
-            index
-            element={<Navigate to="marketplace-channels" replace />}
-          />
+          <Route index element={<SettingsIndexRedirect />} />
           <Route
             path="storage-disks"
-            element={<StorageDiskPage />}
+            element={<RequirePermission any={['storage_disks.view']}><StorageDiskPage /></RequirePermission>}
           />
           <Route
             path="storage-files"
-            element={<FilesPage />}
+            element={<RequirePermission any={['storage_files.view']}><FilesPage /></RequirePermission>}
           />
           <Route
             path="company-branches"
-            element={<BranchesPage />}
+            element={<RequirePermission any={['branches.view']}><BranchesPage /></RequirePermission>}
           />
           <Route
             path="company-warehouses"
-            element={<WarehousesPage />}
+            element={<RequirePermission any={['warehouses.view']}><WarehousesPage /></RequirePermission>}
           />
           <Route
             path="company-currencies"
-            element={<CurrenciesPage />}
+            element={<RequirePermission any={['currencies.view']}><CurrenciesPage /></RequirePermission>}
           />
           <Route
             path="company-exchange-rates"
-            element={<ExchangeRatesPage />}
+            element={<RequirePermission any={['exchange_rates.view']}><ExchangeRatesPage /></RequirePermission>}
           />
           <Route
             path="pricing-price-lists"
-            element={<PriceListsPage />}
+            element={<RequirePermission any={['price_lists.view']}><PriceListsPage /></RequirePermission>}
           />
           <Route
             path="pricing-formulas"
-            element={<PricingFormulasPage />}
+            element={<RequirePermission any={['pricing_formulas.view']}><PricingFormulasPage /></RequirePermission>}
           />
           <Route
             path="marketplace-channels"
-            element={<ChannelsPage />}
+            element={<RequirePermission any={['channels.view']}><ChannelsPage /></RequirePermission>}
           />
           <Route
             path="marketplace-connections"
-            element={<ConnectionsPage />}
+            element={<RequirePermission any={['connections.view']}><ConnectionsPage /></RequirePermission>}
           />
           <Route
             path="marketplace-brands"
-            element={<BrandsPage />}
+            element={<RequirePermission any={['brands.view']}><BrandsPage /></RequirePermission>}
           />
           <Route
             path="marketplace-categories"
-            element={<CategoriesPage />}
+            element={<RequirePermission any={['categories.view']}><CategoriesPage /></RequirePermission>}
           />
           <Route
             path="marketplace-categories/:categoryId"
-            element={<CategoryDetailPage />}
+            element={<RequirePermission any={['categories.view']}><CategoryDetailPage /></RequirePermission>}
           />
           <Route
             path="fitments-vehicles"
-            element={<FitmentsVehiclesPage />}
+            element={<RequirePermission any={['vehicle_fitments.view']}><FitmentsVehiclesPage /></RequirePermission>}
           />
           <Route
             path="fitments-equipment"
-            element={<FitmentsEquipmentPage />}
+            element={<RequirePermission any={['equipment_fitments.view']}><FitmentsEquipmentPage /></RequirePermission>}
+          />
+          <Route
+            path="access-roles"
+            element={<RequirePermission any={['roles.view']}><RolesPage /></RequirePermission>}
           />
           <Route
             path="fitments-equipment-types"
-            element={<EquipmentTypesPage />}
+            element={<RequirePermission any={['equipment_types.view']}><EquipmentTypesPage /></RequirePermission>}
           />
         </Route>
       </Route>

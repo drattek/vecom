@@ -20,6 +20,8 @@ type AuthUserCredentials struct {
 	ID           int64
 	Username     string
 	Role         string
+	RoleID       *int64
+	RoleName     string
 	IsActive     bool
 	PasswordHash string
 }
@@ -30,9 +32,10 @@ func NewAuthRepository(db Querier) *AuthRepository {
 
 func (r *AuthRepository) FindUserCredentialsByUsername(ctx context.Context, username string) (*AuthUserCredentials, error) {
 	query := `
-		SELECT id, username, role, is_active, password_hash
-		FROM ecom_api_user
-		WHERE username = ?
+		SELECT u.id, u.username, u.role, u.role_id, COALESCE(ro.name, ''), u.is_active, u.password_hash
+		FROM ecom_api_user u
+		LEFT JOIN ecom_roles ro ON ro.id = u.role_id AND ro.deleted_at IS NULL
+		WHERE u.username = ?
 		LIMIT 1
 	`
 
@@ -41,6 +44,8 @@ func (r *AuthRepository) FindUserCredentialsByUsername(ctx context.Context, user
 		&credentials.ID,
 		&credentials.Username,
 		&credentials.Role,
+		&credentials.RoleID,
+		&credentials.RoleName,
 		&credentials.IsActive,
 		&credentials.PasswordHash,
 	)
@@ -90,9 +95,10 @@ func (r *AuthRepository) RevokeToken(ctx context.Context, jti, token string) err
 
 func (r *AuthRepository) FindActiveUserByToken(ctx context.Context, jti, token string) (*domain.AuthUser, error) {
 	query := `
-		SELECT u.id, u.username, u.role, u.is_active
+		SELECT u.id, u.username, u.role, u.role_id, COALESCE(ro.name, ''), u.is_active
 		FROM ecom_api_token t
 		INNER JOIN ecom_api_user u ON u.id = t.user_id
+		LEFT JOIN ecom_roles ro ON ro.id = u.role_id AND ro.deleted_at IS NULL
 		WHERE t.jti = ?
 		  AND t.token = ?
 		  AND t.revoked_at IS NULL
@@ -102,7 +108,7 @@ func (r *AuthRepository) FindActiveUserByToken(ctx context.Context, jti, token s
 	`
 
 	var user domain.AuthUser
-	err := r.db.QueryRowContext(ctx, query, jti, token).Scan(&user.ID, &user.Username, &user.Role, &user.IsActive)
+	err := r.db.QueryRowContext(ctx, query, jti, token).Scan(&user.ID, &user.Username, &user.Role, &user.RoleID, &user.RoleName, &user.IsActive)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return nil, ErrAuthUserNotFound

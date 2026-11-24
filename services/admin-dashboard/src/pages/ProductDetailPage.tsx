@@ -1,3 +1,4 @@
+import { useAuth } from "@/auth/AuthContext"
 import { PageHeader } from "@/components/PageHeader.tsx"
 import {
     NavigationMenu,
@@ -16,14 +17,14 @@ import { Link, Outlet, useLocation, useParams } from "react-router-dom"
 // Las secciones del detalle. La primera es la ruta índice, así que entrar a
 // /products/{id} cae directo en General.
 const sections = [
-    { label: "General", path: "" },
-    { label: "Multimedia", path: "media" },
-    { label: "Precios", path: "pricing" },
-    { label: "Inventario", path: "inventory" },
-    { label: "Números de parte", path: "part-numbers" },
-    { label: "Atributos", path: "attributes" },
-    { label: "Compatibilidades", path: "compatibilities" },
-    { label: "Sincronización", path: "sync" },
+    { label: "General", path: "", permission: "products.view" },
+    { label: "Multimedia", path: "media", permission: "product_media.view" },
+    { label: "Precios", path: "pricing", permission: "product_pricing.view" },
+    { label: "Inventario", path: "inventory", permission: "product_inventory.view" },
+    { label: "Números de parte", path: "part-numbers", permission: "product_part_numbers.view" },
+    { label: "Atributos", path: "attributes", permission: "product_attributes.view" },
+    { label: "Compatibilidades", path: "compatibilities", permission: "product_compatibilities.view" },
+    { label: "Sincronización", path: "sync", permission: "product_sync.view" },
 ]
 
 /** Contexto que el layout comparte con cada sección (ver Outlet más abajo). */
@@ -48,6 +49,7 @@ function originLabel(originPath: string): string {
 export function ProductDetailPage() {
     const { productId } = useParams<{ productId: string }>()
     const location = useLocation()
+    const { can } = useAuth()
 
     // El origen se captura UNA sola vez, al montar: cambiar de pestaña dentro
     // del detalle es una navegación nueva sin state, así que leerlo en cada
@@ -92,7 +94,7 @@ export function ProductDetailPage() {
 
                 <NavigationMenu className="ml-2">
                     <NavigationMenuList>
-                        {sections.map((section) => {
+                        {sections.filter((section) => can(section.permission)).map((section) => {
                             const to = section.path ? `${basePath}/${section.path}` : basePath
                             const isActive = location.pathname === to
 

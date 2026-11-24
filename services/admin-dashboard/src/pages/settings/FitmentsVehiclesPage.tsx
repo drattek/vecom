@@ -1,4 +1,5 @@
 import { ConfirmDeleteDialog } from "@/components/fitments/ConfirmDeleteDialog"
+import { Can } from "@/auth/Can"
 import { VehicleFitmentDialog } from "@/components/fitments/FitmentDialogs"
 import { TablePagination } from "@/components/TablePagination"
 import { Button } from "@/components/ui/button"
@@ -87,10 +88,12 @@ export function FitmentsVehiclesPage() {
                         Catálogo de vehículos (marca, modelo y años) a los que se vinculan las compatibilidades de los productos.
                     </p>
                 </div>
-                <Button size="sm" onClick={() => openEditor(null)}>
+                <Can any={["vehicle_fitments.create"]}>
+<Button size="sm" onClick={() => openEditor(null)}>
                     <PlusIcon />
                     Nuevo vehículo
                 </Button>
+</Can>
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -187,7 +190,8 @@ export function FitmentsVehiclesPage() {
                             </TableCell>
                             <TableCell>
                                 <div className="flex items-center gap-1">
-                                    <Button
+                                    <Can any={["vehicle_fitments.edit"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Editar ${fitment.brandName} ${fitment.model}`}
@@ -195,7 +199,9 @@ export function FitmentsVehiclesPage() {
                                     >
                                         <PencilIcon />
                                     </Button>
-                                    <Button
+</Can>
+                                    <Can any={["vehicle_fitments.delete"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Eliminar ${fitment.brandName} ${fitment.model}`}
@@ -203,6 +209,7 @@ export function FitmentsVehiclesPage() {
                                     >
                                         <Trash2Icon />
                                     </Button>
+</Can>
                                 </div>
                             </TableCell>
                         </TableRow>

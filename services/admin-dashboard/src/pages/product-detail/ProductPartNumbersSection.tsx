@@ -4,6 +4,7 @@ import {
     SectionCard,
     SectionState,
 } from "@/components/product-detail/ProductDetailPrimitives"
+import { Can } from "@/auth/Can"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import {
@@ -201,7 +202,8 @@ function AlternatePartNumbersCard({
             title="Números de parte alternativos"
             description="Equivalencias y referencias cruzadas registradas para este producto."
             action={
-                <Button
+                <Can any={["product_part_numbers.create", "product_part_numbers.edit", "product_part_numbers.delete"]}>
+<Button
                     variant="ghost"
                     size="sm"
                     onClick={() => {
@@ -218,6 +220,7 @@ function AlternatePartNumbersCard({
                         </>
                     )}
                 </Button>
+</Can>
             }
         >
             {alternates.length === 0 && !isEditing ? (

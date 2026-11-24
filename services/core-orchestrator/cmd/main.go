@@ -49,6 +49,7 @@ import (
 	storageDisksService "core-orchestrator/internal/application/storage_disks"
 	syncApp "core-orchestrator/internal/application/sync"
 	usersApp "core-orchestrator/internal/application/users"
+	rolesApp "core-orchestrator/internal/application/roles"
 	"core-orchestrator/internal/config"
 	banxicoInfra "core-orchestrator/internal/infrastructure/banxico"
 	mercadoLibreInfra "core-orchestrator/internal/infrastructure/marketplace/mercadolibre"
@@ -105,12 +106,14 @@ func main() {
 	authService := credService.NewAuthService(
 		db,
 		mysqlRepos.AuthRepository,
+		mysqlRepos.RBACRepository,
 		cfg.JWTSecret,
 		cfg.JWTIssuer,
 		cfg.JWTTTLMinutes,
 	)
 	brandService := brandsApp.NewBrandService(db, mysqlRepos.BrandsRepository, mysqlRepos.ProductRepository)
 	userService := usersApp.NewUserService(db, mysqlRepos.UsersRepository)
+	roleService := rolesApp.NewRoleService(db, mysqlRepos.RBACRepository)
 	categoryService := categoriesApp.NewCategoryService(
 		db,
 		mysqlRepos.CategoriesRepository,
@@ -483,6 +486,7 @@ func main() {
 	authMiddleware := httpHandler.NewJWTMiddleware(authService)
 	brandHandler := httpHandler.NewBrandHandler(brandService)
 	userHandler := httpHandler.NewUserHandler(userService)
+	rolesHandler := httpHandler.NewRolesHandler(roleService)
 	categoryHandler := httpHandler.NewCategoryHandler(categoryService)
 	categoryImportHandler := httpHandler.NewCategoryImportHandler(categoryImportService)
 	currencyHandler := httpHandler.NewCurrencyHandler(currencyService)
@@ -742,6 +746,7 @@ func main() {
 		meliBulkImportHandler,
 		productBulkUpdateHandler,
 		connectionConfigViewHandler,
+		rolesHandler,
 	)
 
 	server := &http.Server{

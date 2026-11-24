@@ -1,4 +1,5 @@
 import { AzureCredentialsDialog } from "@/components/storage/AzureCredentialsDialog";
+import { Can } from "@/auth/Can"
 import { TablePagination } from "@/components/TablePagination";
 import { Button } from "@/components/ui/button";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
@@ -77,9 +78,11 @@ export function StorageDiskPage() {
                             <TableCell>{storageDisk.bucket}</TableCell>
                             <TableCell>{storageDisk.isPublic ? "Si" : "No"}</TableCell>
                             <TableCell>
-                                <Button size="sm" variant="outline" onClick={() => setCredentialsDisk(storageDisk)}>
+                                <Can any={["storage_disks.edit"]}>
+<Button size="sm" variant="outline" onClick={() => setCredentialsDisk(storageDisk)}>
                                     Credenciales de Azure
                                 </Button>
+</Can>
                             </TableCell>
                         </TableRow>
                     ))}

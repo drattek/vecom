@@ -1,4 +1,5 @@
 import { apiClient } from "@/lib/api"
+import type { PermissionOverride } from "@/lib/schemas/rbac"
 import { paginatedUsersResponseSchema, userSchema } from "@/lib/schemas/users"
 import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 
@@ -17,13 +18,19 @@ export function useUsers(offset: number, pageSize: number) {
 }
 
 /**
- * Alta de usuario (POST /api/users). El rol no se elige desde acá — el
- * backend lo fija en "admin" hasta que exista un sistema de roles/permisos.
+ * Alta de usuario (POST /api/users): cuenta administradora (acceso total) o
+ * con rol + excepciones de permisos (ADR 0009).
  */
 export function useCreateUser() {
     const queryClient = useQueryClient()
     return useMutation({
-        mutationFn: async (input: { username: string; password: string }) => {
+        mutationFn: async (input: {
+            username: string
+            password: string
+            isAdmin: boolean
+            roleId: number | null
+            overrides: PermissionOverride[]
+        }) => {
             const response = await apiClient.post("/api/users", input)
             return userSchema.parse(response.data)
         },

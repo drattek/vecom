@@ -1,4 +1,5 @@
 import { ConfirmDeleteDialog } from "@/components/fitments/ConfirmDeleteDialog"
+import { Can } from "@/auth/Can"
 import { EquipmentFitmentDialog } from "@/components/fitments/FitmentDialogs"
 import { TablePagination } from "@/components/TablePagination"
 import { Button } from "@/components/ui/button"
@@ -138,10 +139,12 @@ export function FitmentsEquipmentPage() {
                         Catálogo de maquinaria (marca, tipo, modelo y/o serie) a la que se vinculan las compatibilidades de los productos.
                     </p>
                 </div>
-                <Button size="sm" onClick={() => openEditor(null)}>
+                <Can any={["equipment_fitments.create"]}>
+<Button size="sm" onClick={() => openEditor(null)}>
                     <PlusIcon />
                     Nueva maquinaria
                 </Button>
+</Can>
             </div>
 
             <div className="mt-4 flex flex-wrap items-center gap-2">
@@ -218,7 +221,8 @@ export function FitmentsEquipmentPage() {
                             </TableCell>
                             <TableCell>
                                 <div className="flex items-center gap-1">
-                                    <Button
+                                    <Can any={["equipment_fitments.edit"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Editar ${fitmentLabel(fitment)}`}
@@ -226,7 +230,9 @@ export function FitmentsEquipmentPage() {
                                     >
                                         <PencilIcon />
                                     </Button>
-                                    <Button
+</Can>
+                                    <Can any={["equipment_fitments.delete"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Eliminar ${fitmentLabel(fitment)}`}
@@ -234,6 +240,7 @@ export function FitmentsEquipmentPage() {
                                     >
                                         <Trash2Icon />
                                     </Button>
+</Can>
                                 </div>
                             </TableCell>
                         </TableRow>

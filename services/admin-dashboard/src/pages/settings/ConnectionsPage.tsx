@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { Can } from "@/auth/Can"
 import { TablePagination } from "@/components/TablePagination";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { apiClient } from "@/lib/api";
@@ -104,7 +105,8 @@ export function ConnectionsPage() {
                             <TableCell>{formatDate(connection.updatedAt)}</TableCell>
                             <TableCell>
                                 <div className="flex flex-wrap gap-2">
-                                    <Button
+                                    <Can any={["connections.manage_credentials"]}>
+<Button
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setConfigConnection(connection)}
@@ -112,7 +114,9 @@ export function ConnectionsPage() {
                                     >
                                         Configuración
                                     </Button>
-                                    <Button
+</Can>
+                                    <Can any={["connections.edit", "channel_listings.publish"]}>
+<Button
                                         variant="outline"
                                         size="sm"
                                         onClick={() => setZeroStockConnection(connection)}
@@ -125,6 +129,7 @@ export function ConnectionsPage() {
                                             </span>
                                         ) : null}
                                     </Button>
+</Can>
                                 </div>
                             </TableCell>
                         </TableRow>

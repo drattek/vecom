@@ -22,6 +22,7 @@ var ErrUnauthorized = errors.New("unauthorized")
 type AuthService struct {
 	db         *sql.DB
 	repository *mysqlInfra.AuthRepository
+	rbac       *mysqlInfra.RBACRepository
 	jwtSecret  []byte
 	jwtIssuer  string
 	jwtTTL     time.Duration
@@ -33,10 +34,11 @@ type AccessClaims struct {
 	jwt.RegisteredClaims
 }
 
-func NewAuthService(db *sql.DB, repository *mysqlInfra.AuthRepository, jwtSecret, jwtIssuer string, jwtTTLMinutes int) *AuthService {
+func NewAuthService(db *sql.DB, repository *mysqlInfra.AuthRepository, rbac *mysqlInfra.RBACRepository, jwtSecret, jwtIssuer string, jwtTTLMinutes int) *AuthService {
 	return &AuthService{
 		db:         db,
 		repository: repository,
+		rbac:       rbac,
 		jwtSecret:  []byte(jwtSecret),
 		jwtIssuer:  jwtIssuer,
 		jwtTTL:     time.Duration(jwtTTLMinutes) * time.Minute,
@@ -97,16 +99,24 @@ func (s *AuthService) Login(ctx context.Context, username, password, userAgent, 
 		return nil, err
 	}
 
+	user := domain.AuthUser{
+		ID:          credentials.ID,
+		Username:    credentials.Username,
+		Role:        credentials.Role,
+		RoleID:      credentials.RoleID,
+		RoleName:    credentials.RoleName,
+		IsActive:    credentials.IsActive,
+		Permissions: []string{},
+	}
+	if err := s.loadPermissions(ctx, &user); err != nil {
+		return nil, err
+	}
+
 	return &domain.LoginResult{
 		AccessToken: tokenString,
 		TokenType:   "Bearer",
 		ExpiresAt:   expiresAt,
-		User: domain.AuthUser{
-			ID:       credentials.ID,
-			Username: credentials.Username,
-			Role:     credentials.Role,
-			IsActive: credentials.IsActive,
-		},
+		User:        user,
 	}, nil
 }
 
@@ -166,7 +176,27 @@ func (s *AuthService) ValidateToken(ctx context.Context, tokenString string) (*d
 		return nil, err
 	}
 
+	if err := s.loadPermissions(ctx, user); err != nil {
+		return nil, err
+	}
+
 	return user, nil
+}
+
+// loadPermissions calcula los permisos efectivos en cada request (los cambios
+// de rol/permisos aplican al instante, sin re-login). Admin tiene acceso total
+// y no consulta ecom_roles / ecom_permissions.
+func (s *AuthService) loadPermissions(ctx context.Context, user *domain.AuthUser) error {
+	user.Permissions = []string{}
+	if user.IsAdmin() {
+		return nil
+	}
+	perms, err := s.rbac.EffectivePermissions(ctx, user.ID, user.RoleID)
+	if err != nil {
+		return fmt.Errorf("error loading user permissions: %w", err)
+	}
+	user.Permissions = perms
+	return nil
 }
 
 func generateJTI() (string, error) {

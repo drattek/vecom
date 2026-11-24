@@ -53,43 +53,63 @@ import { Button } from './ui/button.tsx'
 import { useAuth } from '../auth/AuthContext.tsx'
 import { logoutRequest, apiClient } from '../lib/api.ts'
 import { paginatedChannelsResponseSchema } from '../lib/schemas/channels.ts'
+import { settingsMenuGroups } from '../lib/settings-menu.ts'
 
 interface SidebarItem {
   title: string
   path: string
   icon: ComponentType<{ className?: string }>
+  /** Basta uno de estos permisos para ver la entrada (admin siempre la ve). */
+  permissions: string[]
 }
+
+const productPermissions = [
+  'products.view',
+  'products_pending.view',
+  'products_images.view',
+  'products_import.view',
+  'products_bulk_update.view',
+  'products_channels.view',
+]
+
+const settingsPermissions = settingsMenuGroups.flatMap((group) => group.items.map((item) => item.permission))
 
 const sidebarItems: SidebarItem[] = [
   {
     title: 'Dashboard',
     path: '/dashboard',
     icon: LayoutDashboardIcon,
+    permissions: ['dashboard.view'],
   },
   {
     title: 'Usuarios',
     path: '/users',
     icon: UsersIcon,
+    permissions: ['users.view'],
   },
   {
     title: 'Productos',
     path: '/products',
     icon: BoxIcon,
+    permissions: productPermissions,
   },
   {
     title: 'MercadoLibre',
     path: '/meli',
     icon: ShoppingBagIcon,
+    permissions: ['meli_listings.view'],
   },
   {
     title: 'Reportes',
     path: '/reports',
     icon: BarChart3Icon,
+    permissions: ['reports.view'],
   },
   {
     title: 'Configuración',
     path: '/settings',
     icon: Settings,
+    permissions: settingsPermissions,
   },
 ]
 
@@ -108,7 +128,7 @@ function getInitials(name: string): string {
 export function AppSidebar() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { session, logout } = useAuth()
+  const { session, logout, can } = useAuth()
 
   const username = session?.user.username ?? 'Usuario'
   const role = session?.user.role ?? ''
@@ -125,6 +145,7 @@ export function AppSidebar() {
       return paginatedChannelsResponseSchema.parse(response.data)
     },
     staleTime: 60_000,
+    enabled: can('products_channels.view'),
   })
 
   const productChannels = (channelsData?.channels ?? []).filter(
@@ -166,7 +187,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Navegacion</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {sidebarItems.map((item) => {
+              {sidebarItems.filter((item) => can(...item.permissions)).map((item) => {
                 const Icon = item.icon
                 const isActive =
                   location.pathname === item.path ||
@@ -257,6 +278,7 @@ export function AppSidebar() {
                       />
                       <CollapsibleContent>
                         <SidebarMenuSub>
+                          {can('products.view') ? (
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
                               render={<Link to="/products" />}
@@ -265,6 +287,8 @@ export function AppSidebar() {
                               <span>Todos</span>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
+                          ) : null}
+                          {can('products_pending.view') ? (
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
                               render={<Link to="/products/pending" />}
@@ -273,6 +297,8 @@ export function AppSidebar() {
                               <span>Pendientes</span>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
+                          ) : null}
+                          {can('products_images.view') ? (
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
                               render={<Link to="/products/images" />}
@@ -281,6 +307,8 @@ export function AppSidebar() {
                               <span>Imágenes</span>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
+                          ) : null}
+                          {can('products_import.view') ? (
                           <SidebarMenuSubItem>
                             <SidebarMenuSubButton
                               render={<Link to="/products/import" />}
@@ -289,7 +317,8 @@ export function AppSidebar() {
                               <span>Importar</span>
                             </SidebarMenuSubButton>
                           </SidebarMenuSubItem>
-                          {productChannels.map((channel) => {
+                          ) : null}
+                          {can('products_channels.view') && productChannels.map((channel) => {
                             const channelPath = `/products/channels/${channel.id}`
                             const isChannelActive = location.pathname === channelPath
 

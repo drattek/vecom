@@ -1,4 +1,5 @@
 import { PageHeader } from "@/components/PageHeader.tsx";
+import { Can } from "@/auth/Can"
 import { ImportImagesExcelDialog } from "@/components/products/ImportImagesExcelDialog";
 import { ProductsFilteredTable } from "@/components/products/ProductsFilteredTable";
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -108,7 +109,9 @@ export function ProductsImagesPage() {
             <PageHeader>
                 <p>Imágenes</p>
                 <div className="ml-auto">
-                    <ImportImagesExcelDialog />
+                    <Can any={["products_images.import"]}>
+<ImportImagesExcelDialog />
+</Can>
                 </div>
             </PageHeader>
 

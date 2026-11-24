@@ -1,4 +1,5 @@
 import { ConfirmDeleteDialog } from "@/components/fitments/ConfirmDeleteDialog"
+import { Can } from "@/auth/Can"
 import { TablePagination } from "@/components/TablePagination"
 import { Button } from "@/components/ui/button"
 import {
@@ -210,10 +211,12 @@ export function BrandsPage() {
                         registros no se puede eliminar.
                     </p>
                 </div>
-                <Button size="sm" onClick={() => openEditor(null)}>
+                <Can any={["brands.create"]}>
+<Button size="sm" onClick={() => openEditor(null)}>
                     <PlusIcon />
                     Nueva marca
                 </Button>
+</Can>
             </div>
 
             {notice ? (
@@ -263,7 +266,8 @@ export function BrandsPage() {
                             </TableCell>
                             <TableCell>
                                 <div className="flex items-center gap-1">
-                                    <Button
+                                    <Can any={["brands.edit"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Editar ${brand.name}`}
@@ -271,7 +275,9 @@ export function BrandsPage() {
                                     >
                                         <PencilIcon />
                                     </Button>
-                                    <Button
+</Can>
+                                    <Can any={["brands.delete"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Eliminar ${brand.name}`}
@@ -282,6 +288,7 @@ export function BrandsPage() {
                                     >
                                         <Trash2Icon />
                                     </Button>
+</Can>
                                 </div>
                             </TableCell>
                         </TableRow>

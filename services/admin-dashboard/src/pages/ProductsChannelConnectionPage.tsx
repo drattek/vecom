@@ -1,4 +1,5 @@
 import { ConnectionQueuePanel } from "@/components/products/ConnectionQueuePanel";
+import { Can } from "@/auth/Can"
 import { EnqueueCompatibilitiesButton } from "@/components/products/EnqueueCompatibilitiesButton";
 import { EnqueueResyncButton } from "@/components/products/EnqueueResyncButton";
 import { ProductsFilteredTable } from "@/components/products/ProductsFilteredTable";
@@ -26,9 +27,15 @@ export function ProductsChannelConnectionPage() {
             toolbar={
                 connection && supportsResync ? (
                     <div className="flex flex-wrap items-center gap-4">
-                        <EnqueueResyncButton connectionId={connection.id} />
+                        <Can any={["channel_listings.resync"]}>
+<EnqueueResyncButton connectionId={connection.id} />
+</Can>
                         <ConnectionQueuePanel connectionId={connection.id} />
-                        {isOdoo ? <EnqueueCompatibilitiesButton connectionId={connection.id} /> : null}
+                        {isOdoo ? (
+<Can any={["channel_listings.resync"]}>
+<EnqueueCompatibilitiesButton connectionId={connection.id} />
+</Can>
+) : null}
                     </div>
                 ) : undefined
             }

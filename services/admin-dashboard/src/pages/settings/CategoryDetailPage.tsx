@@ -1,4 +1,6 @@
 import { CategoryTreePicker } from "@/components/categories/CategoryTreePicker"
+import { useAuth } from "@/auth/AuthContext"
+import { Can } from "@/auth/Can"
 import { LinkCategoryMappingDialog } from "@/components/categories/LinkCategoryMappingDialog"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -172,10 +174,12 @@ function GeneralCard({
                         </Button>
                     </div>
                 ) : (
-                    <Button variant="ghost" size="sm" onClick={start}>
+                    <Can any={["categories.edit"]}>
+<Button variant="ghost" size="sm" onClick={start}>
                         <PencilIcon />
                         Editar
                     </Button>
+</Can>
                 )}
             </header>
             <div className="p-4">
@@ -234,6 +238,7 @@ function ConnectionMappingCard({
 }) {
     const environmentLabel = mapping.environment === "production" ? "Producción" : "Desarrollo"
     const isMapped = Boolean(mapping.externalCategoryId)
+    const { can } = useAuth()
     const canLink = IMPORT_SUPPORTED_CHANNEL_CODES.has(mapping.channelCode)
 
     return (
@@ -243,7 +248,7 @@ function ConnectionMappingCard({
                     {mapping.channelName} · {mapping.connectionName}
                 </h4>
                 <div className="flex items-center gap-2">
-                    {canLink && isMapped ? (
+                    {canLink && isMapped && can("categories.import") ? (
                         <LinkCategoryMappingDialog categoryId={categoryId} mapping={mapping} />
                     ) : null}
                     <span className="rounded-md border border-border bg-muted px-1.5 py-0.5 text-xs text-muted-foreground">
@@ -261,7 +266,7 @@ function ConnectionMappingCard({
                 ) : (
                     <div className="flex items-center justify-between gap-3">
                         <p className="text-sm text-muted-foreground">Sin mapeo para esta conexión.</p>
-                        {canLink ? (
+                        {canLink && can("categories.import") ? (
                             <LinkCategoryMappingDialog categoryId={categoryId} mapping={mapping} />
                         ) : null}
                     </div>

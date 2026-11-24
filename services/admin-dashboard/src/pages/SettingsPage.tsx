@@ -1,69 +1,38 @@
 import { PageHeader } from '@/components/PageHeader.tsx'
 import { NavigationMenu, NavigationMenuContent, NavigationMenuItem, NavigationMenuLink, NavigationMenuList, NavigationMenuTrigger } from '@/components/ui/navigation-menu'
-import { Link, Outlet, useLocation } from 'react-router-dom'
+import { Link, Navigate, Outlet, useLocation } from 'react-router-dom'
+import { useAuth } from '@/auth/AuthContext.tsx'
+import { settingsMenuGroups } from '@/lib/settings-menu'
 
-interface SettingsMenuItem {
-    label: string
-    to: string
+/** Ruta índice de /settings: la primera sección a la que el usuario tiene acceso. */
+export function SettingsIndexRedirect() {
+    const { can } = useAuth()
+    const first = settingsMenuGroups.flatMap((group) => group.items).find((item) => can(item.permission))
+
+    if (!first) {
+        return (
+            <p className="p-4 text-sm text-muted-foreground">
+                Tu rol no tiene acceso a ninguna sección de Configuración.
+            </p>
+        )
+    }
+    return <Navigate to={first.to} replace />
 }
-
-interface SettingsMenuGroup {
-    label: string
-    items: SettingsMenuItem[]
-}
-
-const settingsMenuGroups: SettingsMenuGroup[] = [
-    {
-        label: 'Almacenamiento',
-        items: [
-            { label: 'Discos', to: '/settings/storage-disks' },
-            { label: 'Archivos', to: '/settings/storage-files' },
-        ],
-    },
-    {
-        label: 'Empresa',
-        items: [
-            { label: 'Sucursales', to: '/settings/company-branches' },
-            { label: 'Almacenes', to: '/settings/company-warehouses' },
-            { label: 'Divisas', to: '/settings/company-currencies' },
-            { label: 'Tipo de cambio', to: '/settings/company-exchange-rates' },
-        ],
-    },
-    {
-        label: 'Precios',
-        items: [
-            { label: 'Listas de precios', to: '/settings/pricing-price-lists' },
-            { label: 'Fórmulas de precios', to: '/settings/pricing-formulas' },
-        ],
-    },
-    {
-        label: 'Marketplace',
-        items: [
-            { label: 'Canales', to: '/settings/marketplace-channels' },
-            { label: 'Conexiones', to: '/settings/marketplace-connections' },
-            { label: 'Marcas', to: '/settings/marketplace-brands' },
-            { label: 'Categorías', to: '/settings/marketplace-categories' },
-        ],
-    },
-    {
-        label: 'Vehículos/Maquinaria',
-        items: [
-            { label: 'Vehículos', to: '/settings/fitments-vehicles' },
-            { label: 'Maquinaria', to: '/settings/fitments-equipment' },
-            { label: 'Tipos de maquinaria', to: '/settings/fitments-equipment-types' },
-        ],
-    },
-]
 
 export function SettingsPage() {
     const location = useLocation()
+    const { can } = useAuth()
+
+    const visibleGroups = settingsMenuGroups
+        .map((group) => ({ ...group, items: group.items.filter((item) => can(item.permission)) }))
+        .filter((group) => group.items.length > 0)
 
     return (
         <main className="flex min-h-0 flex-1 flex-col overflow-hidden p-2">
             <PageHeader>
                 <NavigationMenu>
                     <NavigationMenuList>
-                        {settingsMenuGroups.map((group) => (
+                        {visibleGroups.map((group) => (
                             <NavigationMenuItem key={group.label}>
                                 <NavigationMenuTrigger>
                                     <span>{group.label}</span>

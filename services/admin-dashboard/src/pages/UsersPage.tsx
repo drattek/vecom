@@ -1,6 +1,12 @@
 import { PageHeader } from "@/components/PageHeader.tsx"
 import { TablePagination } from "@/components/TablePagination"
+import { useAuth } from "@/auth/AuthContext"
 import { CreateUserDialog } from "@/components/users/CreateUserDialog"
+import { EditUserDialog } from "@/components/users/EditUserDialog"
+import { Button } from "@/components/ui/button"
+import type { User } from "@/lib/schemas/users"
+import { PencilIcon } from "lucide-react"
+import { useState } from "react"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useUsers } from "@/lib/users"
 import { useUsersPaginationStore } from "@/stores/usersPaginationStore"
@@ -19,7 +25,10 @@ export function UsersPage() {
     const setOffset = useUsersPaginationStore((state) => state.setOffset)
     const setPageSize = useUsersPaginationStore((state) => state.setPageSize)
 
+    const { can } = useAuth()
     const { data, isLoading, isError, error } = useUsers(offset, pageSize)
+    const [editing, setEditing] = useState<User | null>(null)
+    const [notice, setNotice] = useState<string | null>(null)
 
     const users = data?.users ?? []
     const total = data?.total ?? 0
@@ -36,8 +45,14 @@ export function UsersPage() {
                         <h2 className="text-xl font-semibold text-foreground">Usuarios</h2>
                         <p className="mt-2 text-sm text-muted-foreground">Cuentas con acceso al panel de administración.</p>
                     </div>
-                    <CreateUserDialog />
+                    {can("users.create") ? <CreateUserDialog /> : null}
                 </div>
+
+                {notice ? (
+                    <p className="mt-3 text-xs text-muted-foreground" role="status">
+                        {notice}
+                    </p>
+                ) : null}
 
                 {isError ? (
                     <p className="mt-2 text-sm text-destructive">
@@ -52,12 +67,13 @@ export function UsersPage() {
                             <TableHead>Rol</TableHead>
                             <TableHead>Estado</TableHead>
                             <TableHead>Fecha de creación</TableHead>
+                            <TableHead className="w-20">Acciones</TableHead>
                         </TableRow>
                     </TableHeader>
                     <TableBody>
                         {isLoading && users.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                                <TableCell colSpan={5} className="text-center text-muted-foreground">
                                     Cargando usuarios...
                                 </TableCell>
                             </TableRow>
@@ -65,7 +81,7 @@ export function UsersPage() {
 
                         {!isLoading && users.length === 0 ? (
                             <TableRow>
-                                <TableCell colSpan={4} className="text-center text-muted-foreground">
+                                <TableCell colSpan={5} className="text-center text-muted-foreground">
                                     No se encontraron usuarios.
                                 </TableCell>
                             </TableRow>
@@ -74,7 +90,11 @@ export function UsersPage() {
                         {users.map((user) => (
                             <TableRow key={user.id}>
                                 <TableCell>{user.username}</TableCell>
-                                <TableCell className="text-muted-foreground">{user.role}</TableCell>
+                                <TableCell className="text-muted-foreground">
+                                    {user.role === "admin"
+                                        ? "Administrador"
+                                        : user.roleName || (user.role === "user" ? "Sin rol" : user.role)}
+                                </TableCell>
                                 <TableCell>
                                     {user.isActive ? (
                                         <span className="text-emerald-600">Activo</span>
@@ -83,10 +103,33 @@ export function UsersPage() {
                                     )}
                                 </TableCell>
                                 <TableCell>{formatDate(user.createdAt)}</TableCell>
+                                <TableCell>
+                                    {can("users.edit") ? (
+                                        <Button
+                                            variant="ghost"
+                                            size="icon-sm"
+                                            aria-label={`Editar acceso de ${user.username}`}
+                                            onClick={() => setEditing(user)}
+                                        >
+                                            <PencilIcon />
+                                        </Button>
+                                    ) : null}
+                                </TableCell>
                             </TableRow>
                         ))}
                     </TableBody>
                 </Table>
+
+                <EditUserDialog
+                    open={editing !== null}
+                    onOpenChange={(open) => {
+                        if (!open) {
+                            setEditing(null)
+                        }
+                    }}
+                    user={editing}
+                    onSaved={setNotice}
+                />
 
                 <TablePagination
                     offset={offset}

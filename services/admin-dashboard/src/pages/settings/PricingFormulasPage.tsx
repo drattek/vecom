@@ -1,4 +1,5 @@
 import { ConfirmDeleteDialog } from "@/components/fitments/ConfirmDeleteDialog"
+import { Can } from "@/auth/Can"
 import { TablePagination } from "@/components/TablePagination"
 import { Button } from "@/components/ui/button"
 import {
@@ -348,10 +349,12 @@ export function PricingFormulasPage() {
                         con todo en &quot;Todas&quot; es el valor por defecto.
                     </p>
                 </div>
-                <Button size="sm" onClick={() => openEditor(null)}>
+                <Can any={["pricing_formulas.create"]}>
+<Button size="sm" onClick={() => openEditor(null)}>
                     <PlusIcon />
                     Nueva fórmula
                 </Button>
+</Can>
             </div>
 
             {notice ? (
@@ -412,7 +415,8 @@ export function PricingFormulasPage() {
                             <TableCell>{formatDate(formula.updatedAt)}</TableCell>
                             <TableCell>
                                 <div className="flex items-center gap-1">
-                                    <Button
+                                    <Can any={["pricing_formulas.edit"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Editar fórmula ${formula.id}`}
@@ -420,7 +424,9 @@ export function PricingFormulasPage() {
                                     >
                                         <PencilIcon />
                                     </Button>
-                                    <Button
+</Can>
+                                    <Can any={["pricing_formulas.delete"]}>
+<Button
                                         variant="ghost"
                                         size="icon-sm"
                                         aria-label={`Eliminar fórmula ${formula.id}`}
@@ -431,6 +437,7 @@ export function PricingFormulasPage() {
                                     >
                                         <Trash2Icon />
                                     </Button>
+</Can>
                                 </div>
                             </TableCell>
                         </TableRow>

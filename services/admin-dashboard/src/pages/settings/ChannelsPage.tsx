@@ -1,4 +1,5 @@
 import { Button } from "@/components/ui/button";
+import { useAuth } from "@/auth/AuthContext"
 import { DropdownMenu, DropdownMenuContent, DropdownMenuGroup, DropdownMenuItem, DropdownMenuTrigger } from "@/components/ui/dropdown-menu";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Pagination, PaginationContent, PaginationItem, PaginationLink, PaginationNext, PaginationPrevious } from "@/components/ui/pagination";
@@ -20,6 +21,7 @@ function statusLabel(status: Channel["status"]) {
 }
 
 export function ChannelsPage() {
+    const { can } = useAuth()
     const offset = useChannelsPaginationStore((state) => state.offset);
     const pageSize = useChannelsPaginationStore((state) => state.pageSize);
     const setOffset = useChannelsPaginationStore((state) => state.setOffset);
@@ -187,10 +189,12 @@ export function ChannelsPage() {
                                     />
                                     <DropdownMenuContent>
                                         <DropdownMenuGroup>
-                                            <DropdownMenuItem onClick={() => setConfigChannel(channel)}>
-                                                Ver configuración
-                                            </DropdownMenuItem>
-                                            <DropdownMenuItem>Editar</DropdownMenuItem>
+                                            {can("connections.manage_credentials") ? (
+                                                <DropdownMenuItem onClick={() => setConfigChannel(channel)}>
+                                                    Ver configuración
+                                                </DropdownMenuItem>
+                                            ) : null}
+                                            {can("channels.edit") ? <DropdownMenuItem>Editar</DropdownMenuItem> : null}
                                         </DropdownMenuGroup>
                                     </DropdownMenuContent>
                                 </DropdownMenu>

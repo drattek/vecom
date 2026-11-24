@@ -80,6 +80,17 @@ func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// Me devuelve el usuario autenticado con sus permisos efectivos recalculados:
+// el frontend lo consulta al cargar para reflejar cambios de rol sin re-login.
+func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	user, ok := UserFromContext(r.Context())
+	if !ok {
+		writeJSONError(w, http.StatusUnauthorized, "unauthorized")
+		return
+	}
+	writeJSON(w, http.StatusOK, user)
+}
+
 func bearerTokenFromRequest(r *http.Request) string {
 	const bearerPrefix = "Bearer "
 	authorizationHeader := strings.TrimSpace(r.Header.Get("Authorization"))
