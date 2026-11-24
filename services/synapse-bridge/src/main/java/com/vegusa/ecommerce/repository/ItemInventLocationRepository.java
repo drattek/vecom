@@ -20,6 +20,7 @@ public class ItemInventLocationRepository {
         return jdbcTemplate.query("""
                 SELECT TOP 10 * FROM dyn.ItemInventLocation
                 WHERE Disponible IS NOT NULL AND Disponible > 0
+                  AND Almacen IS NOT NULL AND LTRIM(RTRIM(Almacen)) <> ''
                 """, (rs, rowNum) -> {
                     String almacen = rs.getString("Almacen");
                     return new ItemInventLocationDTO(
@@ -48,6 +49,7 @@ public class ItemInventLocationRepository {
         return jdbcTemplate.query("""
                 SELECT * FROM dyn.ItemInventLocation
                 WHERE Disponible IS NOT NULL AND Disponible > 0
+                  AND Almacen IS NOT NULL AND LTRIM(RTRIM(Almacen)) <> ''
                 ORDER BY Articulo
                 OFFSET ? ROWS
                 FETCH NEXT ? ROWS ONLY
@@ -74,6 +76,12 @@ public class ItemInventLocationRepository {
                     );
         }, offset, pageSize);
     }
+
+    // Las dos consultas de arriba excluyen las filas SIN almacén (Almacen NULL o en blanco):
+    // son existencias a nivel sucursal que D365 no asigna a ningún almacén, y no se pueden
+    // guardar como stock por almacén (antes llegaban al core y intentaban crear un almacén
+    // sin nombre). Las filas con almacén válido pero Name en blanco NO se excluyen: son
+    // stock real y el core infiere su sucursal por el nombre del almacén.
 
     // Los almacenes cuyo nombre incluye "-" no deben distribuirse al ecommerce: en vez de
     // excluirlos de la consulta (lo que dejaría el stock local ya sincronizado colgado en un

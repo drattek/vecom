@@ -151,7 +151,7 @@ func (s *SyncService) ProcessStockSyncCompleted(ctx context.Context, event domai
 		}
 	}
 
-	log.Printf("Stock sync finished (source=%s): %d ok, %d skipped (SKU not found), %d failed, %d total", event.Source, synced, skipped, failed, len(inventories))
+	log.Printf("Stock sync finished (source=%s): %d ok, %d skipped (SKU not found or no warehouse), %d failed, %d total", event.Source, synced, skipped, failed, len(inventories))
 
 	// Baja a 0 el stock del ERP que quedó colgado en un valor > 0 porque su fila
 	// dejó de venir en el feed (que la fuente filtra a Disponible > 0). Antes del

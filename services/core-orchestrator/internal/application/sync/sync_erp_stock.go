@@ -111,6 +111,13 @@ func findOrCreateMachineryPriceList(ctx context.Context, repo *mysqlRepo.PriceLi
 // antes de abrir transacción: evita abrir/cerrar una transacción vacía por cada SKU que se
 // termina saltando.
 func (s *SyncService) ProcessERPStock(ctx context.Context, inv *domain.Inventory, cache *erpStockSyncCache, seen *stockSeen) (skipped bool, err error) {
+	// Una existencia sin almacén (Almacen NULL/en blanco en el ERP) no se puede guardar como
+	// stock por almacén: se descarta sin error ni log por registro. El synapse-bridge ya las
+	// filtra en origen; esto es el respaldo por si llegan igual (p. ej. claves viejas en Redis).
+	if !mysqlRepo.HasVisibleName(inv.Warehouse) {
+		return true, nil
+	}
+
 	productRepo := mysqlRepo.NewProductRepository(s.db)
 
 	product, err := productRepo.FindBySKU(ctx, inv.Code)
