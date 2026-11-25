@@ -9,6 +9,9 @@ import { useQuery, keepPreviousData } from "@tanstack/react-query";
 import { useState } from "react";
 import { ConnectionConfigDialog } from "./ConnectionConfigDialog";
 import { ConnectionZeroStockDialog } from "./ConnectionZeroStockDialog";
+import { MercadoLibreAppDialog } from "./MercadoLibreAppDialog";
+import { MercadoLibreLinkDialog } from "./MercadoLibreLinkDialog";
+import { MercadoLibreLinkResult } from "./MercadoLibreLinkResult";
 
 function formatDate(value: string): string {
     const parsed = new Date(value)
@@ -57,11 +60,15 @@ export function ConnectionsPage() {
 
     const [zeroStockConnection, setZeroStockConnection] = useState<ChannelConnection | null>(null)
     const [configConnection, setConfigConnection] = useState<ChannelConnection | null>(null)
+    const [linkConnection, setLinkConnection] = useState<ChannelConnection | null>(null)
+    const [appConnection, setAppConnection] = useState<ChannelConnection | null>(null)
 
     return (
         <section className="flex min-h-0 flex-1 flex-col overflow-hidden p-4">
             <h2 className="text-xl font-semibold text-foreground">Conexiones</h2>
             <p className="mt-2 text-sm text-muted-foreground">Administra credenciales y estados de conexión con marketplaces.</p>
+
+            <MercadoLibreLinkResult />
 
             {isError ? (
                 <p className="mt-2 text-sm text-destructive">
@@ -105,6 +112,26 @@ export function ConnectionsPage() {
                             <TableCell>{formatDate(connection.updatedAt)}</TableCell>
                             <TableCell>
                                 <div className="flex flex-wrap gap-2">
+                                    {connection.channelCode?.trim().toUpperCase() === "MERCADOLIBRE" ? (
+                                        <Can any={["connections.manage_credentials"]}>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setAppConnection(connection)}
+                                                title="Cambiar la aplicación de MercadoLibre de esta conexión"
+                                            >
+                                                Editar aplicación
+                                            </Button>
+                                            <Button
+                                                variant="outline"
+                                                size="sm"
+                                                onClick={() => setLinkConnection(connection)}
+                                                title="Autorizar la aplicación con la cuenta de MercadoLibre de esta conexión"
+                                            >
+                                                Vincular cuenta
+                                            </Button>
+                                        </Can>
+                                    ) : null}
                                     <Can any={["connections.manage_credentials"]}>
 <Button
                                         variant="outline"
@@ -144,6 +171,21 @@ export function ConnectionsPage() {
                 onOffsetChange={setOffset}
                 onPageSizeChange={setPageSize}
             />
+
+            {appConnection ? (
+                <MercadoLibreAppDialog
+                    connection={appConnection}
+                    onClose={() => setAppConnection(null)}
+                    onLink={() => {
+                        setLinkConnection(appConnection)
+                        setAppConnection(null)
+                    }}
+                />
+            ) : null}
+
+            {linkConnection ? (
+                <MercadoLibreLinkDialog connection={linkConnection} onClose={() => setLinkConnection(null)} />
+            ) : null}
 
             <ConnectionConfigDialog
                 connection={configConnection}

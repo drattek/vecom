@@ -221,6 +221,13 @@ func (s *MercadoLibreTokenService) EnsureValidAccessToken(ctx context.Context, c
 		return "", fmt.Errorf("error updating expiration_time: %w", err)
 	}
 
+	if userID := refreshResponse.UserID; userID > 0 && storedAccount(settingsByKey) != userID {
+		// Los tokens ya quedaron guardados: un fallo aquí no invalida la renovación.
+		if accountErr := upsertSetting(ctx, s.settingsRepository, settingsByKey, connectionID, mercadoLibreUserIDSetting, strconv.FormatInt(userID, 10), updatedBy); accountErr != nil {
+			log.Printf("mercadolibre token: connection %d — could not record linked account: %v", connectionID, accountErr)
+		}
+	}
+
 	return refreshResponse.AccessToken, nil
 }
 
@@ -266,145 +273,30 @@ func (s *MercadoLibreTokenService) refreshAccessToken(ctx context.Context, clien
 	})
 }
 
-// GetAuthorizationURL builds the URL an admin should be sent to in order to
-// grant this app access to a MercadoLibre account, using the app_id and
-// redirect_url already stored in ecom_connection_settings for connectionID
-// (the redirect_url must match exactly what's registered in the MercadoLibre
-// developer app).
-func (s *MercadoLibreTokenService) GetAuthorizationURL(ctx context.Context, connectionID int64) (string, error) {
-	if connectionID <= 0 {
-		return "", ErrInvalidMercadoLibreConnection
-	}
-
-	settings, err := s.settingsRepository.FindByConnectionID(ctx, connectionID)
-	if err != nil {
-		return "", fmt.Errorf("error loading connection settings: %w", err)
-	}
-	settingsByKey := mercadoLibreSettingsByKey(settings)
-
-	appIDSetting, ok := settingsByKey["app_id"]
-	if !ok || strings.TrimSpace(appIDSetting.Value) == "" {
-		return "", fmt.Errorf("%w: app_id", ErrMissingMercadoLibreSettings)
-	}
-
-	redirectURISetting, ok := settingsByKey["redirect_url"]
-	if !ok || strings.TrimSpace(redirectURISetting.Value) == "" {
-		return "", fmt.Errorf("%w: redirect_url", ErrMissingMercadoLibreSettings)
-	}
-
-	return s.authHandler.AuthorizationURL(strings.TrimSpace(appIDSetting.Value), strings.TrimSpace(redirectURISetting.Value)), nil
-}
-
-// ExchangeAuthorizationCode trades the one-time code MercadoLibre's OAuth
-// redirect handed back (after GetAuthorizationURL) for connectionID's first
-// access_token/refresh_token pair, and persists them the same way
-// EnsureValidAccessToken does after a routine refresh. Unlike a routine
-// refresh, the access_token/refresh_token/expiration_time settings may not
-// exist yet — this can be the very first authorization for the connection —
-// so each one is created if missing rather than assumed to already exist.
-func (s *MercadoLibreTokenService) ExchangeAuthorizationCode(ctx context.Context, connectionID int64, code string) (err error) {
-	if connectionID <= 0 {
-		return ErrInvalidMercadoLibreConnection
-	}
-	if strings.TrimSpace(code) == "" {
-		return fmt.Errorf("%w: code", ErrMissingMercadoLibreSettings)
-	}
-
-	var refreshedExpiration time.Time
-	refreshed := false
-
-	defer func() {
-		s.recordConnectionStatus(ctx, connectionID, err, refreshed, refreshedExpiration)
-	}()
-
-	settings, loadErr := s.settingsRepository.FindByConnectionID(ctx, connectionID)
-	if loadErr != nil {
-		err = fmt.Errorf("error loading connection settings: %w", loadErr)
-		return err
-	}
-	settingsByKey := mercadoLibreSettingsByKey(settings)
-
-	appIDSetting, ok := settingsByKey["app_id"]
-	if !ok || strings.TrimSpace(appIDSetting.Value) == "" {
-		err = fmt.Errorf("%w: app_id", ErrMissingMercadoLibreSettings)
-		return err
-	}
-	clientSecretSetting, ok := settingsByKey["client_secret"]
-	if !ok || strings.TrimSpace(clientSecretSetting.Value) == "" {
-		err = fmt.Errorf("%w: client_secret", ErrMissingMercadoLibreSettings)
-		return err
-	}
-	redirectURISetting, ok := settingsByKey["redirect_url"]
-	if !ok || strings.TrimSpace(redirectURISetting.Value) == "" {
-		err = fmt.Errorf("%w: redirect_url", ErrMissingMercadoLibreSettings)
-		return err
-	}
-
-	log.Printf("mercadolibre oauth: connection %d — exchanging authorization code", connectionID)
-	tokenResponse, exchangeErr := s.authHandler.ExchangeAuthorizationCode(ctx, mercadoLibreInfra.ExchangeCodeRequest{
-		ClientID:     strings.TrimSpace(appIDSetting.Value),
-		ClientSecret: strings.TrimSpace(clientSecretSetting.Value),
-		Code:         strings.TrimSpace(code),
-		RedirectURI:  strings.TrimSpace(redirectURISetting.Value),
-	})
-	if exchangeErr != nil {
-		err = fmt.Errorf("error exchanging mercadolibre authorization code: %w", exchangeErr)
-		return err
-	}
-	log.Printf("mercadolibre oauth: connection %d — code exchange returned, persisting tokens", connectionID)
-
-	if strings.TrimSpace(tokenResponse.AccessToken) == "" || strings.TrimSpace(tokenResponse.RefreshToken) == "" {
-		err = errors.New("mercadolibre authorization response missing token values")
-		return err
-	}
-
-	tokenTTL := mercadoLibreTokenTTL
-	if tokenResponse.ExpiresIn > 0 {
-		tokenTTL = time.Duration(tokenResponse.ExpiresIn) * time.Second
-	}
-	newExpirationTime := time.Now().UTC().Add(tokenTTL)
-	actorID := resolveSettingsActorID(settings)
-
-	refreshed = true
-	refreshedExpiration = newExpirationTime
-
-	if upsertErr := s.upsertSetting(ctx, settingsByKey, connectionID, "access_token", tokenResponse.AccessToken, actorID); upsertErr != nil {
-		err = fmt.Errorf("error saving access_token: %w", upsertErr)
-		return err
-	}
-	if upsertErr := s.upsertSetting(ctx, settingsByKey, connectionID, "refresh_token", tokenResponse.RefreshToken, actorID); upsertErr != nil {
-		err = fmt.Errorf("error saving refresh_token: %w", upsertErr)
-		return err
-	}
-	if upsertErr := s.upsertSetting(ctx, settingsByKey, connectionID, "expiration_time", newExpirationTime.UTC().Format(time.RFC3339), actorID); upsertErr != nil {
-		err = fmt.Errorf("error saving expiration_time: %w", upsertErr)
-		return err
-	}
-
-	log.Printf("mercadolibre oauth: connection %d — first access_token stored, expires %s", connectionID, newExpirationTime.UTC().Format(time.RFC3339))
-
-	return nil
-}
-
 // upsertSetting creates keyName for connectionID if it isn't already present
 // in settingsByKey (loaded fresh from FindByConnectionID), or updates it in
 // place otherwise. Values are always stored encrypted, matching how
 // EnsureValidAccessToken stores access_token/refresh_token/expiration_time.
-func (s *MercadoLibreTokenService) upsertSetting(ctx context.Context, settingsByKey map[string]mysqlInfra.ConnectionSettingDTO, connectionID int64, keyName, value string, actorID int64) error {
+func upsertSetting(ctx context.Context, repository *mysqlInfra.ConnectionSettingsRepository, settingsByKey map[string]mysqlInfra.ConnectionSettingDTO, connectionID int64, keyName, value string, actorID int64) error {
+	return upsertSettingValue(ctx, repository, settingsByKey, connectionID, keyName, value, true, actorID)
+}
+
+// upsertSettingValue es upsertSetting eligiendo si el valor se cifra.
+func upsertSettingValue(ctx context.Context, repository *mysqlInfra.ConnectionSettingsRepository, settingsByKey map[string]mysqlInfra.ConnectionSettingDTO, connectionID int64, keyName, value string, encrypted bool, actorID int64) error {
 	if existing, ok := settingsByKey[keyName]; ok {
-		_, err := s.settingsRepository.Update(ctx, existing.ID, mysqlInfra.UpdateConnectionSettingInput{
+		_, err := repository.Update(ctx, existing.ID, mysqlInfra.UpdateConnectionSettingInput{
 			Value:       value,
-			IsEncrypted: true,
+			IsEncrypted: encrypted,
 			UpdatedBy:   actorID,
 		})
 		return err
 	}
 
-	_, err := s.settingsRepository.Create(ctx, mysqlInfra.CreateConnectionSettingInput{
+	_, err := repository.Create(ctx, mysqlInfra.CreateConnectionSettingInput{
 		ConnectionID: connectionID,
 		KeyName:      keyName,
 		Value:        value,
-		IsEncrypted:  true,
+		IsEncrypted:  encrypted,
 		CreatedBy:    actorID,
 	})
 	return err

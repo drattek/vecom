@@ -28,7 +28,8 @@ func NewUsersHandler(client *Client) *UsersHandler {
 // /users/{id}/items/search — MercadoLibre has no "my own items" shortcut
 // that skips knowing it.
 type Me struct {
-	ID int64 `json:"id"`
+	ID       int64  `json:"id"`
+	Nickname string `json:"nickname"`
 }
 
 // GetMe calls GET /users/me, resolving the seller account behind

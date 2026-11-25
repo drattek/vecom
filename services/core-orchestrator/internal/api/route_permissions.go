@@ -217,6 +217,9 @@ func buildRoutePermissions() httpHandler.RoutePolicy {
 	connReaders := append([]string{"connections.view"}, channelReaders...)
 	crud("/api/channel-connections", "connections", connReaders...)
 	set("GET", "/api/channel-connections/{id}/config", "connections.manage_credentials")
+	set("POST", "/api/channel-connections/{id}/mercadolibre/authorize", "connections.manage_credentials")
+	set("GET", "/api/channel-connections/{id}/mercadolibre/app", "connections.manage_credentials")
+	set("PUT", "/api/channel-connections/{id}/mercadolibre/app", "connections.manage_credentials")
 	set("GET", "/api/connections/{connectionId}/status", connReaders...)
 	for _, base := range []string{"/api/connection-credentials", "/api/connection-settings"} {
 		set("GET", base, "connections.manage_credentials")

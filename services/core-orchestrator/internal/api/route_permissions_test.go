@@ -64,8 +64,7 @@ func TestAdminOnlyRoutesListing(t *testing.T) {
 			continue
 		}
 		if strings.Contains(r, "/api/login") || strings.Contains(r, "/meli_") ||
-			strings.HasSuffix(r, " /") || strings.HasSuffix(r, " /health") ||
-			strings.Contains(r, "oauth/authorize") {
+			strings.HasSuffix(r, " /") || strings.HasSuffix(r, " /health") {
 			continue // públicas
 		}
 		adminOnly = append(adminOnly, r)

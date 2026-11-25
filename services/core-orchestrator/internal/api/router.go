@@ -80,6 +80,7 @@ func NewRouter(
 	rolesHandler *httpHandler.RolesHandler,
 	dashboardHandler *httpHandler.DashboardHandler,
 	salesHandler *httpHandler.SalesHandler,
+	mercadoLibreOAuthHandler *httpHandler.MercadoLibreOAuthHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -105,14 +106,11 @@ func NewRouter(
 	// Product routes
 	r.Post("/api/login", authHandler.Login)
 
-	// MercadoLibre OAuth: the callback path (no /api prefix) is what's
-	// registered as the app's redirect_uri in MercadoLibre's developer
-	// console, and MercadoLibre hits it directly via browser redirect with no
-	// way to attach our own auth — so it's public. GetAuthorizationURL is
-	// public too, since it's meant to be opened directly in a browser
-	// (window.location) to kick off that same redirect chain.
-	r.Get("/meli_callback", mercadoLibreHandler.OAuthCallback)
-	r.Get("/api/marketplaces/mercadolibre/oauth/authorize", mercadoLibreHandler.GetAuthorizationURL)
+	// MercadoLibre OAuth: el callback (sin /api) es el redirect_uri registrado en
+	// la consola de MercadoLibre. Llega por redirección del navegador, sin
+	// nuestro JWT, así que es público: solo actúa con un state válido emitido al
+	// iniciar la vinculación desde una ruta protegida.
+	r.Get("/meli_callback", mercadoLibreOAuthHandler.Callback)
 
 	// MercadoLibre notifications: registered as this app's notification
 	// callback URL in MercadoLibre's developer console. MercadoLibre POSTs
@@ -407,6 +405,12 @@ func NewRouter(
 		// enmascaradas, ajustes y estado). Cuando exista RBAC: connections.manage_credentials.
 		protected.Get("/api/channel-connections/{id}/config", connectionConfigViewHandler.GetConfig)
 
+		// Inicia la vinculación de una conexión con una cuenta de MercadoLibre.
+		protected.Post("/api/channel-connections/{id}/mercadolibre/authorize", mercadoLibreOAuthHandler.Start)
+		// Datos de la aplicación de MercadoLibre de la conexión.
+		protected.Get("/api/channel-connections/{id}/mercadolibre/app", mercadoLibreOAuthHandler.GetApp)
+		protected.Put("/api/channel-connections/{id}/mercadolibre/app", mercadoLibreOAuthHandler.UpdateApp)
+
 		// Channel Parameters endpoints
 		protected.Get("/api/channel-parameters", channelParametersHandler.GetParameters)
 		protected.Get("/api/channel-parameters/{id}", channelParametersHandler.GetParameterByID)
@@ -466,8 +470,6 @@ func NewRouter(
 		// connection's access token to use. See
 		// MercadoLibreCategoriesDebugHandler.
 		protected.Get("/api/marketplaces/mercadolibre/debug/categories", mercadoLibreCategoriesDebugHandler.GetCategories)
-		// oauth/authorize is registered as a public route above (not here),
-		// since it needs to be reachable without a JWT — see the comment there.
 
 		// Odoo endpoints
 		protected.Get("/api/marketplaces/odoo/test-connection", odooHandler.TestConnection)

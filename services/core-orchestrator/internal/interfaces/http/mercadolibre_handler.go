@@ -10,13 +10,6 @@ import (
 	syncApp "core-orchestrator/internal/application/sync"
 )
 
-// defaultMercadoLibreOAuthConnectionID is used by OAuthCallback when the
-// redirect doesn't carry a connectionId: MercadoLibre's redirect_uri has no
-// way to round-trip our own query parameters unless we control the
-// authorization request that started the flow, so callers of
-// GetAuthorizationURL that don't pass one through get routed back here.
-const defaultMercadoLibreOAuthConnectionID = 2
-
 type MercadoLibreHandler struct {
 	predictorService   *syncApp.MercadoLibreCategoryPredictorService
 	productSyncService *syncApp.MercadoLibreProductSyncService
@@ -33,79 +26,6 @@ func NewMercadoLibreHandler(
 		productSyncService: productSyncService,
 		tokenService:       tokenService,
 	}
-}
-
-// GetAuthorizationURL sends the browser straight to MercadoLibre's
-// authorization (login/consent) page for connectionId, using the
-// app_id/redirect_uri already configured in ecom_connection_settings for
-// that connection — so opening this URL directly (e.g. a link or
-// window.location) starts the OAuth flow immediately.
-func (h *MercadoLibreHandler) GetAuthorizationURL(w http.ResponseWriter, r *http.Request) {
-	connectionIDStr := strings.TrimSpace(r.URL.Query().Get("connectionId"))
-	if connectionIDStr == "" {
-		writeJSONError(w, http.StatusBadRequest, "connectionId is required")
-		return
-	}
-
-	connectionID, err := strconv.ParseInt(connectionIDStr, 10, 64)
-	if err != nil {
-		writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
-		return
-	}
-
-	authURL, err := h.tokenService.GetAuthorizationURL(r.Context(), connectionID)
-	if err != nil {
-		if errors.Is(err, syncApp.ErrInvalidMercadoLibreConnection) {
-			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
-			return
-		}
-		if errors.Is(err, syncApp.ErrMissingMercadoLibreSettings) {
-			writeJSONError(w, http.StatusBadRequest, "missing required Mercado Libre connection settings (app_id/redirect_uri)")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-
-	http.Redirect(w, r, authURL, http.StatusFound)
-}
-
-// OAuthCallback is the redirect_uri target registered in the MercadoLibre
-// developer app (.../meli_callback): MercadoLibre sends the user's browser
-// here with a one-time `code` after they approve access. That redirect
-// carries no app-level authentication and, unless a connectionId query
-// parameter is also present, no way to say which connection the code
-// belongs to — so this endpoint is intentionally public (see router.go) and
-// defaults to defaultMercadoLibreOAuthConnectionID.
-func (h *MercadoLibreHandler) OAuthCallback(w http.ResponseWriter, r *http.Request) {
-	code := strings.TrimSpace(r.URL.Query().Get("code"))
-	if code == "" {
-		writeJSONError(w, http.StatusBadRequest, "code is required")
-		return
-	}
-
-	connectionID := int64(defaultMercadoLibreOAuthConnectionID)
-	if connectionIDStr := strings.TrimSpace(r.URL.Query().Get("connectionId")); connectionIDStr != "" {
-		parsed, err := strconv.ParseInt(connectionIDStr, 10, 64)
-		if err != nil {
-			writeJSONError(w, http.StatusBadRequest, "invalid connectionId")
-			return
-		}
-		connectionID = parsed
-	}
-
-	if err := h.tokenService.ExchangeAuthorizationCode(r.Context(), connectionID, code); err != nil {
-		if errors.Is(err, syncApp.ErrMissingMercadoLibreSettings) {
-			writeJSONError(w, http.StatusBadRequest, "missing required Mercado Libre connection settings (app_id/client_secret/redirect_uri)")
-			return
-		}
-		writeJSONError(w, http.StatusInternalServerError, "internal error")
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]any{"success": true, "connectionId": connectionID})
 }
 
 type uploadMercadoLibreProductRequest struct {

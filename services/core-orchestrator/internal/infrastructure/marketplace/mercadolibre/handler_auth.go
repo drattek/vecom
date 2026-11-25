@@ -39,6 +39,8 @@ type RefreshTokenResponse struct {
 	TokenType    string `json:"token_type"`
 	ExpiresIn    int64  `json:"expires_in"`
 	RefreshToken string `json:"refresh_token"`
+	// UserID es la cuenta a la que pertenecen los tokens.
+	UserID       int64  `json:"user_id"`
 	Message      string `json:"message"`
 	Error        string `json:"error"`
 }
@@ -54,12 +56,14 @@ func NewAuthHandler(client *Client) *AuthHandler {
 // AuthorizationURL builds the URL to send a user to so they can authorize
 // this app against their MercadoLibre account. The user approves there,
 // then MercadoLibre redirects their browser to redirectURI with a `code`
-// query parameter, which ExchangeAuthorizationCode trades for tokens.
-func (h *AuthHandler) AuthorizationURL(clientID, redirectURI string) string {
+// query parameter, which ExchangeAuthorizationCode trades for tokens. state
+// comes back unchanged in that redirect.
+func (h *AuthHandler) AuthorizationURL(clientID, redirectURI, state string) string {
 	params := url.Values{}
 	params.Set("response_type", "code")
 	params.Set("client_id", clientID)
 	params.Set("redirect_uri", redirectURI)
+	params.Set("state", state)
 
 	return fmt.Sprintf("%s/authorization?%s", mercadoLibreAuthDomain, params.Encode())
 }

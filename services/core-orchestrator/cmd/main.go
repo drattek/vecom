@@ -752,6 +752,16 @@ func main() {
 		salesSyncService,
 	)
 
+	// Vinculación OAuth de las conexiones de MercadoLibre. El state pendiente
+	// vive en Redis, de un solo uso y con caducidad.
+	mercadoLibreOAuthHandler := httpHandler.NewMercadoLibreOAuthHandler(syncApp.NewMercadoLibreOAuthService(
+		db,
+		mercadoLibreTokenService,
+		mysqlRepos.ChannelConnectionRepository,
+		mercadoLibreInfra.NewUsersHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter)),
+		redisInfra.NewOAuthStateStore(redisClient),
+	))
+
 	// Create router and start server.
 	router := api.NewRouter(
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
@@ -782,6 +792,7 @@ func main() {
 		rolesHandler,
 		dashboardHandler,
 		salesHandler,
+		mercadoLibreOAuthHandler,
 	)
 
 	server := &http.Server{
