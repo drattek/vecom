@@ -15,6 +15,8 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { apiClient, getServerErrorMessage } from "@/lib/api"
 import type { ChannelConnection } from "@/lib/schemas/channel-connections"
+import { MercadoLibreBackups } from "./MercadoLibreBackups"
+import { useRestoreBackup } from "./useRestoreBackup"
 
 const appSettingsSchema = z.object({
     appId: z.string(),
@@ -84,9 +86,15 @@ export function MercadoLibreAppDialog({ connection, onClose, onLink }: MercadoLi
         },
     })
 
+    // Tras restaurar, el formulario se recarga con lo que quedó guardado.
+    const restore = useRestoreBackup(connection.id, () => {
+        void current.refetch()
+    })
+    const busy = save.isPending || restore.isPending
+
     return (
-        <Dialog open onOpenChange={(open) => (open || save.isPending ? undefined : onClose())}>
-            <DialogContent className="sm:max-w-lg">
+        <Dialog open onOpenChange={(open) => (open || busy ? undefined : onClose())}>
+            <DialogContent className="max-h-[90vh] overflow-y-auto sm:max-w-lg">
                 <DialogHeader>
                     <DialogTitle>Editar aplicación de MercadoLibre</DialogTitle>
                     <DialogDescription>
@@ -113,8 +121,9 @@ export function MercadoLibreAppDialog({ connection, onClose, onLink }: MercadoLi
                         ) : null}
                         {current.data ? (
                             <AppForm
+                                key={current.dataUpdatedAt}
                                 current={current.data}
-                                saving={save.isPending}
+                                saving={busy}
                                 error={
                                     save.isError
                                         ? getServerErrorMessage(save.error, "No se pudieron guardar los datos de la aplicación.")
@@ -123,6 +132,9 @@ export function MercadoLibreAppDialog({ connection, onClose, onLink }: MercadoLi
                                 onCancel={onClose}
                                 onSubmit={(values) => save.mutate(values)}
                             />
+                        ) : null}
+                        {current.data ? (
+                            <MercadoLibreBackups connectionId={connection.id} restore={restore} disabled={busy} />
                         ) : null}
                     </>
                 )}
@@ -138,7 +150,7 @@ function SavedNotice({ saved, onClose, onLink }: { saved: SavedApp; onClose: () 
                 <p className="font-medium">Datos guardados.</p>
                 {saved.appChanged ? (
                     <p className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3">
-                        <strong>Vincula la cuenta ahora.</strong> Los tokens actuales son de la aplicación anterior y ya no
+                        La configuración anterior quedó respaldada. <strong>Vincula la cuenta ahora.</strong> Los tokens actuales son de la aplicación anterior y ya no
                         se podrán renovar: al vencer, la publicación y las ventas de esta conexión fallarán.
                     </p>
                 ) : (
@@ -264,8 +276,9 @@ function AppForm({ current, saving, error, onCancel, onSubmit }: AppFormProps) {
                 <div className="rounded-lg border border-amber-500/40 bg-amber-500/10 p-3 text-sm">
                     <p className="font-medium">Vas a cambiar de aplicación.</p>
                     <p className="mt-1">
-                        Antes de guardar: respalda los ajustes de la conexión y comprueba que la aplicación nueva tenga sus
-                        permisos, este redirect URL y PKCE desactivado. Después tendrás que vincular la cuenta enseguida.
+                        Antes de guardar, comprueba que la aplicación nueva tenga sus permisos y este redirect URL
+                        (PKCE puede estar activado). La configuración actual se respalda sola. Después tendrás que
+                        vincular la cuenta enseguida.
                     </p>
                 </div>
             ) : null}

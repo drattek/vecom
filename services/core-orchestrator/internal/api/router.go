@@ -410,6 +410,9 @@ func NewRouter(
 		// Datos de la aplicación de MercadoLibre de la conexión.
 		protected.Get("/api/channel-connections/{id}/mercadolibre/app", mercadoLibreOAuthHandler.GetApp)
 		protected.Put("/api/channel-connections/{id}/mercadolibre/app", mercadoLibreOAuthHandler.UpdateApp)
+		// Respaldos automáticos de esa configuración y su restauración.
+		protected.Get("/api/channel-connections/{id}/mercadolibre/backups", mercadoLibreOAuthHandler.Backups)
+		protected.Post("/api/channel-connections/{id}/mercadolibre/backups/{backupId}/restore", mercadoLibreOAuthHandler.Restore)
 
 		// Channel Parameters endpoints
 		protected.Get("/api/channel-parameters", channelParametersHandler.GetParameters)

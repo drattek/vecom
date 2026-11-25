@@ -32,6 +32,9 @@ type ExchangeCodeRequest struct {
 	ClientSecret string
 	Code         string
 	RedirectURI  string
+	// CodeVerifier es el verificador PKCE cuya huella viajó como
+	// code_challenge en la URL de autorización.
+	CodeVerifier string
 }
 
 type RefreshTokenResponse struct {
@@ -40,9 +43,9 @@ type RefreshTokenResponse struct {
 	ExpiresIn    int64  `json:"expires_in"`
 	RefreshToken string `json:"refresh_token"`
 	// UserID es la cuenta a la que pertenecen los tokens.
-	UserID       int64  `json:"user_id"`
-	Message      string `json:"message"`
-	Error        string `json:"error"`
+	UserID  int64  `json:"user_id"`
+	Message string `json:"message"`
+	Error   string `json:"error"`
 }
 
 func NewAuthHandler(client *Client) *AuthHandler {
@@ -57,13 +60,16 @@ func NewAuthHandler(client *Client) *AuthHandler {
 // this app against their MercadoLibre account. The user approves there,
 // then MercadoLibre redirects their browser to redirectURI with a `code`
 // query parameter, which ExchangeAuthorizationCode trades for tokens. state
-// comes back unchanged in that redirect.
-func (h *AuthHandler) AuthorizationURL(clientID, redirectURI, state string) string {
+// comes back unchanged in that redirect. codeChallenge is the PKCE S256
+// challenge MercadoLibre will check against the verifier sent with the code.
+func (h *AuthHandler) AuthorizationURL(clientID, redirectURI, state, codeChallenge string) string {
 	params := url.Values{}
 	params.Set("response_type", "code")
 	params.Set("client_id", clientID)
 	params.Set("redirect_uri", redirectURI)
 	params.Set("state", state)
+	params.Set("code_challenge", codeChallenge)
+	params.Set("code_challenge_method", "S256")
 
 	return fmt.Sprintf("%s/authorization?%s", mercadoLibreAuthDomain, params.Encode())
 }
@@ -89,6 +95,7 @@ func (h *AuthHandler) ExchangeAuthorizationCode(ctx context.Context, req Exchang
 	form.Set("client_secret", req.ClientSecret)
 	form.Set("code", req.Code)
 	form.Set("redirect_uri", req.RedirectURI)
+	form.Set("code_verifier", req.CodeVerifier)
 
 	return h.requestToken(ctx, form)
 }

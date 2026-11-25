@@ -2,7 +2,8 @@
 
 - Estado: IMPLEMENTADO (2026-11-25); pendiente de probar contra MercadoLibre.
 - Alcance: `core-orchestrator` y `admin-dashboard`.
-- Sin cambios de esquema.
+- DDL: `infrastructure/mysql/2026-11-25_connection_settings_backups.sql` (se
+  ejecuta a mano, antes de desplegar).
 
 ## Contexto
 
@@ -22,6 +23,11 @@ su propia cuenta. No había botón en el dashboard.
   minutos y consumido con `GETDEL` (un solo uso). Guarda la conexión, quién
   inició y si se permite cambiar de cuenta. Si Redis se pierde, solo hay que
   iniciar de nuevo.
+- Usa PKCE con `S256`: cada intento genera un verificador aleatorio que se
+  guarda junto al `state` (misma caducidad y uso único). La URL lleva
+  `code_challenge` y `code_challenge_method`; el canje del `code` lleva
+  `code_verifier` además del `client_secret`. Quien valida es MercadoLibre. La
+  renovación de tokens no cambia.
 - `GET /meli_callback` sigue público y su dirección no cambia. Sin un `state`
   válido no toca ninguna conexión. Ya no acepta `connectionId` ni tiene una
   conexión por defecto.
@@ -50,11 +56,46 @@ su propia cuenta. No había botón en el dashboard.
   token vigente y se guarda en la misma transacción. No se renuevan tokens: un
   respaldo hecho antes de guardar sigue siendo válido.
 
+## Respaldo automático y restauración
+
+- Antes de editar la aplicación, vincular o restaurar se respaldan, de esa
+  conexión, `app_id`, `client_secret`, `redirect_url`, los tokens, su
+  expiración y `meli_user_id`. Respaldo y cambio van en la misma transacción:
+  si el respaldo falla, no cambia nada.
+- `ecom_connection_settings_backups` guarda un JSON cifrado completo. La API
+  solo devuelve fecha, usuario, motivo y `app_id`.
+- Se muestran los 5 más recientes por conexión; los anteriores se dan de baja
+  lógica. Sus datos cifrados siguen en la base; falta definir cuándo
+  eliminarlos.
+- `GET /api/channel-connections/{id}/mercadolibre/backups` y
+  `POST …/backups/{backupId}/restore` (`connections.manage_credentials`).
+- Restaurar repone todos los ajustes respaldados y da de baja los de esa lista
+  que no existían entonces. Después comprueba los tokens (renovándolos si
+  vencieron) y avisa si no sirven; eso no deshace la restauración.
+- Un respaldo tomado al vincular después de cambiar la aplicación contiene la
+  aplicación nueva con los tokens anteriores.
+- Un candado por conexión serializa renovación, vinculación, edición y
+  restauración, para no respaldar una renovación a medias. Vale para una sola
+  réplica; con más, habría que moverlo a la base o a Redis. La edición genérica
+  de ajustes (`/api/connection-settings`) no lo usa ni genera respaldo.
+
+### Pruebas
+
+`mercadolibre_backups_integration_test.go` (MercadoLibre simulado, se omite sin
+`BACKUPS_TEST_MYSQL_DSN`) pasó con MySQL 8.4 antes de agregar PKCE; la
+comprobación del verificador que se le añadió después no se ha ejecutado. Detectó que reescribir un valor
+sin cifrar sin cambios, en el mismo segundo, hacía fallar el guardado (MySQL
+reporta 0 filas y `Update` lo toma como "no encontrado"). Ahora no se reescribe
+lo que no cambió. La API genérica de ajustes usa `Update` directamente y
+conserva ese comportamiento.
+
 ## Límites
 
 - La comprobación de cuenta no aplica si la conexión no tiene cuenta conocida
   y la autorizada no está en ninguna otra (primera vinculación).
-- No implementa PKCE: la aplicación de MercadoLibre debe tenerlo desactivado.
+- PKCE se envía siempre. La documentación lo marca opcional y obligatorio si la
+  aplicación lo activa; falta comprobar contra MercadoLibre una aplicación con
+  la opción desactivada y otra con ella activada.
 
 ## Cambiar de aplicación de MercadoLibre
 
@@ -62,11 +103,10 @@ Los tokens de una aplicación no sirven con otra.
 
 Se puede migrar una conexión a la vez: cada una guarda su aplicación.
 
-1. Desplegar esta versión.
-2. Configurar en la aplicación nueva los mismos permisos funcionales (incluido
-   "Venta y envío de productos"), el `redirect_url` y PKCE desactivado.
-3. Respaldar los ajustes justo antes del cambio (el `refresh_token` cambia en
-   cada renovación).
+1. Ejecutar el script de respaldos.
+2. Desplegar esta versión.
+3. Configurar en la aplicación nueva los mismos permisos funcionales (incluido
+   "Venta y envío de productos") y el `redirect_url`. PKCE puede activarse.
 4. Usar "Editar aplicación" en la conexión y vincularla de inmediato. Hasta
    entonces sus tokens dejan de renovarse, y la publicación y las ventas fallan
    al vencer el token vigente.

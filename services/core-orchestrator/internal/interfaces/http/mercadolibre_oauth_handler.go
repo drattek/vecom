@@ -13,6 +13,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	syncApp "core-orchestrator/internal/application/sync"
+	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
 
 // connectionsPagePath es la pantalla del dashboard a la que vuelve el usuario.
@@ -26,6 +27,8 @@ type mercadoLibreOAuthFlow interface {
 	Cancel(ctx context.Context, state string) (syncApp.OAuthResult, error)
 	AppSettings(ctx context.Context, connectionID int64) (*syncApp.MercadoLibreAppSettings, error)
 	UpdateAppSettings(ctx context.Context, connectionID, actorID int64, input syncApp.UpdateMercadoLibreAppInput) (*syncApp.UpdateMercadoLibreAppResult, error)
+	Backups(ctx context.Context, connectionID int64) ([]mysqlInfra.ConnectionBackupDTO, error)
+	Restore(ctx context.Context, connectionID, backupID, actorID int64) (*syncApp.MercadoLibreRestoreResult, error)
 }
 
 type MercadoLibreOAuthHandler struct {
@@ -122,6 +125,46 @@ func (h *MercadoLibreOAuthHandler) UpdateApp(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, result)
 }
 
+// Backups: GET /api/channel-connections/{id}/mercadolibre/backups. Solo
+// metadatos: el contenido de un respaldo nunca sale del servidor.
+func (h *MercadoLibreOAuthHandler) Backups(w http.ResponseWriter, r *http.Request) {
+	connectionID, ok := parseOAuthConnectionID(w, r)
+	if !ok {
+		return
+	}
+	backups, err := h.service.Backups(r.Context(), connectionID)
+	if err != nil {
+		writeAppSettingsError(w, connectionID, "no se pudieron consultar los respaldos", err)
+		return
+	}
+	w.Header().Set("Cache-Control", "no-store")
+	writeJSON(w, http.StatusOK, map[string]any{"backups": backups})
+}
+
+// Restore: POST /api/channel-connections/{id}/mercadolibre/backups/{backupId}/restore
+func (h *MercadoLibreOAuthHandler) Restore(w http.ResponseWriter, r *http.Request) {
+	connectionID, ok := parseOAuthConnectionID(w, r)
+	if !ok {
+		return
+	}
+	backupID, err := strconv.ParseInt(chi.URLParam(r, "backupId"), 10, 64)
+	if err != nil || backupID <= 0 {
+		writeJSONError(w, http.StatusBadRequest, "id de respaldo inválido")
+		return
+	}
+	user, found := UserFromContext(r.Context())
+	if !found {
+		writeJSONError(w, http.StatusUnauthorized, "sesión no válida")
+		return
+	}
+	result, err := h.service.Restore(r.Context(), connectionID, backupID, int64(user.ID))
+	if err != nil {
+		writeAppSettingsError(w, connectionID, "no se pudo restaurar el respaldo", err)
+		return
+	}
+	writeJSON(w, http.StatusOK, result)
+}
+
 func parseOAuthConnectionID(w http.ResponseWriter, r *http.Request) (int64, bool) {
 	connectionID, err := strconv.ParseInt(chi.URLParam(r, "id"), 10, 64)
 	if err != nil || connectionID <= 0 {
@@ -137,6 +180,10 @@ func writeAppSettingsError(w http.ResponseWriter, connectionID int64, fallback s
 		writeJSONError(w, http.StatusNotFound, err.Error())
 	case errors.Is(err, syncApp.ErrInvalidMercadoLibreApp):
 		writeJSONError(w, http.StatusBadRequest, err.Error())
+	case errors.Is(err, mysqlInfra.ErrConnectionBackupNotFound):
+		writeJSONError(w, http.StatusNotFound, "el respaldo no existe o ya no está disponible")
+	case errors.Is(err, syncApp.ErrBackupNotRestorable):
+		writeJSONError(w, http.StatusUnprocessableEntity, err.Error())
 	default:
 		log.Printf("mercadolibre app settings: connection %d: %v", connectionID, err)
 		writeJSONError(w, http.StatusInternalServerError, fallback)

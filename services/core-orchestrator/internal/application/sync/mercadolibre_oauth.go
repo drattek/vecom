@@ -3,6 +3,7 @@ package sync
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
 	"encoding/json"
@@ -24,6 +25,10 @@ import (
 // dashboard. Lo único que liga ese regreso con quien inició la vinculación es
 // el parámetro state: aleatorio, de un solo uso, con caducidad y guardado del
 // lado del servidor. Sin un state válido no se toca ninguna conexión.
+//
+// Además usa PKCE (S256): en la URL viaja solo la huella de un verificador
+// aleatorio que se queda en el servidor, junto al state, y se envía a
+// MercadoLibre al canjear el code. Quien intercepte el code no puede usarlo.
 
 const (
 	mercadoLibreOAuthChannelCode = "MERCADOLIBRE"
@@ -52,6 +57,9 @@ type oauthPendingState struct {
 	ConnectionID       int64 `json:"connectionId"`
 	ActorID            int64 `json:"actorId"`
 	AllowAccountChange bool  `json:"allowAccountChange"`
+	// CodeVerifier es el verificador PKCE; no sale del servidor salvo hacia
+	// el canje del code.
+	CodeVerifier string `json:"codeVerifier"`
 }
 
 // OAuthResult describe una vinculación. ConnectionID viene informado en cuanto
@@ -115,12 +123,20 @@ func (s *MercadoLibreOAuthService) requireConnection(ctx context.Context, connec
 	return nil
 }
 
-func newOAuthState() (string, error) {
+// newOAuthSecret genera 32 bytes aleatorios en base64url (43 caracteres).
+// Sirve para el state y para el verificador PKCE, que pide entre 43 y 128.
+func newOAuthSecret() (string, error) {
 	buffer := make([]byte, 32)
 	if _, err := rand.Read(buffer); err != nil {
-		return "", fmt.Errorf("error generating oauth state: %w", err)
+		return "", fmt.Errorf("error generating oauth secret: %w", err)
 	}
 	return base64.RawURLEncoding.EncodeToString(buffer), nil
+}
+
+// pkceChallenge es el code_challenge S256 de un verificador (RFC 7636).
+func pkceChallenge(verifier string) string {
+	digest := sha256.Sum256([]byte(verifier))
+	return base64.RawURLEncoding.EncodeToString(digest[:])
 }
 
 // Start devuelve la URL de MercadoLibre para vincular la conexión.
@@ -138,18 +154,27 @@ func (s *MercadoLibreOAuthService) Start(ctx context.Context, connectionID, acto
 		return "", err
 	}
 
-	state, err := newOAuthState()
+	state, err := newOAuthSecret()
 	if err != nil {
 		return "", err
 	}
-	payload, err := json.Marshal(oauthPendingState{ConnectionID: connectionID, ActorID: actorID, AllowAccountChange: allowAccountChange})
+	verifier, err := newOAuthSecret()
+	if err != nil {
+		return "", err
+	}
+	payload, err := json.Marshal(oauthPendingState{
+		ConnectionID:       connectionID,
+		ActorID:            actorID,
+		AllowAccountChange: allowAccountChange,
+		CodeVerifier:       verifier,
+	})
 	if err != nil {
 		return "", fmt.Errorf("error encoding oauth state: %w", err)
 	}
 	if err := s.states.Save(ctx, state, payload, mercadoLibreOAuthStateTTL); err != nil {
 		return "", err
 	}
-	return s.tokens.authHandler.AuthorizationURL(app.appID, app.redirectURL, state), nil
+	return s.tokens.authHandler.AuthorizationURL(app.appID, app.redirectURL, state, pkceChallenge(verifier)), nil
 }
 
 // Cancel descarta un state, p. ej. cuando el usuario rechaza la autorización.
@@ -173,7 +198,7 @@ func (s *MercadoLibreOAuthService) take(ctx context.Context, state string) (oaut
 	if !found {
 		return pending, ErrOAuthStateInvalid
 	}
-	if err := json.Unmarshal(payload, &pending); err != nil || pending.ConnectionID <= 0 {
+	if err := json.Unmarshal(payload, &pending); err != nil || pending.ConnectionID <= 0 || pending.CodeVerifier == "" {
 		return pending, ErrOAuthStateInvalid
 	}
 	return pending, nil
@@ -208,6 +233,7 @@ func (s *MercadoLibreOAuthService) Complete(ctx context.Context, state, code str
 		ClientSecret: app.clientSecret,
 		Code:         strings.TrimSpace(code),
 		RedirectURI:  app.redirectURL,
+		CodeVerifier: pending.CodeVerifier,
 	})
 	if err != nil {
 		return result, fmt.Errorf("%w: %w", ErrOAuthExchange, err)
@@ -228,6 +254,13 @@ func (s *MercadoLibreOAuthService) Complete(ctx context.Context, state, code str
 	if userID <= 0 {
 		return result, fmt.Errorf("%w: no se pudo identificar la cuenta autorizada", ErrOAuthExchange)
 	}
+
+	// Desde aquí hasta guardar, nadie más reescribe los ajustes.
+	release, err := s.tokens.locks.acquire(ctx, pending.ConnectionID)
+	if err != nil {
+		return result, err
+	}
+	defer release()
 
 	if !pending.AllowAccountChange {
 		if err := s.verifyAccount(ctx, pending.ConnectionID, userID); err != nil {
@@ -333,25 +366,20 @@ func (s *MercadoLibreOAuthService) saveTokens(ctx context.Context, pending oauth
 	now := time.Now().UTC()
 	expiresAt := now.Add(ttl)
 
-	err := mysqlInfra.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
-		repository := mysqlInfra.NewConnectionSettingsRepository(tx)
-		settings, err := repository.FindByConnectionID(ctx, pending.ConnectionID)
-		if err != nil {
-			return fmt.Errorf("error loading connection settings: %w", err)
-		}
-		settingsByKey := mercadoLibreSettingsByKey(settings)
-		for _, value := range []struct{ key, value string }{
-			{"access_token", tokens.AccessToken},
-			{"refresh_token", tokens.RefreshToken},
-			{"expiration_time", expiresAt.Format(time.RFC3339)},
-			{mercadoLibreUserIDSetting, strconv.FormatInt(userID, 10)},
-		} {
-			if err := upsertSetting(ctx, repository, settingsByKey, pending.ConnectionID, value.key, value.value, pending.ActorID); err != nil {
-				return fmt.Errorf("error saving %s: %w", value.key, err)
+	err := s.mutateWithBackup(ctx, pending.ConnectionID, pending.ActorID, backupReasonAccountLink,
+		func(repository *mysqlInfra.ConnectionSettingsRepository, settingsByKey map[string]mysqlInfra.ConnectionSettingDTO) error {
+			for _, value := range []struct{ key, value string }{
+				{"access_token", tokens.AccessToken},
+				{"refresh_token", tokens.RefreshToken},
+				{"expiration_time", expiresAt.Format(time.RFC3339)},
+				{mercadoLibreUserIDSetting, strconv.FormatInt(userID, 10)},
+			} {
+				if err := upsertSetting(ctx, repository, settingsByKey, pending.ConnectionID, value.key, value.value, pending.ActorID); err != nil {
+					return fmt.Errorf("error saving %s: %w", value.key, err)
+				}
 			}
-		}
-		return nil
-	})
+			return nil
+		})
 	if err != nil {
 		return err
 	}

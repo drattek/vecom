@@ -2,7 +2,6 @@ package sync
 
 import (
 	"context"
-	"database/sql"
 	"errors"
 	"fmt"
 	"log"
@@ -111,6 +110,17 @@ func (s *MercadoLibreOAuthService) UpdateAppSettings(ctx context.Context, connec
 	if err != nil {
 		return nil, err
 	}
+
+	release, err := s.tokens.locks.acquire(ctx, connectionID)
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	// Se relee ya con el candado tomado.
+	if current, err = s.AppSettings(ctx, connectionID); err != nil {
+		return nil, err
+	}
+
 	input, appChanged, err := validateAppUpdate(input, *current)
 	if err != nil {
 		return nil, err
@@ -126,47 +136,41 @@ func (s *MercadoLibreOAuthService) UpdateAppSettings(ctx context.Context, connec
 	}
 
 	var saved MercadoLibreAppSettings
-	err = mysqlInfra.WithinTx(ctx, s.db, func(tx *sql.Tx) error {
-		repository := mysqlInfra.NewConnectionSettingsRepository(tx)
-		settings, err := repository.FindByConnectionID(ctx, connectionID)
-		if err != nil {
-			return fmt.Errorf("error loading connection settings: %w", err)
-		}
-		settingsByKey := mercadoLibreSettingsByKey(settings)
-
-		// app_id y redirect_url conservan su cifrado actual.
-		values := []struct {
-			key, value string
-			encrypted  bool
-		}{
-			{"app_id", input.AppID, settingsByKey["app_id"].IsEncrypted},
-			{"redirect_url", input.RedirectURL, settingsByKey["redirect_url"].IsEncrypted},
-		}
-		if input.ClientSecret != "" {
-			values = append(values, struct {
+	err = s.mutateWithBackup(ctx, connectionID, actorID, backupReasonAppUpdate,
+		func(repository *mysqlInfra.ConnectionSettingsRepository, settingsByKey map[string]mysqlInfra.ConnectionSettingDTO) error {
+			// app_id y redirect_url conservan su cifrado actual.
+			values := []struct {
 				key, value string
 				encrypted  bool
-			}{"client_secret", input.ClientSecret, true})
-		}
-		if account > 0 {
-			values = append(values, struct {
-				key, value string
-				encrypted  bool
-			}{mercadoLibreUserIDSetting, strconv.FormatInt(account, 10), true})
-		}
-		for _, v := range values {
-			if err := upsertSettingValue(ctx, repository, settingsByKey, connectionID, v.key, v.value, v.encrypted, actorID); err != nil {
-				return fmt.Errorf("error saving %s: %w", v.key, err)
+			}{
+				{"app_id", input.AppID, settingsByKey["app_id"].IsEncrypted},
+				{"redirect_url", input.RedirectURL, settingsByKey["redirect_url"].IsEncrypted},
 			}
-		}
+			if input.ClientSecret != "" {
+				values = append(values, struct {
+					key, value string
+					encrypted  bool
+				}{"client_secret", input.ClientSecret, true})
+			}
+			if account > 0 {
+				values = append(values, struct {
+					key, value string
+					encrypted  bool
+				}{mercadoLibreUserIDSetting, strconv.FormatInt(account, 10), true})
+			}
+			for _, v := range values {
+				if err := upsertSettingValue(ctx, repository, settingsByKey, connectionID, v.key, v.value, v.encrypted, actorID); err != nil {
+					return fmt.Errorf("error saving %s: %w", v.key, err)
+				}
+			}
 
-		updated, err := repository.FindByConnectionID(ctx, connectionID)
-		if err != nil {
-			return fmt.Errorf("error reloading connection settings: %w", err)
-		}
-		saved = describeAppSettings(mercadoLibreSettingsByKey(updated))
-		return nil
-	})
+			updated, err := repository.FindByConnectionID(ctx, connectionID)
+			if err != nil {
+				return fmt.Errorf("error reloading connection settings: %w", err)
+			}
+			saved = describeAppSettings(mercadoLibreSettingsByKey(updated))
+			return nil
+		})
 	if err != nil {
 		return nil, err
 	}

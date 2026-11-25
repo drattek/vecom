@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	syncApp "core-orchestrator/internal/application/sync"
+	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 )
 
 type fakeOAuthFlow struct {
@@ -37,6 +38,14 @@ func (f *fakeOAuthFlow) AppSettings(context.Context, int64) (*syncApp.MercadoLib
 
 func (f *fakeOAuthFlow) UpdateAppSettings(context.Context, int64, int64, syncApp.UpdateMercadoLibreAppInput) (*syncApp.UpdateMercadoLibreAppResult, error) {
 	return &syncApp.UpdateMercadoLibreAppResult{}, nil
+}
+
+func (f *fakeOAuthFlow) Backups(context.Context, int64) ([]mysqlInfra.ConnectionBackupDTO, error) {
+	return nil, nil
+}
+
+func (f *fakeOAuthFlow) Restore(context.Context, int64, int64, int64) (*syncApp.MercadoLibreRestoreResult, error) {
+	return &syncApp.MercadoLibreRestoreResult{}, nil
 }
 
 func callback(t *testing.T, flow *fakeOAuthFlow, query string) (*httptest.ResponseRecorder, url.Values) {

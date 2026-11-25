@@ -52,6 +52,7 @@ type MercadoLibreTokenService struct {
 	statusRepository   *mysqlInfra.ConnectionStatusRepository
 	authHandler        *mercadoLibreInfra.AuthHandler
 	refreshSkew        time.Duration
+	locks              connectionLocks
 }
 
 type MercadoLibreCategoryPredictorService struct {
@@ -112,6 +113,15 @@ func (s *MercadoLibreTokenService) EnsureValidAccessToken(ctx context.Context, c
 	if connectionID <= 0 {
 		return "", ErrInvalidMercadoLibreConnection
 	}
+
+	// El candado cubre leer, renovar y guardar: además de proteger respaldos y
+	// vinculaciones, evita que dos llamadas renueven a la vez con el mismo
+	// refresh_token.
+	release, err := s.locks.acquire(ctx, connectionID)
+	if err != nil {
+		return "", err
+	}
+	defer release()
 
 	var refreshedExpiration time.Time
 	refreshed := false
@@ -284,6 +294,12 @@ func upsertSetting(ctx context.Context, repository *mysqlInfra.ConnectionSetting
 // upsertSettingValue es upsertSetting eligiendo si el valor se cifra.
 func upsertSettingValue(ctx context.Context, repository *mysqlInfra.ConnectionSettingsRepository, settingsByKey map[string]mysqlInfra.ConnectionSettingDTO, connectionID int64, keyName, value string, encrypted bool, actorID int64) error {
 	if existing, ok := settingsByKey[keyName]; ok {
+		// Sin cambios no se escribe: si además cae en el mismo segundo que la
+		// escritura anterior, MySQL reporta 0 filas modificadas y Update lo
+		// toma como "no encontrado". (Los valores cifrados nunca repiten.)
+		if existing.Value == value && existing.IsEncrypted == encrypted {
+			return nil
+		}
 		_, err := repository.Update(ctx, existing.ID, mysqlInfra.UpdateConnectionSettingInput{
 			Value:       value,
 			IsEncrypted: encrypted,
