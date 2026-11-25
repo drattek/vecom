@@ -38,7 +38,7 @@ export function SettingsPage() {
                                     <span>{group.label}</span>
                                 </NavigationMenuTrigger>
                                 <NavigationMenuContent>
-                                    <ul className="grid w-[220px] gap-1">
+                                    <ul className="grid w-55 gap-1">
                                         {group.items.map((item) => {
                                             const isActive = location.pathname === item.to
 
