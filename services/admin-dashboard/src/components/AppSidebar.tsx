@@ -7,6 +7,7 @@ import {
   GalleryHorizontal,
   LayoutDashboardIcon,
   LogOutIcon,
+  ReceiptTextIcon,
   Settings,
   ShoppingBagIcon,
   UserRoundIcon,
@@ -92,6 +93,12 @@ const sidebarItems: SidebarItem[] = [
     path: '/products',
     icon: BoxIcon,
     permissions: productPermissions,
+  },
+  {
+    title: 'Ventas',
+    path: '/sales',
+    icon: ReceiptTextIcon,
+    permissions: ['sales.view'],
   },
   {
     title: 'MercadoLibre',

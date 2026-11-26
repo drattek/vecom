@@ -51,6 +51,7 @@ import (
 	syncApp "core-orchestrator/internal/application/sync"
 	usersApp "core-orchestrator/internal/application/users"
 	rolesApp "core-orchestrator/internal/application/roles"
+	salesApp "core-orchestrator/internal/application/sales"
 	"core-orchestrator/internal/config"
 	banxicoInfra "core-orchestrator/internal/infrastructure/banxico"
 	mercadoLibreInfra "core-orchestrator/internal/infrastructure/marketplace/mercadolibre"
@@ -721,6 +722,36 @@ func main() {
 	)
 	go safe.Supervise(bgCtx, "meli import missing scheduler", meliImportMissingScheduler.Start)
 
+	// Ventas (ADR 0010): importa las ventas de MercadoLibre y del ecommerce
+	// de Odoo. Con SALES_SYNC_ENABLED=false solo atiende "Sincronizar ahora".
+	salesSyncService := salesApp.NewSyncService(
+		db,
+		mysqlInfra.NewSalesRepository(db),
+		mysqlInfra.NewSaleSyncStateRepository(db),
+		salesApp.Config{
+			Enabled:      cfg.SalesSyncEnabled,
+			Interval:     cfg.SalesSyncInterval,
+			BackfillDays: cfg.SalesSyncBackfillDays,
+			Overlap:      cfg.SalesSyncOverlap,
+		},
+	)
+	salesSyncService.Register(salesApp.NewMercadoLibreReader(
+		mercadoLibreInfra.NewSalesHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter)),
+		mercadoLibreInfra.NewUsersHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter)),
+		mercadoLibreTokenService,
+	))
+	salesSyncService.Register(salesApp.NewOdooReader(
+		func(ctx context.Context, connectionID int64) (map[string]string, error) {
+			return syncApp.LoadOdooConnectionValues(ctx, mysqlRepos.ConnectionCredentialsRepository, mysqlRepos.ConnectionSettingsRepository, connectionID)
+		},
+		odooRateLimiter,
+	))
+	go safe.Supervise(bgCtx, "sales sync", salesSyncService.Start)
+	salesHandler := httpHandler.NewSalesHandler(
+		salesApp.NewQueryService(mysqlInfra.NewSalesViewRepository(db)),
+		salesSyncService,
+	)
+
 	// Create router and start server.
 	router := api.NewRouter(
 		productHandler, storageDiskHandler, fileHandler, channelHandler, channelConnectionHandler,
@@ -750,6 +781,7 @@ func main() {
 		connectionConfigViewHandler,
 		rolesHandler,
 		dashboardHandler,
+		salesHandler,
 	)
 
 	server := &http.Server{

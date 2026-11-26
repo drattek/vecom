@@ -128,6 +128,21 @@ type Config struct {
 	MeliNotificationsProcessorPollInterval time.Duration
 	// MeliNotificationsProcessorBatchSize caps rows processed per tick.
 	MeliNotificationsProcessorBatchSize int
+
+	// Sincronización de ventas (ADR 0010). SalesSyncEnabled activa la
+	// ejecución periódica; "Sincronizar ahora" funciona aunque esté apagada.
+	SalesSyncEnabled      bool
+	SalesSyncInterval     time.Duration
+	SalesSyncBackfillDays int
+	SalesSyncOverlap      time.Duration
+}
+
+// positiveEnvInt lee un entero positivo; usa fallback si falta o no es válido.
+func positiveEnvInt(name string, fallback int) int {
+	if parsed, err := strconv.Atoi(os.Getenv(name)); err == nil && parsed > 0 {
+		return parsed
+	}
+	return fallback
 }
 
 func Load() Config {
@@ -359,8 +374,18 @@ func Load() Config {
 		}
 	}
 
+	salesSyncEnabled := strings.EqualFold(os.Getenv("SALES_SYNC_ENABLED"), "true")
+	salesSyncIntervalHours := positiveEnvInt("SALES_SYNC_INTERVAL_HOURS", 4)
+	salesSyncBackfillDays := positiveEnvInt("SALES_SYNC_BACKFILL_DAYS", 30)
+	salesSyncOverlapMinutes := positiveEnvInt("SALES_SYNC_OVERLAP_MINUTES", 60)
+
 	return Config{
-		Port:                port,
+		SalesSyncEnabled:      salesSyncEnabled,
+		SalesSyncInterval:     time.Duration(salesSyncIntervalHours) * time.Hour,
+		SalesSyncBackfillDays: salesSyncBackfillDays,
+		SalesSyncOverlap:      time.Duration(salesSyncOverlapMinutes) * time.Minute,
+
+		Port:               port,
 		ShutdownTimeout:     time.Duration(shutdownTimeoutSeconds) * time.Second,
 		TLSKeystorePath:     tlsKeystorePath,
 		TLSKeystorePassword: tlsKeystorePassword,

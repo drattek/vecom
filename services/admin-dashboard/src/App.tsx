@@ -33,6 +33,8 @@ import { ProfilePage } from './pages/ProfilePage.tsx'
 import { UsersPage } from './pages/UsersPage.tsx'
 import { MeliListingsPage } from './pages/meli/MeliListingsPage.tsx'
 import { PublicationsReportPage } from './pages/reports/PublicationsReportPage.tsx'
+import { SalesPage } from './pages/sales/SalesPage.tsx'
+import { SaleDetailPage } from './pages/sales/SaleDetailPage.tsx'
 import { ProtectedLayout } from './layouts/ProtectedLayout.tsx'
 import { TooltipProvider } from './components/ui/tooltip.tsx'
 import { ChannelsPage } from './pages/settings/ChannelsPage.tsx'
@@ -73,6 +75,8 @@ function AppRoutes() {
         </Route>
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/users" element={<RequirePermission any={['users.view']}><UsersPage /></RequirePermission>} />
+        <Route path="/sales" element={<RequirePermission any={['sales.view']}><SalesPage /></RequirePermission>} />
+        <Route path="/sales/:saleId" element={<RequirePermission any={['sales.view']}><SaleDetailPage /></RequirePermission>} />
         <Route path="/meli" element={<Navigate to="/meli/listings" replace />} />
         <Route path="/meli/listings" element={<RequirePermission any={['meli_listings.view']}><MeliListingsPage /></RequirePermission>} />
         <Route path="/reports" element={<Navigate to="/reports/publications" replace />} />

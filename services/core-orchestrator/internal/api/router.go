@@ -79,6 +79,7 @@ func NewRouter(
 	connectionConfigViewHandler *httpHandler.ConnectionConfigViewHandler,
 	rolesHandler *httpHandler.RolesHandler,
 	dashboardHandler *httpHandler.DashboardHandler,
+	salesHandler *httpHandler.SalesHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -134,6 +135,13 @@ func NewRouter(
 		protected.Get("/api/dashboard/health/connections", dashboardHandler.ConnectionsHealth)
 		protected.Get("/api/dashboard/health/inventory", dashboardHandler.InventoryHealth)
 		protected.Get("/api/dashboard/health/queue", dashboardHandler.QueueHealth)
+
+		// Ventas importadas de los marketplaces, solo lectura (ADR 0010).
+		protected.Get("/api/sales", salesHandler.List)
+		protected.Get("/api/sales/sync-status", salesHandler.SyncStatus)
+		protected.Post("/api/sales/sync", salesHandler.Sync)
+		protected.Get("/api/sales/{id}", salesHandler.Get)
+
 		protected.Get("/api/products", productHandler.GetProducts)
 		protected.Get("/api/products/{id}", productHandler.GetProductByID)
 		protected.Post("/api/products", productHandler.CreateProduct)

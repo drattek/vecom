@@ -16,6 +16,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query"
 const RESOURCE_LABELS: Record<string, string> = {
     dashboard: "Dashboard",
     reports: "Reportes de publicaciones",
+    sales: "Ventas",
     meli_listings: "Publicaciones de MercadoLibre",
     users: "Usuarios",
     roles: "Roles y permisos",

@@ -53,6 +53,14 @@ func buildRoutePermissions() httpHandler.RoutePolicy {
 		set("GET", path, "dashboard.view")
 	}
 
+	// ---- Ventas ------------------------------------------------------------
+	// sales.view incluye los datos del cliente (ADR 0010). No da acceso a las
+	// rutas de conexiones: el filtro por conexión sale de sync-status.
+	set("GET", "/api/sales", "sales.view")
+	set("GET", "/api/sales/{id}", "sales.view")
+	set("GET", "/api/sales/sync-status", "sales.view")
+	set("POST", "/api/sales/sync", "sales.sync")
+
 	// ---- Usuarios, roles y permisos --------------------------------------
 	set("GET", "/api/users", "users.view")
 	set("GET", "/api/users/{id}", "users.view", "users.edit")

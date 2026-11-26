@@ -10,6 +10,7 @@ const fallbackRoutes: Array<{ path: string; permissions: string[] }> = [
   { path: '/products/images', permissions: ['products_images.view'] },
   { path: '/products/import', permissions: ['products_import.view'] },
   { path: '/products/bulk-update', permissions: ['products_bulk_update.view'] },
+  { path: '/sales', permissions: ['sales.view'] },
   { path: '/meli/listings', permissions: ['meli_listings.view'] },
   { path: '/reports/publications', permissions: ['reports.view'] },
   { path: '/users', permissions: ['users.view'] },

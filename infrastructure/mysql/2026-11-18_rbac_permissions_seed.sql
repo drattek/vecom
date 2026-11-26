@@ -99,7 +99,11 @@ INSERT INTO ecom_permissions (resource, action, description) VALUES
     ('connections',          'manage_credentials','Ver y editar credenciales y configuración de conexiones'),
     ('brands',               'bulk_assign',       'Asignar marcas masivamente por SKU'),
     ('categories',           'import',            'Importar categorías desde un canal y mapearlas'),
-    ('vehicle_fitments',     'import',            'Importar compatibilidades de vehículo masivamente')
+    ('vehicle_fitments',     'import',            'Importar compatibilidades de vehículo masivamente'),
+
+    -- Ventas (ADR 0010)
+    ('sales',                'view',              'Ver las ventas y su detalle, incluidos los datos del cliente'),
+    ('sales',                'sync',              'Ejecutar "Sincronizar ahora" en la sección de ventas')
 ON DUPLICATE KEY UPDATE description = VALUES(description);
 
 -- Verificación rápida:
