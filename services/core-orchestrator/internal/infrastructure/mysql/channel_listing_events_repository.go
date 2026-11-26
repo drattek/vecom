@@ -194,7 +194,20 @@ func (r *ChannelListingEventsRepository) FindByListing(ctx context.Context, prod
 
 // listingViewSource is the UNION of live listings and never-published
 // products whose latest publish attempt failed. Takes the channel code twice.
-const listingViewSource = `
+const listingViewSource = listingViewLiveSource + listingViewChannelClause + `
+	UNION ALL
+` + listingViewNotPublishedSource + listingViewChannelClause
+
+// listingViewChannelClause narrows either half of listingViewSource to one
+// channel (takes the channel code once).
+const listingViewChannelClause = ` AND UPPER(TRIM(ch.code)) = UPPER(TRIM(?))
+`
+
+// listingViewLiveSource and listingViewNotPublishedSource are the two halves of
+// the view, also used on their own by DashboardRepository (all channels, one
+// state at a time) so both screens share one definition of each state. Both end
+// inside their WHERE clause, so callers may append "AND ..." conditions.
+const listingViewLiveSource = `
 	SELECT 'listing' AS kind, cpm.id AS id, cpm.product_id, p.sku, p.name AS product_name,
 	       cpm.connection_id, cc.name AS connection_name, cpm.vehicle_fitment_id,
 	       cpm.listing_title, cpm.external_id, cpm.external_category_id,
@@ -217,17 +230,16 @@ const listingViewSource = `
 	JOIN ecom_channel_connections cc ON cc.id = cpm.connection_id
 	JOIN ecom_channels ch ON ch.id = cc.channel_id
 	JOIN ecom_products p ON p.id = cpm.product_id
-	WHERE cpm.deleted_at IS NULL AND UPPER(TRIM(ch.code)) = UPPER(TRIM(?))
+	WHERE cpm.deleted_at IS NULL`
 
-	UNION ALL
-
-	SELECT 'not_published', e.id, e.product_id, p.sku, p.name,
-	       e.connection_id, cc.name, e.vehicle_fitment_id,
-	       NULL, NULL, NULL,
-	       NULL, NULL,
-	       'not_published',
-	       e.message,
-	       e.created_at,
+const listingViewNotPublishedSource = `
+	SELECT 'not_published' AS kind, e.id AS id, e.product_id, p.sku, p.name AS product_name,
+	       e.connection_id, cc.name AS connection_name, e.vehicle_fitment_id,
+	       NULL AS listing_title, NULL AS external_id, NULL AS external_category_id,
+	       NULL AS raw_status, NULL AS paused_reason,
+	       'not_published' AS state,
+	       e.message AS last_error,
+	       e.created_at AS last_activity_at,
 	       last.attempts
 	FROM (
 	    SELECT product_id, connection_id, vehicle_fitment_key, MAX(id) AS max_id, COUNT(*) AS attempts
@@ -239,7 +251,7 @@ const listingViewSource = `
 	JOIN ecom_channel_connections cc ON cc.id = e.connection_id
 	JOIN ecom_channels ch ON ch.id = cc.channel_id
 	JOIN ecom_products p ON p.id = e.product_id
-	WHERE e.outcome = 'error' AND UPPER(TRIM(ch.code)) = UPPER(TRIM(?))
+	WHERE e.outcome = 'error'
 	  AND NOT EXISTS (
 	      SELECT 1 FROM ecom_channel_product_map cpm
 	      WHERE cpm.product_id = e.product_id AND cpm.connection_id = e.connection_id

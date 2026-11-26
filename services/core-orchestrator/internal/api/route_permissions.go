@@ -41,6 +41,18 @@ func buildRoutePermissions() httpHandler.RoutePolicy {
 	set("POST", "/api/logout", httpHandler.AuthenticatedOnly)
 	set("GET", "/api/me", httpHandler.AuthenticatedOnly)
 
+	// ---- Dashboard ---------------------------------------------------------
+	for _, path := range []string{
+		"/api/dashboard/listings",
+		"/api/dashboard/catalog/count",
+		"/api/dashboard/catalog/products",
+		"/api/dashboard/health/connections",
+		"/api/dashboard/health/inventory",
+		"/api/dashboard/health/queue",
+	} {
+		set("GET", path, "dashboard.view")
+	}
+
 	// ---- Usuarios, roles y permisos --------------------------------------
 	set("GET", "/api/users", "users.view")
 	set("GET", "/api/users/{id}", "users.view", "users.edit")

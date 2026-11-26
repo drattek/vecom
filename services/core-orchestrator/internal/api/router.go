@@ -78,6 +78,7 @@ func NewRouter(
 	productBulkUpdateHandler *httpHandler.ProductBulkUpdateHandler,
 	connectionConfigViewHandler *httpHandler.ConnectionConfigViewHandler,
 	rolesHandler *httpHandler.RolesHandler,
+	dashboardHandler *httpHandler.DashboardHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -125,6 +126,14 @@ func NewRouter(
 		protected.Use(authMiddleware.RequireRoutePermission(routePermissions))
 		protected.Post("/api/logout", authHandler.Logout)
 		protected.Get("/api/me", authHandler.Me)
+
+		// Dashboard: un endpoint por bloque para cargarlos por separado.
+		protected.Get("/api/dashboard/listings", dashboardHandler.Listings)
+		protected.Get("/api/dashboard/catalog/count", dashboardHandler.CatalogCount)
+		protected.Get("/api/dashboard/catalog/products", dashboardHandler.CatalogProducts)
+		protected.Get("/api/dashboard/health/connections", dashboardHandler.ConnectionsHealth)
+		protected.Get("/api/dashboard/health/inventory", dashboardHandler.InventoryHealth)
+		protected.Get("/api/dashboard/health/queue", dashboardHandler.QueueHealth)
 		protected.Get("/api/products", productHandler.GetProducts)
 		protected.Get("/api/products/{id}", productHandler.GetProductByID)
 		protected.Post("/api/products", productHandler.CreateProduct)

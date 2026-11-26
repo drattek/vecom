@@ -26,6 +26,7 @@ import (
 	meliBulkImportApp "core-orchestrator/internal/application/meli_bulk_import"
 	meliListingImportApp "core-orchestrator/internal/application/meli_listing_import"
 	reportsApp "core-orchestrator/internal/application/reports"
+	dashboardApp "core-orchestrator/internal/application/dashboard"
 	channelsService "core-orchestrator/internal/application/channels"
 	compatibilityApp "core-orchestrator/internal/application/compatibility"
 	credService "core-orchestrator/internal/application/credentials"
@@ -570,6 +571,7 @@ func main() {
 	productEquipmentCompatibilityHandler := httpHandler.NewProductEquipmentCompatibilityHandler(productEquipmentCompatibilityService)
 	channelListingsHandler := httpHandler.NewChannelListingsHandler(channelListingsService)
 	reportsHandler := httpHandler.NewReportsHandler(reportsApp.NewService(mysqlRepos.PublicationsReportRepository, productAttributeChecklistService))
+	dashboardHandler := httpHandler.NewDashboardHandler(dashboardApp.NewService(mysqlRepos.DashboardRepository))
 	// TEMPORARY debug handler — see MercadoLibreItemLookupHandler. Remove
 	// once no longer needed.
 	mercadoLibreItemLookupHandler := httpHandler.NewMercadoLibreItemLookupHandler(mercadoLibreTokenService)
@@ -747,6 +749,7 @@ func main() {
 		productBulkUpdateHandler,
 		connectionConfigViewHandler,
 		rolesHandler,
+		dashboardHandler,
 	)
 
 	server := &http.Server{

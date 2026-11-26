@@ -8,6 +8,9 @@ import { RequirePermission } from './auth/RequirePermission.tsx'
 import { HomeGate } from './auth/HomeGate.tsx'
 import { registerUnauthorizedHandler } from './lib/api.ts'
 import { DashboardPage } from './pages/DashboardPage.tsx'
+import { DashboardListingsPage } from './pages/dashboard/DashboardListingsPage.tsx'
+import { DashboardHealthPage } from './pages/dashboard/DashboardHealthPage.tsx'
+import { DashboardCatalogPage } from './pages/dashboard/DashboardCatalogPage.tsx'
 import { LoginPage } from './pages/LoginPage.tsx'
 import { ProductsPage } from './pages/ProductsPage.tsx'
 import { ProductsChannelPage } from './pages/ProductsChannelPage.tsx'
@@ -63,7 +66,11 @@ function AppRoutes() {
           </ProtectedRoute>
         }
       >
-        <Route path="/dashboard" element={<HomeGate><DashboardPage /></HomeGate>} />
+        <Route path="/dashboard" element={<HomeGate><DashboardPage /></HomeGate>}>
+          <Route index element={<DashboardListingsPage />} />
+          <Route path="health" element={<DashboardHealthPage />} />
+          <Route path="catalog" element={<DashboardCatalogPage />} />
+        </Route>
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/users" element={<RequirePermission any={['users.view']}><UsersPage /></RequirePermission>} />
         <Route path="/meli" element={<Navigate to="/meli/listings" replace />} />

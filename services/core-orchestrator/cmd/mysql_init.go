@@ -48,6 +48,7 @@ type MySQLRepositories struct {
 	ChannelProductMapRepository               *mysqlInfra.ChannelProductMapRepository
 	ChannelListingEventsRepository            *mysqlInfra.ChannelListingEventsRepository
 	PublicationsReportRepository              *mysqlInfra.PublicationsReportRepository
+	DashboardRepository                       *mysqlInfra.DashboardRepository
 	PendingProductVehicleFitmentsRepository   *mysqlInfra.PendingProductVehicleFitmentsRepository
 	PartNumberSupersessionsRepository         *mysqlInfra.PartNumberSupersessionsRepository
 	AttributesRepository                      *mysqlInfra.AttributesRepository
@@ -107,6 +108,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 	channelProductMapRepository := mysqlInfra.NewChannelProductMapRepository(db)
 	channelListingEventsRepository := mysqlInfra.NewChannelListingEventsRepository(db)
 	publicationsReportRepository := mysqlInfra.NewPublicationsReportRepository(db)
+	dashboardRepository := mysqlInfra.NewDashboardRepository(db)
 	pendingProductVehicleFitmentsRepository := mysqlInfra.NewPendingProductVehicleFitmentsRepository(db)
 	partNumberSupersessionsRepository := mysqlInfra.NewPartNumberSupersessionsRepository(db)
 	attributesRepository := mysqlInfra.NewAttributesRepository(db)
@@ -163,6 +165,7 @@ func initializeMySQLRepositories(db *sql.DB) *MySQLRepositories {
 		ChannelProductMapRepository:               channelProductMapRepository,
 		ChannelListingEventsRepository:            channelListingEventsRepository,
 		PublicationsReportRepository:              publicationsReportRepository,
+		DashboardRepository:                       dashboardRepository,
 		PendingProductVehicleFitmentsRepository:   pendingProductVehicleFitmentsRepository,
 		PartNumberSupersessionsRepository:         partNumberSupersessionsRepository,
 		AttributesRepository:                      attributesRepository,

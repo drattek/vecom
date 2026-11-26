@@ -181,3 +181,22 @@ ancestros faltantes, y se registra `ecom_channel_category_map`. Capa aplicación
   `{ categoryId, connectionId, externalCategoryId, externalCategoryName,
   replaced }`. `404` si la categoría local no existe; `422` si la externa no es
   hoja.
+
+## Dashboard
+
+Lecturas de la vista Dashboard. Requieren el permiso `dashboard.view`. Hay un endpoint por bloque para que la UI los cargue por separado.
+
+| Método y ruta | Parámetros | Respuesta |
+|---|---|---|
+| GET /api/dashboard/listings | state (error, not_published, under_review, paused_manual, paused_zero_stock), offset, pageSize | total, offset, pageSize, rows |
+| GET /api/dashboard/catalog/count | filter, connectionId (opcional) | total |
+| GET /api/dashboard/catalog/products | filter, connectionId (opcional), offset, pageSize | offset, pageSize, rows |
+| GET /api/dashboard/health/connections | — | connections |
+| GET /api/dashboard/health/inventory | — | sources |
+| GET /api/dashboard/health/queue | — | queues |
+
+`filter`: no_image, no_price, no_brand, no_category, no_stock, category_unmapped (exige connectionId), ready_unpublished.
+
+- Universo del catálogo: productos no eliminados, vendibles y con status `active` o NULL. Con `connectionId`, solo los que no tienen publicación viva en esa conexión.
+- `ready_unpublished` no evalúa el tipo de cambio, la fórmula de precio ni los atributos requeridos por el canal. El descubrimiento del ADR 0003 sí aplica la fórmula y además exige status = 'active'.
+- `health/inventory` reporta el último cambio de cantidad (`last_sync_at`), no la última corrida de sincronización.
