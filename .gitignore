@@ -51,3 +51,6 @@ infrastructure/psec/build/
 *.crt
 *.token
 auth.token
+
+# Reportes de go run ./cmd/meli-report (datos del catalogo)
+meli-diferencias-*.csv

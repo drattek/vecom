@@ -528,6 +528,13 @@ type ItemStatus struct {
 	Permalink  string   `json:"permalink"`
 	// Tags are the item's MercadoLibre tags (e.g. "moderation_penalty").
 	Tags []string `json:"tags"`
+	// AvailableQuantity and Price are nil when MercadoLibre didn't report them,
+	// so "unknown" is never mistaken for zero.
+	AvailableQuantity *int     `json:"availableQuantity,omitempty"`
+	Price             *float64 `json:"price,omitempty"`
+	// LogisticType is shipping.logistic_type; "fulfillment" means MercadoLibre
+	// manages the stock itself (Full).
+	LogisticType string `json:"logisticType,omitempty"`
 }
 
 type multigetItemEntry struct {
@@ -540,6 +547,12 @@ type multigetItemEntry struct {
 		Title      string   `json:"title"`
 		Permalink  string   `json:"permalink"`
 		Tags       []string `json:"tags"`
+
+		AvailableQuantity *int     `json:"available_quantity"`
+		Price             *float64 `json:"price"`
+		Shipping          struct {
+			LogisticType string `json:"logistic_type"`
+		} `json:"shipping"`
 	} `json:"body"`
 }
 
@@ -590,7 +603,7 @@ func (h *ItemsHandler) GetItemsStatus(ctx context.Context, accessToken string, e
 				log.Printf("mercadolibre items status: id=%s returned code=%d, skipping", entry.Body.ID, entry.Code)
 				continue
 			}
-			statuses = append(statuses, ItemStatus{ID: entry.Body.ID, Status: entry.Body.Status, SubStatus: entry.Body.SubStatus, CategoryID: entry.Body.CategoryID, Title: entry.Body.Title, Permalink: entry.Body.Permalink, Tags: entry.Body.Tags})
+			statuses = append(statuses, ItemStatus{ID: entry.Body.ID, Status: entry.Body.Status, SubStatus: entry.Body.SubStatus, CategoryID: entry.Body.CategoryID, Title: entry.Body.Title, Permalink: entry.Body.Permalink, Tags: entry.Body.Tags, AvailableQuantity: entry.Body.AvailableQuantity, Price: entry.Body.Price, LogisticType: entry.Body.Shipping.LogisticType})
 		}
 	}
 
