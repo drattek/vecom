@@ -81,6 +81,7 @@ func NewRouter(
 	dashboardHandler *httpHandler.DashboardHandler,
 	salesHandler *httpHandler.SalesHandler,
 	mercadoLibreOAuthHandler *httpHandler.MercadoLibreOAuthHandler,
+	notificationHandler *httpHandler.NotificationHandler,
 ) http.Handler {
 
 	r := chi.NewRouter()
@@ -125,6 +126,17 @@ func NewRouter(
 		protected.Use(authMiddleware.RequireRoutePermission(routePermissions))
 		protected.Post("/api/logout", authHandler.Logout)
 		protected.Get("/api/me", authHandler.Me)
+
+		// Notificaciones por Telegram (ADR 0012). La configuración del bot es
+		// solo para admin; /api/me/... actúa sobre el usuario de la sesión.
+		protected.Get("/api/notification-settings", notificationHandler.GetSettings)
+		protected.Put("/api/notification-settings", notificationHandler.UpdateSettings)
+		protected.Get("/api/me/notifications", notificationHandler.GetMine)
+		protected.Patch("/api/me/notifications", notificationHandler.SetEnabled)
+		protected.Put("/api/me/notifications/preferences", notificationHandler.SavePreferences)
+		protected.Post("/api/me/notifications/telegram/link", notificationHandler.StartLink)
+		protected.Delete("/api/me/notifications/telegram/link", notificationHandler.Unlink)
+		protected.Post("/api/me/notifications/telegram/test", notificationHandler.SendTest)
 
 		// Dashboard: un endpoint por bloque para cargarlos por separado.
 		protected.Get("/api/dashboard/listings", dashboardHandler.Listings)

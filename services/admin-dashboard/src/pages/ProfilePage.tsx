@@ -1,12 +1,13 @@
 import { PageHeader } from '@/components/PageHeader.tsx'
 import { useAuth } from '@/auth/AuthContext.tsx'
+import { TelegramNotificationsCard } from '@/pages/profile/TelegramNotificationsCard.tsx'
 
 export function ProfilePage() {
   const { session } = useAuth()
   const user = session?.user
 
   return (
-    <main className="p-2">
+    <main className="min-h-0 flex-1 overflow-y-auto p-2">
       <PageHeader>
         <p>Mi perfil</p>
       </PageHeader>
@@ -31,6 +32,8 @@ export function ProfilePage() {
           <dd className="text-foreground">{user?.isActive ? 'Activo' : 'Inactivo'}</dd>
         </dl>
       </section>
+
+      <TelegramNotificationsCard />
     </main>
   )
 }

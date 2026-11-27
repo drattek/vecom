@@ -41,6 +41,15 @@ func buildRoutePermissions() httpHandler.RoutePolicy {
 	set("POST", "/api/logout", httpHandler.AuthenticatedOnly)
 	set("GET", "/api/me", httpHandler.AuthenticatedOnly)
 
+	// Avisos propios (ADR 0012): cada quien administra solo los suyos.
+	// /api/notification-settings no tiene entrada a propósito: solo admin.
+	set("GET", "/api/me/notifications", httpHandler.AuthenticatedOnly)
+	set("PATCH", "/api/me/notifications", httpHandler.AuthenticatedOnly)
+	set("PUT", "/api/me/notifications/preferences", httpHandler.AuthenticatedOnly)
+	set("POST", "/api/me/notifications/telegram/link", httpHandler.AuthenticatedOnly)
+	set("DELETE", "/api/me/notifications/telegram/link", httpHandler.AuthenticatedOnly)
+	set("POST", "/api/me/notifications/telegram/test", httpHandler.AuthenticatedOnly)
+
 	// ---- Dashboard ---------------------------------------------------------
 	for _, path := range []string{
 		"/api/dashboard/listings",

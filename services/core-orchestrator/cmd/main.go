@@ -10,6 +10,8 @@ import (
 	"os/signal"
 	"syscall"
 	"time"
+	// La imagen puede no traer zonas horarias (resumen diario, ADR 0012).
+	_ "time/tzdata"
 
 	"github.com/joho/godotenv"
 
@@ -35,6 +37,7 @@ import (
 	inventoryApp "core-orchestrator/internal/application/inventory"
 	listingDiscoveryApp "core-orchestrator/internal/application/listing_discovery"
 	meliNotificationsApp "core-orchestrator/internal/application/meli_notifications"
+	notificationsApp "core-orchestrator/internal/application/notifications"
 	migrationApp "core-orchestrator/internal/application/migration"
 	pricingApp "core-orchestrator/internal/application/pricing"
 	productAttributeChecklistApp "core-orchestrator/internal/application/product_attributes_checklist"
@@ -59,6 +62,7 @@ import (
 	mysqlInfra "core-orchestrator/internal/infrastructure/mysql"
 	redisInfra "core-orchestrator/internal/infrastructure/redis"
 	serverTLS "core-orchestrator/internal/infrastructure/servertls"
+	telegramInfra "core-orchestrator/internal/infrastructure/telegram"
 	httpHandler "core-orchestrator/internal/interfaces/http"
 	"core-orchestrator/internal/interfaces/schedulers"
 	"core-orchestrator/internal/shared/safe"
@@ -601,7 +605,49 @@ func main() {
 	redisProductRepo := redisInfra.NewProductRepository(redisClient)
 	redisInventoryRepo := redisInfra.NewInventoryRepository(redisClient)
 	redisNissanRepo := redisInfra.NewNissanRepository(redisClient)
-	syncService := syncApp.NewSyncService(redisProductRepo, redisInventoryRepo, redisNissanRepo, db, channelListingsService)
+
+	// Notificaciones por Telegram (ADR 0012). El bot se configura desde el
+	// dashboard; mientras esté apagado, el listener, el envío y las
+	// comprobaciones quedan en espera.
+	notificationsService := notificationsApp.NewService(
+		db,
+		mysqlInfra.NewNotificationSettingsRepository(db),
+		mysqlInfra.NewTelegramLinkRepository(db),
+		mysqlInfra.NewNotificationPreferenceRepository(db),
+		mysqlInfra.NewCredentialCipher(),
+		telegramInfra.NewClient(nil),
+		mysqlRepos.ChannelConnectionRepository,
+	)
+	meliUsersHandler := mercadoLibreInfra.NewUsersHandler(mercadoLibreInfra.NewClient(nil, "", mercadoLibreRateLimiter))
+	notificationsService.RegisterConnectionCheck("MERCADOLIBRE", func(ctx context.Context, connectionID int64) error {
+		token, err := mercadoLibreTokenService.EnsureValidAccessToken(ctx, connectionID)
+		if err != nil {
+			return err
+		}
+		// Confirma que MercadoLibre sigue aceptando el token.
+		_, err = meliUsersHandler.GetMe(ctx, token)
+		return err
+	})
+	odooConnectionCheck := syncApp.NewOdooConnectionService(
+		mysqlRepos.ConnectionCredentialsRepository,
+		mysqlRepos.ConnectionSettingsRepository,
+		mysqlRepos.ConnectionStatusRepository,
+		odooRateLimiter,
+	)
+	notificationsService.RegisterConnectionCheck("ODOO", func(ctx context.Context, connectionID int64) error {
+		_, err := odooConnectionCheck.TestConnection(ctx, connectionID, 0)
+		return err
+	})
+	mercadoLibreTokenService.SetAuthObserver(notificationsService)
+	go safe.Supervise(bgCtx, "telegram listener", notificationsService.Listen)
+	go safe.Supervise(bgCtx, "notifications dispatcher", notificationsService.Dispatch)
+	notificationsService.RegisterClosureSource(mercadoLibreProductSyncService)
+	go safe.Supervise(bgCtx, "notifications monitor", notificationsService.Monitor)
+	go safe.Supervise(bgCtx, "notifications stock summary", notificationsService.ScheduleStockSummary)
+	go safe.Supervise(bgCtx, "notifications closure check", notificationsService.ScheduleClosureCheck)
+	notificationHandler := httpHandler.NewNotificationHandler(notificationsService)
+
+	syncService := syncApp.NewSyncService(redisProductRepo, redisInventoryRepo, redisNissanRepo, db, channelListingsService, notificationsService)
 
 	// Start consumers in background so API availability is not blocked.
 	// consumersDone se cierra cuando todos los supervisores de cola salieron
@@ -793,6 +839,7 @@ func main() {
 		dashboardHandler,
 		salesHandler,
 		mercadoLibreOAuthHandler,
+		notificationHandler,
 	)
 
 	server := &http.Server{

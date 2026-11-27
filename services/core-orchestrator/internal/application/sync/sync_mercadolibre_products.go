@@ -119,6 +119,10 @@ type UploadResult struct {
 // allows_multiple_listings flag — Upload enforces it before ever calling
 // out to MercadoLibre.
 type MercadoLibreProductSyncService struct {
+	// moderationsHandler y usersHandler: motivo de los cierres (ADR 0012).
+	moderationsHandler *mercadoLibreInfra.ModerationsHandler
+	usersHandler       *mercadoLibreInfra.UsersHandler
+
 	productRepository           *mysqlInfra.ProductRepository
 	brandsRepository            *mysqlInfra.BrandsRepository
 	productPricesRepository     *mysqlInfra.ProductPricesRepository
@@ -182,6 +186,8 @@ func NewMercadoLibreProductSyncService(
 	client := mercadoLibreInfra.NewClient(nil, "", rateLimiter)
 
 	return &MercadoLibreProductSyncService{
+		moderationsHandler:            mercadoLibreInfra.NewModerationsHandler(client),
+		usersHandler:                  mercadoLibreInfra.NewUsersHandler(client),
 		productRepository:             productRepository,
 		brandsRepository:              brandsRepository,
 		productPricesRepository:       productPricesRepository,

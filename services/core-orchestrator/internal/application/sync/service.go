@@ -29,6 +29,13 @@ var hardcodedNissanRefreshConnectionIDs = []int64{2, 3}
 // configurable de asociar connections a la fuente ERP.
 var hardcodedErpStockRefreshConnectionIDs = []int64{1, 3}
 
+// ErpSyncObserver se entera de cómo termina cada sincronización del ERP. No
+// devuelve error: observar nunca debe afectar a la sincronización.
+type ErpSyncObserver interface {
+	ErpSyncCompleted(ctx context.Context, result domain.ErpSyncResult)
+	ErpSyncFailed(ctx context.Context, feed, reason string)
+}
+
 type SyncService struct {
 	products    *redisRepo.ProductRepository
 	inventory   *redisRepo.InventoryRepository
@@ -42,6 +49,9 @@ type SyncService struct {
 	// channelListings se usa solo para refreshListingsAfterNissanSync (ver comentario ahí y
 	// en hardcodedNissanRefreshConnectionIDs) — temporal.
 	channelListings *channelListingsApp.Service
+
+	// erpObserver puede ser nil.
+	erpObserver ErpSyncObserver
 }
 
 func NewSyncService(
@@ -50,6 +60,7 @@ func NewSyncService(
 	existencias *redisRepo.NissanRepository,
 	db *sql.DB,
 	channelListings *channelListingsApp.Service,
+	erpObserver ErpSyncObserver,
 ) *SyncService {
 	return &SyncService{
 		products:        products,
@@ -57,10 +68,32 @@ func NewSyncService(
 		existencias:     existencias,
 		db:              db,
 		channelListings: channelListings,
+		erpObserver:     erpObserver,
 	}
 }
 
-func (s *SyncService) ProcessERPCompleted(ctx context.Context, event domain.SyncCompletedEvent) error {
+func (s *SyncService) erpCompleted(ctx context.Context, result domain.ErpSyncResult) {
+	if s.erpObserver != nil {
+		s.erpObserver.ErpSyncCompleted(ctx, result)
+	}
+}
+
+func (s *SyncService) erpFailed(ctx context.Context, feed, reason string) {
+	if s.erpObserver != nil {
+		s.erpObserver.ErpSyncFailed(ctx, feed, reason)
+	}
+}
+
+// reportProcessingError avisa cuando un evento "completed" no se pudo procesar
+// (el mensaje se reencola). Un apagado en curso no es una falla.
+func (s *SyncService) reportProcessingError(ctx context.Context, feed string, err error) {
+	if err != nil && ctx.Err() == nil {
+		s.erpFailed(ctx, feed, "No se pudo procesar la sincronización: "+err.Error())
+	}
+}
+
+func (s *SyncService) ProcessERPCompleted(ctx context.Context, event domain.SyncCompletedEvent) (err error) {
+	defer func() { s.reportProcessingError(ctx, domain.ErpFeedProducts, err) }()
 
 	keys, err := s.products.ScanProducts(ctx)
 
@@ -86,11 +119,13 @@ func (s *SyncService) ProcessERPCompleted(ctx context.Context, event domain.Sync
 	}
 
 	synced, failed := 0, 0
+	result := domain.ErpSyncResult{Feed: domain.ErpFeedProducts, Total: len(products)}
 
 	for _, product := range products {
 		if err := s.ProcessERPProduct(ctx, product, cache); err != nil {
 			log.Printf("Error syncing product %s to MySQL: %v", product.Code, err)
 			failed++
+			result.AddFailure(product.Code, err)
 			continue
 		}
 		synced++
@@ -98,10 +133,17 @@ func (s *SyncService) ProcessERPCompleted(ctx context.Context, event domain.Sync
 
 	log.Printf("ERP sync finished (source=%s): %d ok, %d failed, %d total", event.Source, synced, failed, len(products))
 
+	// Con el apagado en curso el resultado está incompleto.
+	if ctx.Err() == nil {
+		result.Failed = failed
+		s.erpCompleted(ctx, result)
+	}
+
 	return nil
 }
 
-func (s *SyncService) ProcessStockSyncCompleted(ctx context.Context, event domain.SyncCompletedEvent) error {
+func (s *SyncService) ProcessStockSyncCompleted(ctx context.Context, event domain.SyncCompletedEvent) (err error) {
+	defer func() { s.reportProcessingError(ctx, domain.ErpFeedStock, err) }()
 
 	keys, err := s.inventory.ScanInventory(ctx)
 
@@ -133,11 +175,14 @@ func (s *SyncService) ProcessStockSyncCompleted(ctx context.Context, event domai
 	// reconciliación por ausencia de más abajo.
 	seen := newStockSeen()
 
+	result := domain.ErpSyncResult{Feed: domain.ErpFeedStock, Total: len(inventories)}
+
 	for i, inventory := range inventories {
 		skip, err := s.ProcessERPStock(ctx, inventory, cache, seen)
 		if err != nil {
 			log.Printf("Error syncing stock for product %s: %v", inventory.Code, err)
 			failed++
+			result.AddFailure(inventory.Code, err)
 			continue
 		}
 		if skip {
@@ -162,6 +207,12 @@ func (s *SyncService) ProcessStockSyncCompleted(ctx context.Context, event domai
 	// como fantasmas (ver InventoryRepository.DeleteKeys).
 	if err := s.inventory.DeleteKeys(ctx, keys); err != nil {
 		log.Printf("Stock sync: no se pudieron borrar %d claves de Redis: %v", len(keys), err)
+	}
+
+	// Antes del refresh de listings, que puede tardar mucho.
+	if ctx.Err() == nil {
+		result.Failed = failed
+		s.erpCompleted(ctx, result)
 	}
 
 	s.refreshListingsAfterErpStockSync(ctx)
@@ -198,10 +249,16 @@ func (s *SyncService) ProcessStockPageProcessed(ctx context.Context, event domai
 
 func (s *SyncService) ProcessStockSyncFailed(ctx context.Context, event domain.SyncFailedEvent) error {
 	log.Printf("Stock sync failed (source=%s) at offset %d (pageSize %d): %s (%s)", event.Source, event.Offset, event.PageSize, event.Error, event.Timestamp)
+	s.erpFailed(ctx, domain.ErpFeedStock, describeSyncFailure(event))
 	return nil
 }
 
-func (s *SyncService) ProcessNissanExistenciasSyncCompleted(ctx context.Context, event domain.SyncCompletedEvent) error {
+func describeSyncFailure(event domain.SyncFailedEvent) string {
+	return fmt.Sprintf("Falló en el registro %d (páginas de %d): %s", event.Offset, event.PageSize, event.Error)
+}
+
+func (s *SyncService) ProcessNissanExistenciasSyncCompleted(ctx context.Context, event domain.SyncCompletedEvent) (err error) {
+	defer func() { s.reportProcessingError(ctx, domain.ErpFeedNissanStock, err) }()
 
 	keys, err := s.existencias.ScanExistencias(ctx)
 
@@ -238,13 +295,16 @@ func (s *SyncService) ProcessNissanExistenciasSyncCompleted(ctx context.Context,
 	// dominara el tiempo total del sync. El registro/actualización de PROD_SUPERSESION (con
 	// su propio chequeo de "no escribir si no cambió") vive dentro de nissanSyncTx.run, en
 	// la misma transacción que producto/stock/precio.
+	result := domain.ErpSyncResult{Feed: domain.ErpFeedNissanStock, Total: len(existencias)}
+
 	for start := 0; start < len(existencias); start += nissanSyncBatchSize {
 		end := min(start+nissanSyncBatchSize, len(existencias))
 
-		batchSynced, batchFailed, err := s.ProcessNissanExistenciaBatch(ctx, existencias[start:end], cache, seen)
+		batchSynced, batchFailed, err := s.ProcessNissanExistenciaBatch(ctx, existencias[start:end], cache, seen, result.AddFailure)
 		if err != nil {
 			log.Printf("Error syncing Nissan existencias batch [%d:%d]: %v", start, end, err)
 			failed += end - start
+			result.AddFailure(fmt.Sprintf("lote %d-%d", start+1, end), err)
 			continue
 		}
 
@@ -267,6 +327,11 @@ func (s *SyncService) ProcessNissanExistenciasSyncCompleted(ctx context.Context,
 	// Un error acá solo se loguea: la baja de stock ya la resolvió reconcileZeroedStock.
 	if err := s.existencias.DeleteKeys(ctx, keys); err != nil {
 		log.Printf("Nissan existencias sync: no se pudieron borrar %d claves de Redis: %v", len(keys), err)
+	}
+
+	if ctx.Err() == nil {
+		result.Failed = failed
+		s.erpCompleted(ctx, result)
 	}
 
 	s.refreshListingsAfterNissanSync(ctx)
@@ -302,5 +367,6 @@ func (s *SyncService) ProcessNissanExistenciasPageProcessed(ctx context.Context,
 
 func (s *SyncService) ProcessNissanExistenciasSyncFailed(ctx context.Context, event domain.SyncFailedEvent) error {
 	log.Printf("Nissan existencias sync failed (source=%s) at offset %d (pageSize %d): %s (%s)", event.Source, event.Offset, event.PageSize, event.Error, event.Timestamp)
+	s.erpFailed(ctx, domain.ErpFeedNissanStock, describeSyncFailure(event))
 	return nil
 }

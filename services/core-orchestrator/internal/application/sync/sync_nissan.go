@@ -164,7 +164,7 @@ const nissanSyncBatchSize = 250
 // una única transacción compartida por el lote (ver nissanSyncBatchSize). Devuelve cuántos
 // registros se sincronizaron correctamente; los que fallan se saltan sin abortar el resto
 // del lote, igual que antes cuando cada registro tenía su propia transacción.
-func (s *SyncService) ProcessNissanExistenciaBatch(ctx context.Context, batch []*domain.Existencia, cache *nissanSyncCache, seen *stockSeen) (synced, failed int, err error) {
+func (s *SyncService) ProcessNissanExistenciaBatch(ctx context.Context, batch []*domain.Existencia, cache *nissanSyncCache, seen *stockSeen, onFailure func(code string, err error)) (synced, failed int, err error) {
 	// Un solo BEGIN/COMMIT por lote (ver nissanSyncBatchSize): con miles de SKUs,
 	// una transacción por registro hacía que el fsync del COMMIT dominara el sync.
 	// Un registro que falla se saltea sin abortar el lote (en MySQL un error de
@@ -174,6 +174,7 @@ func (s *SyncService) ProcessNissanExistenciaBatch(ctx context.Context, batch []
 		for _, e := range batch {
 			if runErr := t.run(ctx, e, cache); runErr != nil {
 				failed++
+				onFailure(e.Code, runErr)
 				continue
 			}
 			synced++

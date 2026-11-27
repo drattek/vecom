@@ -54,6 +54,7 @@ import { FitmentsVehiclesPage } from './pages/settings/FitmentsVehiclesPage.tsx'
 import { FitmentsEquipmentPage } from './pages/settings/FitmentsEquipmentPage.tsx'
 import { EquipmentTypesPage } from './pages/settings/EquipmentTypesPage.tsx'
 import { RolesPage } from './pages/settings/RolesPage.tsx'
+import { NotificationSettingsPage } from './pages/settings/NotificationSettingsPage.tsx'
 
 const queryClient = new QueryClient()
 
@@ -171,6 +172,10 @@ function AppRoutes() {
           <Route
             path="access-roles"
             element={<RequirePermission any={['roles.view']}><RolesPage /></RequirePermission>}
+          />
+          <Route
+            path="system-notifications"
+            element={<RequirePermission adminOnly><NotificationSettingsPage /></RequirePermission>}
           />
           <Route
             path="fitments-equipment-types"

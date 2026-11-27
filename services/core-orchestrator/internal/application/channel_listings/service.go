@@ -67,13 +67,21 @@ const nissanBrandID int64 = 1
 // starting product, guarding against a corrupted/cyclic chain in the data.
 const maxSuccessionChainNodes = 50
 
+// ClosedForRepublishMessage marca en la bitácora los cierres que hace este
+// sistema, para no atribuirlos al marketplace.
+const ClosedForRepublishMessage = "cerrado para republicar con otra categoría"
+
 // MarketplaceOutOfStockPauseMessage marca en la bitácora una pausa por falta de
 // stock que aplicó el marketplace: la fila queda sin paused_reason y con esto se
 // distingue de otras pausas.
 const MarketplaceOutOfStockPauseMessage = "pausado por el marketplace: sin stock"
 
+// ReasonNoStock es el mensaje con el que queda en la bitácora un producto que no
+// se publica por falta de stock. No es una falla: las notificaciones lo ignoran.
+const ReasonNoStock = "product has no available stock"
+
 const (
-	reasonNoStock = "product has no available stock"
+	reasonNoStock = ReasonNoStock
 	reasonNoImage = "product has no cover image (ecom_product_images row with is_first=true)"
 )
 
@@ -927,7 +935,7 @@ func (s *Service) CloseProductListings(ctx context.Context, input CloseListingsI
 				ChannelProductMapID: &listing.ID, ExternalID: outcome.ExternalID,
 				Action: mysqlInfra.ListingEventStatusSync, Outcome: mysqlInfra.ListingEventSuccess,
 				StatusBefore: listing.Status, StatusAfter: channelProductMapStatusClosed,
-				Message: "cerrado para republicar con otra categoría",
+				Message: ClosedForRepublishMessage,
 			})
 		default:
 			outcome.Error = fmt.Sprintf("only paused, under_review or closed listings can be closed (status is %q)", listing.Status)
@@ -1090,6 +1098,7 @@ func (s *Service) processChainMember(ctx context.Context, publisher Publisher, c
 // stock/image gate.
 func (s *Service) publishReady(ctx context.Context, publisher Publisher, connection *mysqlInfra.ChannelConnectionDTO, product *mysqlInfra.ProductDTO, chain []*mysqlInfra.ProductDTO, imageSourceProductID int64, officialStoreID *int64) []ListingOutcome {
 	if product.BrandID == nil {
+		s.recordPublishError(ctx, product.ID, connection.ID, nil, "product has no brand")
 		return []ListingOutcome{{SKU: product.SKU, Error: "product has no brand"}}
 	}
 
@@ -1102,7 +1111,9 @@ func (s *Service) publishReady(ctx context.Context, publisher Publisher, connect
 
 	fitmentIDs, err := s.pooledCompatibilityFitmentIDs(ctx, chain)
 	if err != nil {
-		return []ListingOutcome{{SKU: product.SKU, Error: fmt.Sprintf("error loading vehicle compatibilities: %v", err)}}
+		msg := fmt.Sprintf("error loading vehicle compatibilities: %v", err)
+		s.recordPublishError(ctx, product.ID, connection.ID, nil, msg)
+		return []ListingOutcome{{SKU: product.SKU, Error: msg}}
 	}
 
 	if len(fitmentIDs) == 0 {
@@ -1115,13 +1126,17 @@ func (s *Service) publishReady(ctx context.Context, publisher Publisher, connect
 
 		fitment, err := s.vehicleFitmentsRepository.FindByID(ctx, fitmentID)
 		if err != nil {
-			outcomes = append(outcomes, ListingOutcome{SKU: product.SKU, VehicleFitmentID: &fitmentID, Error: fmt.Sprintf("error loading vehicle fitment %d: %v", fitmentID, err)})
+			msg := fmt.Sprintf("error loading vehicle fitment %d: %v", fitmentID, err)
+			s.recordPublishError(ctx, product.ID, connection.ID, &fitmentID, msg)
+			outcomes = append(outcomes, ListingOutcome{SKU: product.SKU, VehicleFitmentID: &fitmentID, Error: msg})
 			continue
 		}
 
 		fitmentBrand, err := s.brandsRepository.FindByID(ctx, fitment.BrandID)
 		if err != nil {
-			outcomes = append(outcomes, ListingOutcome{SKU: product.SKU, VehicleFitmentID: &fitmentID, Error: fmt.Sprintf("error loading vehicle fitment brand %d: %v", fitment.BrandID, err)})
+			msg := fmt.Sprintf("error loading vehicle fitment brand %d: %v", fitment.BrandID, err)
+			s.recordPublishError(ctx, product.ID, connection.ID, &fitmentID, msg)
+			outcomes = append(outcomes, ListingOutcome{SKU: product.SKU, VehicleFitmentID: &fitmentID, Error: msg})
 			continue
 		}
 

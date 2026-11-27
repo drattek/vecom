@@ -13,6 +13,12 @@ export interface SettingsMenuGroup {
     items: SettingsMenuItem[]
 }
 
+/**
+ * Para secciones solo de administradores: ningún rol tiene este valor, así que
+ * can() solo lo concede a admin.
+ */
+const ADMIN_ONLY = 'admin_only'
+
 export const settingsMenuGroups: SettingsMenuGroup[] = [
     {
         label: 'Almacenamiento',
@@ -53,6 +59,10 @@ export const settingsMenuGroups: SettingsMenuGroup[] = [
             { label: 'Maquinaria', to: '/settings/fitments-equipment', permission: 'equipment_fitments.view' },
             { label: 'Tipos de maquinaria', to: '/settings/fitments-equipment-types', permission: 'equipment_types.view' },
         ],
+    },
+    {
+        label: 'Sistema',
+        items: [{ label: 'Notificaciones', to: '/settings/system-notifications', permission: ADMIN_ONLY }],
     },
     {
         label: 'Accesos',

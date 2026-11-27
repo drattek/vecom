@@ -47,7 +47,15 @@ var (
 	ErrMissingMercadoLibreSiteID     = errors.New("missing required mercadolibre site_id")
 )
 
+// ConnectionAuthObserver recibe el resultado de cada autenticación de una
+// conexión; refreshed indica que se renovó el token.
+type ConnectionAuthObserver interface {
+	ConnectionAuthResult(ctx context.Context, connectionID int64, authErr error, refreshed bool)
+}
+
 type MercadoLibreTokenService struct {
+	// authObserver puede ser nil.
+	authObserver       ConnectionAuthObserver
 	settingsRepository *mysqlInfra.ConnectionSettingsRepository
 	statusRepository   *mysqlInfra.ConnectionStatusRepository
 	authHandler        *mercadoLibreInfra.AuthHandler
@@ -106,6 +114,12 @@ func NewMercadoLibreCategoryPredictorService(
 	}
 }
 
+// SetAuthObserver se llama una sola vez, durante el arranque. No va en el
+// constructor porque el observador usa a su vez este servicio.
+func (s *MercadoLibreTokenService) SetAuthObserver(observer ConnectionAuthObserver) {
+	s.authObserver = observer
+}
+
 // EnsureValidAccessToken returns a valid access token for the connection.
 // If the current token is expired (or about to expire), it refreshes it and stores
 // access_token, refresh_token and expiration_time in encrypted settings.
@@ -128,6 +142,9 @@ func (s *MercadoLibreTokenService) EnsureValidAccessToken(ctx context.Context, c
 
 	defer func() {
 		s.recordConnectionStatus(ctx, connectionID, err, refreshed, refreshedExpiration)
+		if s.authObserver != nil {
+			s.authObserver.ConnectionAuthResult(ctx, connectionID, err, refreshed)
+		}
 	}()
 
 	log.Printf("mercadolibre token: connection %d — loading settings", connectionID)
