@@ -67,6 +67,11 @@ const nissanBrandID int64 = 1
 // starting product, guarding against a corrupted/cyclic chain in the data.
 const maxSuccessionChainNodes = 50
 
+// MarketplaceOutOfStockPauseMessage marca en la bitácora una pausa por falta de
+// stock que aplicó el marketplace: la fila queda sin paused_reason y con esto se
+// distingue de otras pausas.
+const MarketplaceOutOfStockPauseMessage = "pausado por el marketplace: sin stock"
+
 const (
 	reasonNoStock = "product has no available stock"
 	reasonNoImage = "product has no cover image (ecom_product_images row with is_first=true)"
@@ -1364,13 +1369,18 @@ func (s *Service) recordListingChange(ctx context.Context, listing *mysqlInfra.C
 	defer cancel()
 	after, err := s.channelProductMapRepository.FindByProductConnectionAndFitment(ctx, listing.ProductID, listing.ConnectionID, listing.VehicleFitmentID)
 	statusAfter := listing.Status
+	byMarketplace := false
 	if err == nil && after != nil {
 		statusAfter = after.Status
+		byMarketplace = after.PausedReason == nil
 	}
 	switch {
 	case statusAfter == "paused" && listing.Status != "paused":
 		action = mysqlInfra.ListingEventPause
 		message = "pausado: sin stock disponible"
+		if byMarketplace {
+			message = MarketplaceOutOfStockPauseMessage
+		}
 	case listing.Status == "paused" && statusAfter != "paused":
 		action = mysqlInfra.ListingEventReactivate
 		message = "reactivado: regresó el stock"
@@ -1404,12 +1414,19 @@ func (s *Service) recordStatusSyncChanges(ctx context.Context, connectionID int6
 		if !ok || old == l.Status {
 			continue
 		}
+		action := mysqlInfra.ListingEventStatusSync
+		message := fmt.Sprintf("el marketplace cambió el estado: %s → %s", old, l.Status)
+		// La sincronización de estado solo deja sin motivo las pausas por falta
+		// de stock del propio marketplace.
+		if l.Status == "paused" && l.PausedReason == nil {
+			action, message = mysqlInfra.ListingEventPause, MarketplaceOutOfStockPauseMessage
+		}
 		s.recordEvent(ctx, mysqlInfra.RecordListingEventInput{
 			ProductID: l.ProductID, ConnectionID: l.ConnectionID, VehicleFitmentID: l.VehicleFitmentID,
 			ChannelProductMapID: &l.ID, ExternalID: derefStr(l.ExternalID),
-			Action: mysqlInfra.ListingEventStatusSync, Outcome: mysqlInfra.ListingEventSuccess,
+			Action: action, Outcome: mysqlInfra.ListingEventSuccess,
 			StatusBefore: old, StatusAfter: l.Status,
-			Message: fmt.Sprintf("el marketplace cambió el estado: %s → %s", old, l.Status),
+			Message: message,
 		})
 	}
 }

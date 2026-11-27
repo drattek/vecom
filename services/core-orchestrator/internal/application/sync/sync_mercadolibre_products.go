@@ -571,10 +571,12 @@ func (s *MercadoLibreProductSyncService) Refresh(ctx context.Context, product *m
 		// whatever MercadoLibre says now (it reactivates an out-of-stock
 		// listing on its own); a listing that stays paused is recorded as
 		// user-paused so no later refresh reactivates it.
-		nextMapStatus = s.liveListingStatus(ctx, accessToken, externalID, listing.Status)
-		if nextMapStatus == mercadoLibreMapStatusPaused {
-			nextPausedReason = "user"
-		}
+		live, subStatus, _ := s.liveListingState(ctx, accessToken, externalID, listing.Status)
+		nextMapStatus = live
+		nextPausedReason = pausedReasonFor(live, derefString(listing.PausedReason), subStatus)
+	case !isPaused && qtyAvailable <= 0:
+		// Stock 0 sin pausa propia: MercadoLibre puede haberla pausado solo.
+		nextMapStatus, nextPausedReason = s.stateAfterZeroStockPush(ctx, accessToken, externalID)
 	}
 
 	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
@@ -782,10 +784,18 @@ func (s *MercadoLibreProductSyncService) Resync(ctx context.Context, product *my
 	case isPaused && !isZeroStockPaused:
 		// Paused by someone else: see Refresh — record whatever status
 		// MercadoLibre reports now, never reactivating it ourselves.
-		nextMapStatus = s.liveListingStatus(ctx, accessToken, externalID, listing.Status)
-		if nextMapStatus == mercadoLibreMapStatusPaused {
-			nextPausedReason = "user"
-		}
+		live, subStatus, _ := s.liveListingState(ctx, accessToken, externalID, listing.Status)
+		nextMapStatus = live
+		nextPausedReason = pausedReasonFor(live, derefString(listing.PausedReason), subStatus)
+	case isUnderReview:
+		// Que acepte el envío no significa que haya salido de revisión: se guarda
+		// lo que diga ahora, sin perder una pausa propia por falta de stock.
+		live, subStatus, _ := s.liveListingState(ctx, accessToken, externalID, listing.Status)
+		nextMapStatus = live
+		nextPausedReason = pausedReasonFor(live, derefString(listing.PausedReason), subStatus)
+	case !isPaused && qtyAvailable <= 0:
+		// Stock 0 sin pausa propia: MercadoLibre puede haberla pausado solo.
+		nextMapStatus, nextPausedReason = s.stateAfterZeroStockPush(ctx, accessToken, externalID)
 	}
 
 	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
@@ -953,24 +963,15 @@ func fitmentIDsEqual(a, b *int64) bool {
 // the original update error is still what the caller reports.
 func (s *MercadoLibreProductSyncService) reconcileStatusAfterFailedUpdate(ctx context.Context, accessToken string, productID, connectionID int64, listing *mysqlInfra.ChannelProductMapDTO, externalCategoryID string) {
 	externalID := derefString(listing.ExternalID)
-	liveStatus := s.liveListingStatus(ctx, accessToken, externalID, listing.Status)
+	liveStatus, subStatus, _ := s.liveListingState(ctx, accessToken, externalID, listing.Status)
 	if liveStatus == listing.Status {
 		return
 	}
 
-	pausedReason := ""
-	if liveStatus == mercadoLibreMapStatusPaused {
-		pausedReason = "user"
-	}
-	if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
-		ProductID:          productID,
-		ConnectionID:       connectionID,
-		VehicleFitmentID:   listing.VehicleFitmentID,
-		ListingTitle:       derefString(listing.ListingTitle),
-		ExternalID:         externalID,
-		ExternalCategoryID: externalCategoryID,
+	if err := s.channelProductMapRepository.ApplyMarketplaceState(ctx, listing.ID, mysqlInfra.MarketplaceStateInput{
 		Status:             liveStatus,
-		PausedReason:       pausedReason,
+		PausedReason:       pausedReasonFor(liveStatus, derefString(listing.PausedReason), subStatus),
+		ExternalCategoryID: externalCategoryID,
 		ActorID:            systemMercadoLibreSyncActorID,
 	}); err != nil {
 		log.Printf("mercadolibre: listing %s — could not record live status %q after a failed update: %v", externalID, liveStatus, err)
@@ -1277,11 +1278,13 @@ func (s *MercadoLibreProductSyncService) updateExistingListings(
 		// now (it reactivates an out-of-stock one by itself); one that stays
 		// paused is recorded as user-paused so it is never reactivated by us.
 		nextStatus, nextPausedReason := mercadoLibreMapStatusSynced, ""
-		if isPaused {
-			nextStatus = s.liveListingStatus(ctx, accessToken, externalID, listing.Status)
-			if nextStatus == mercadoLibreMapStatusPaused {
-				nextPausedReason = "user"
-			}
+		switch {
+		case isPaused:
+			live, subStatus, _ := s.liveListingState(ctx, accessToken, externalID, listing.Status)
+			nextStatus = live
+			nextPausedReason = pausedReasonFor(live, derefString(listing.PausedReason), subStatus)
+		case qtyAvailable <= 0:
+			nextStatus, nextPausedReason = s.stateAfterZeroStockPush(ctx, accessToken, externalID)
 		}
 
 		if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
@@ -2142,12 +2145,13 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatus(ctx cont
 		}
 
 		// This path reflects MercadoLibre's own status back into the map (a
-		// poll of the external listing), so a transition INTO 'paused' here
-		// means someone paused it from MercadoLibre's side, not our
-		// zero-stock gate — tag the reason 'user' so later syncs don't
-		// reactivate it automatically. For every other status UpdateStatus
-		// stores NULL regardless of what we pass.
-		if err := s.channelProductMapRepository.UpdateStatus(ctx, item.listing.ID, mappedStatus, "user"); err != nil {
+		// poll of the external listing); see pausedReasonFor for how a pause
+		// is attributed.
+		if err := s.channelProductMapRepository.ApplyMarketplaceState(ctx, item.listing.ID, mysqlInfra.MarketplaceStateInput{
+			Status:       mappedStatus,
+			PausedReason: pausedReasonFor(mappedStatus, derefString(item.listing.PausedReason), itemStatus.SubStatus),
+			ActorID:      systemMercadoLibreSyncActorID,
+		}); err != nil {
 			result.Error = fmt.Sprintf("error saving status: %v", err)
 			results = append(results, result)
 			continue
@@ -2337,14 +2341,10 @@ func (s *MercadoLibreProductSyncService) RefreshChannelProductMapStatusAndCatego
 			newExternalCategoryID = remoteCategoryID
 		}
 
-		if _, err := s.channelProductMapRepository.Upsert(ctx, mysqlInfra.UpsertChannelProductMapInput{
-			ProductID:          item.listing.ProductID,
-			ConnectionID:       connectionID,
-			VehicleFitmentID:   item.listing.VehicleFitmentID,
-			ListingTitle:       derefString(item.listing.ListingTitle),
-			ExternalID:         item.externalID,
-			ExternalCategoryID: newExternalCategoryID,
+		if err := s.channelProductMapRepository.ApplyMarketplaceState(ctx, item.listing.ID, mysqlInfra.MarketplaceStateInput{
 			Status:             mappedStatus,
+			PausedReason:       pausedReasonFor(mappedStatus, derefString(item.listing.PausedReason), itemStatus.SubStatus),
+			ExternalCategoryID: newExternalCategoryID,
 			ActorID:            systemMercadoLibreSyncActorID,
 		}); err != nil {
 			result.Error = fmt.Sprintf("error saving channel product map: %v", err)

@@ -326,7 +326,7 @@ func (r *ChannelProductMapRepository) Upsert(ctx context.Context, input UpsertCh
 		return nil, fmt.Errorf("error loading channel product map: %w", err)
 	}
 
-	pausedReason := pausedReasonForStatus(input.Status, input.PausedReason)
+	pausedReason := observedPausedReason(input.Status, input.PausedReason)
 
 	if existing == nil {
 		query := `
@@ -402,6 +402,42 @@ func (r *ChannelProductMapRepository) UpdateStatus(ctx context.Context, id int64
 	}
 
 	return nil
+}
+
+// MarketplaceStateInput es lo que se leyó del marketplace sobre una
+// publicación.
+type MarketplaceStateInput struct {
+	Status       string
+	PausedReason string
+	// ExternalCategoryID vacío conserva la categoría guardada.
+	ExternalCategoryID string
+	ActorID            int64
+}
+
+// ApplyMarketplaceState refleja el estado leído del marketplace. Como no envía
+// nada, no toca last_synced_at (marca el último envío de precio/stock: los
+// refrescos omiten lo que no cambió después de esa fecha) ni last_error.
+func (r *ChannelProductMapRepository) ApplyMarketplaceState(ctx context.Context, id int64, input MarketplaceStateInput) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE ecom_channel_product_map
+		SET status = ?, paused_reason = ?, external_category_id = COALESCE(?, external_category_id), updated_by = ?
+		WHERE id = ?
+	`, input.Status, observedPausedReason(input.Status, input.PausedReason),
+		nullableString(input.ExternalCategoryID), input.ActorID, id)
+	if err != nil {
+		return fmt.Errorf("error saving marketplace state of channel product map %d: %w", id, err)
+	}
+	return nil
+}
+
+// observedPausedReason es como pausedReasonForStatus, pero además conserva
+// 'zero_stock' en under_review, para recuperarlo si vuelve a pausada. Quien lee
+// el motivo exige además el estado 'paused'.
+func observedPausedReason(status, pausedReason string) any {
+	if status == "under_review" && pausedReason == "zero_stock" {
+		return pausedReason
+	}
+	return pausedReasonForStatus(status, pausedReason)
 }
 
 // SetLastError stamps the most recent refresh/resync failure on a row
