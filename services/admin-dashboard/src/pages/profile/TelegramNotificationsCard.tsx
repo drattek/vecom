@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react"
 import { ExternalLinkIcon, SendIcon } from "lucide-react"
+import { QRCodeSVG } from "qrcode.react"
 
 import { Button } from "@/components/ui/button"
 import { getServerErrorMessage } from "@/lib/api"
@@ -157,19 +158,35 @@ export function TelegramNotificationsCard() {
                     {pendingRequest ? (
                         <div className="mt-3 rounded-lg border border-dashed p-3 text-sm">
                             <p className="text-foreground">
-                                Abre el enlace y pulsa <strong>Iniciar</strong> en Telegram. Vence en 10 minutos y solo
-                                sirve una vez; no lo compartas.
+                                Escanea el código con la cámara de tu móvil o abre Telegram en este equipo; después pulsa{" "}
+                                <strong>Iniciar</strong>. Vence en 10 minutos y solo sirve una vez; no lo compartas.
                             </p>
-                            <a
-                                className="mt-2 inline-flex items-center gap-1 font-medium text-primary underline"
-                                href={pendingRequest.url}
-                                target="_blank"
-                                rel="noreferrer"
-                            >
-                                Abrir Telegram
-                                <ExternalLinkIcon className="size-4" />
-                            </a>
-                            <p className="mt-2 text-xs text-muted-foreground" role="status">
+                            <div className="mt-3 flex flex-wrap items-center gap-4">
+                                {/* Se genera en el navegador: el enlace lleva el código de un solo uso y no
+                                    debe enviarse a un servicio externo. Fondo blanco y margen también en tema
+                                    oscuro, para que las cámaras lo lean. */}
+                                <QRCodeSVG
+                                    value={pendingRequest.url}
+                                    size={192}
+                                    level="M"
+                                    marginSize={4}
+                                    bgColor="#FFFFFF"
+                                    fgColor="#000000"
+                                    title="Código QR para vincular Telegram"
+                                    role="img"
+                                    className="shrink-0 rounded-lg border"
+                                />
+                                <a
+                                    className="inline-flex items-center gap-1 font-medium text-primary underline"
+                                    href={pendingRequest.url}
+                                    target="_blank"
+                                    rel="noreferrer"
+                                >
+                                    Abrir Telegram en este equipo
+                                    <ExternalLinkIcon className="size-4" />
+                                </a>
+                            </div>
+                            <p className="mt-3 text-xs text-muted-foreground" role="status">
                                 Esperando la vinculación...
                             </p>
                         </div>
